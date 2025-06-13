@@ -1,0 +1,7 @@
+brainflow
+numpy
+scikit-learn
+pandas
+matplotlib
+tensorflow
+xgboost
