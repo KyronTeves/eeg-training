@@ -1,6 +1,3 @@
-"""
-Script to collect EEG data from BrainFlow Cyton Daisy board and save to CSV for training.
-"""
 import time
 import csv
 import os
@@ -19,18 +16,7 @@ TRIALS_PER_LABEL = 30
 OUTPUT_CSV = 'eeg_training_data.csv'
 
 
-def collect_eeg(
-    board: BoardShim,
-    eeg_channels: list,
-    session_type: str,
-    label: str,
-    trial_num: int,
-    output_writer: csv.writer
-) -> tuple[int, list[float]]:
-    """
-    Collect EEG data for a given session type and label, write to CSV.
-    Returns: (number of rows written, list of timestamps)
-    """
+def collect_eeg(board, eeg_channels, session_type, label, trial_num, output_writer):
     sampling_rate = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
     rows = []
     timestamps = []
@@ -103,7 +89,6 @@ def collect_eeg(
 
 
 def main():
-    """Main function to collect EEG data and save to CSV."""
     params = BrainFlowInputParams()
     params.serial_port = 'COM8'  # Change to your Cyton's COM port
 
@@ -115,8 +100,8 @@ def main():
     file_exists = os.path.isfile(OUTPUT_CSV)
     with open(OUTPUT_CSV, 'a', newline='') as csvfile:
         writer = csv.writer(csvfile)
+        header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
         if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
-            header = [f'ch_{i}' for i in range(len(eeg_channels))] + ['session_type', 'label']
             writer.writerow(header)
         print("Session types: pure, jolt, hybrid, long")
         session_type = input("Enter session type: ").strip().lower()
