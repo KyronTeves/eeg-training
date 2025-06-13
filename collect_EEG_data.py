@@ -1,6 +1,3 @@
-"""
-Script to collect EEG data from BrainFlow Cyton Daisy board and save to CSV for training.
-"""
 import time
 import csv
 import os
@@ -66,7 +63,6 @@ def collect_eeg(
 
 
 def main():
-    """Main function to collect EEG data and save to CSV."""
     params = BrainFlowInputParams()
     params.serial_port = 'COM8'  # Change to your Cyton's COM port
 
@@ -78,8 +74,8 @@ def main():
     file_exists = os.path.isfile(OUTPUT_CSV)
     with open(OUTPUT_CSV, 'a', newline='') as csvfile:
         writer = csv.writer(csvfile)
+        header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
         if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
-            header = [f'ch_{i}' for i in range(len(eeg_channels))] + ['session_type', 'label']
             writer.writerow(header)
         print("Session types: pure, jolt, hybrid, long")
         session_type = input("Enter session type: ").strip().lower()
