@@ -4,7 +4,7 @@ Test trained EEG models (Conv1D, Random Forest, XGBoost) on windowed test data.
 import numpy as np
 import pandas as pd
 import joblib
-from tensorflow.keras.models import load_model
+from tensorflow.keras.models import load_model # type: ignore
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 

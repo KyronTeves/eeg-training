@@ -5,9 +5,9 @@ import numpy as np
 import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, Activation, MaxPooling1D, Flatten, Dense, Dropout
-from tensorflow.keras.utils import to_categorical
+from tensorflow.keras.models import Sequential # type: ignore
+from tensorflow.keras.layers import Conv1D, Activation, MaxPooling1D, Flatten, Dense, Dropout # type: ignore
+from tensorflow.keras.utils import to_categorical # type: ignore
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
@@ -59,10 +59,10 @@ def main():
     model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
     # Train model
-    history = model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.2)
+    model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.2)
 
     # Evaluate model
-    loss, acc = model.evaluate(X_test_scaled, y_test)
+    _, acc = model.evaluate(X_test_scaled, y_test)
     print(f"Test accuracy: {acc:.3f}")
 
     # Print confusion matrix and classification report

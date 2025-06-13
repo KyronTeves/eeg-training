@@ -31,72 +31,35 @@ def collect_eeg(
     Collect EEG data for a given session type and label, write to CSV.
     Returns: (number of rows written, list of timestamps)
     """
-    sampling_rate = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
-    rows = []
-    timestamps = []
-    if session_type == 'pure':
-        print(f"Think '{label}' for {TRIAL_DURATION} seconds.")
+    def run_phase(phase_duration, phase_label):
+        print(f"Think '{phase_label}' for {phase_duration} seconds.")
         board.get_board_data()  # Clear buffer
         board.insert_marker(1)
         start_time = time.time()
-        while time.time() - start_time < TRIAL_DURATION:
+        while time.time() - start_time < phase_duration:
             time.sleep(0.1)
         data = board.get_board_data()
-        n_samples = TRIAL_DURATION * sampling_rate
-        for i in range(-int(n_samples), 0):
+        n_samples = int(phase_duration * sampling_rate)
+        for i in range(-n_samples, 0):
             if abs(i) <= data.shape[1]:
-                row = [data[ch][i] for ch in eeg_channels] + [session_type, label]
+                row = [data[ch][i] for ch in eeg_channels] + [session_type, phase_label]
                 rows.append(row)
                 timestamps.append(time.time())
-    elif session_type == 'jolt':
-        # 5s neutral, 1s direction, 5s neutral
-        phases = [(5, 'neutral'), (1, label), (5, 'neutral')]
-        for phase_duration, phase_label in phases:
-            print(f"Think '{phase_label}' for {phase_duration} seconds.")
-            board.get_board_data()
-            board.insert_marker(1)
-            start_time = time.time()
-            while time.time() - start_time < phase_duration:
-                time.sleep(0.1)
-            data = board.get_board_data()
-            n_samples = phase_duration * sampling_rate
-            for i in range(-int(n_samples), 0):
-                if abs(i) <= data.shape[1]:
-                    row = [data[ch][i] for ch in eeg_channels] + [session_type, phase_label]
-                    rows.append(row)
-                    timestamps.append(time.time())
-    elif session_type == 'hybrid':
-        # 5s neutral, 5s direction
-        phases = [(5, 'neutral'), (5, label)]
-        for phase_duration, phase_label in phases:
-            print(f"Think '{phase_label}' for {phase_duration} seconds.")
-            board.get_board_data()
-            board.insert_marker(1)
-            start_time = time.time()
-            while time.time() - start_time < phase_duration:
-                time.sleep(0.1)
-            data = board.get_board_data()
-            n_samples = phase_duration * sampling_rate
-            for i in range(-int(n_samples), 0):
-                if abs(i) <= data.shape[1]:
-                    row = [data[ch][i] for ch in eeg_channels] + [session_type, phase_label]
-                    rows.append(row)
-                    timestamps.append(time.time())
-    elif session_type == 'long':
-        print(f"Think '{label}' for {LONG_DURATION} seconds.")
-        board.get_board_data()
-        board.insert_marker(1)
-        start_time = time.time()
-        while time.time() - start_time < LONG_DURATION:
-            time.sleep(0.1)
-        data = board.get_board_data()
-        n_samples = LONG_DURATION * sampling_rate
-        for i in range(-int(n_samples), 0):
-            if abs(i) <= data.shape[1]:
-                row = [data[ch][i] for ch in eeg_channels] + [session_type, label]
-                rows.append(row)
-                timestamps.append(time.time())
-    # Write all rows to CSV
+
+    sampling_rate = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
+    rows = []
+    timestamps = []
+
+    session_phases = {
+        'pure': [(TRIAL_DURATION, label)],
+        'jolt': [(5, 'neutral'), (1, label), (5, 'neutral')],
+        'hybrid': [(5, 'neutral'), (5, label)],
+        'long': [(LONG_DURATION, label)]
+    }
+
+    for phase_duration, phase_label in session_phases.get(session_type, []):
+        run_phase(phase_duration, phase_label)
+
     for row in rows:
         output_writer.writerow(row)
     return len(rows), timestamps
