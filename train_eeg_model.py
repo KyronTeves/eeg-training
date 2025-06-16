@@ -11,6 +11,7 @@ Train Conv1D, Random Forest, and XGBoost models on windowed EEG data.
 import numpy as np
 import joblib
 import logging
+import pandas as pd
 from utils import load_config
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -50,7 +51,7 @@ except Exception as e:
 if np.isnan(X_windows).any():
     logging.error("Windowed EEG data contains NaN values.")
     raise ValueError("Windowed EEG data contains NaN values.")
-if np.isnan(y_windows).any():
+if pd.isnull(y_windows).any():
     logging.error("Windowed labels contain NaN values.")
     raise ValueError("Windowed labels contain NaN values.")
 
