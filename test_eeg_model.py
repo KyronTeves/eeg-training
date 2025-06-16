@@ -45,9 +45,26 @@ except Exception as e:
 eeg_cols = [col for col in test_df.columns if col.startswith('ch_')]
 X = test_df[eeg_cols].values
 labels = test_df['label'].values
+
+# Data validation checks
+if np.isnan(X).any():
+    raise ValueError("EEG data contains NaN values.")
+if pd.isnull(labels).any():
+    raise ValueError("Labels contain NaN values.")
+valid_labels = set(config["LABELS"])
+if not set(np.unique(labels.flatten())).issubset(valid_labels):
+    raise ValueError(f"Found labels outside expected set: {valid_labels}")
+
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
 X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
+
+# Windowed data validation
+if X_windows.shape[1:] != (WINDOW_SIZE, N_CHANNELS):
+    raise ValueError("Windowed data shape mismatch.")
+if X_windows.shape[0] != y_windows.shape[0]:
+    raise ValueError("Number of windows and labels do not match.")
+
 logging.info(f"Test windows: {X_windows.shape}")
 
 try:
