@@ -1,15 +1,19 @@
 import numpy as np
 import pandas as pd
+import json
 
-# Settings
-N_CHANNELS = 16  # Number of EEG channels
-WINDOW_SIZE = 250  # Number of timepoints per window (e.g., 1 second at 250Hz)
-STEP_SIZE = 125    # Overlap windows by 50% (optional)
-RAW_CSV = 'eeg_training_data.csv'  # Input raw data file
-WINDOWED_NPY = 'eeg_windowed_X.npy'  # Output windowed data (features)
-WINDOWED_LABELS_NPY = 'eeg_windowed_y.npy'  # Output windowed data (labels)
-SESSION_TYPES = ['pure', 'jolt', 'hybrid', 'long']  # All possible session types
-USE_SESSION_TYPES = ['pure', 'jolt', 'hybrid', 'long']  # Change as needed
+# Load configuration from config.json
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+N_CHANNELS = config["N_CHANNELS"]
+WINDOW_SIZE = config["WINDOW_SIZE"]
+STEP_SIZE = config["STEP_SIZE"]
+RAW_CSV = config["OUTPUT_CSV"]
+WINDOWED_NPY = config["WINDOWED_NPY"]
+WINDOWED_LABELS_NPY = config["WINDOWED_LABELS_NPY"]
+SESSION_TYPES = config["SESSION_TYPES"]
+USE_SESSION_TYPES = config["USE_SESSION_TYPES"]
 
 # Load raw data
 raw_data = pd.read_csv(RAW_CSV)
