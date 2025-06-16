@@ -56,12 +56,12 @@ model = Sequential([
 
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-    # Train model
-    model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.2)
+# Train model
+model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.2)
 
-    # Evaluate model
-    _, acc = model.evaluate(X_test_scaled, y_test)
-    print(f"Test accuracy: {acc:.3f}")
+# Evaluate model
+_, acc = model.evaluate(X_test_scaled, y_test)
+print(f"Test accuracy: {acc:.3f}")
 
 # Print confusion matrix and classification report
 y_pred = model.predict(X_test_scaled)
