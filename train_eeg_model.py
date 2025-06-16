@@ -1,5 +1,6 @@
 import numpy as np
 import joblib
+import json
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow.keras.models import Sequential # type: ignore
@@ -9,13 +10,16 @@ from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-# Parameters for windowed data
-N_CHANNELS = 16
-WINDOW_SIZE = 250
+# Load configuration from config.json
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+N_CHANNELS = config["N_CHANNELS"]
+WINDOW_SIZE = config["WINDOW_SIZE"]
 
 # Load windowed data
-X_windows = np.load('eeg_windowed_X.npy')  # shape: (num_windows, WINDOW_SIZE, N_CHANNELS)
-y_windows = np.load('eeg_windowed_y.npy')  # shape: (num_windows,)
+X_windows = np.load(config["WINDOWED_NPY"])
+y_windows = np.load(config["WINDOWED_LABELS_NPY"])
 
 print(f"Loaded windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
 
@@ -72,9 +76,9 @@ print(classification_report(y_true_labels, y_pred_labels, target_names=le.classe
 
 # Save model and label encoder
 model.save('eeg_direction_model.h5')
-joblib.dump(le, 'eeg_label_encoder.pkl')
-joblib.dump(scaler, 'eeg_scaler.pkl')
-np.save('eeg_label_classes.npy', le.classes_)
+joblib.dump(le, config["LABEL_ENCODER"])
+joblib.dump(scaler, config["SCALER_CNN"])
+np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
 # Flatten windows for tree-based models
 X_flat = X_windows.reshape(X_windows.shape[0], -1)
@@ -106,7 +110,7 @@ print(confusion_matrix(y_test_tree, xgb_pred))
 print(classification_report(y_test_tree, xgb_pred, target_names=le.classes_))
 
 # Save tree-based models
-joblib.dump(rf, 'eeg_rf_model.pkl')
-joblib.dump(xgb, 'eeg_xgb_model.pkl')
-joblib.dump(le, 'eeg_label_encoder.pkl')
-joblib.dump(scaler_tree, 'eeg_scaler_tree.pkl')
+joblib.dump(rf, config["MODEL_RF"])
+joblib.dump(xgb, config["MODEL_XGB"])
+joblib.dump(le, config["LABEL_ENCODER"])
+joblib.dump(scaler_tree, config["SCALER_TREE"])

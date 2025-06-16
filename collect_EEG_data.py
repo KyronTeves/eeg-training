@@ -5,15 +5,19 @@ import json
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter
 
-# Settings
-LABELS = ['forward', 'backward', 'left', 'right', 'neutral']
-SESSION_TYPES = ['pure', 'jolt', 'hybrid', 'long']
-TRIAL_DURATION = 10  # seconds per trial (for pure/hybrid)
-JOLT_TOTAL_DURATION = 11  # 5s neutral, 1s direction, 5s neutral
-HYBRID_TOTAL_DURATION = 10  # 5s neutral, 5s direction
-LONG_DURATION = 180  # 3 minutes for long session
-TRIALS_PER_LABEL = 30
-OUTPUT_CSV = 'eeg_training_data.csv'
+# Load configuration from config.json
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+LABELS = config["LABELS"]
+SESSION_TYPES = config["SESSION_TYPES"]
+TRIAL_DURATION = config["TRIAL_DURATION"]
+JOLT_TOTAL_DURATION = config["JOLT_TOTAL_DURATION"]
+HYBRID_TOTAL_DURATION = config["HYBRID_TOTAL_DURATION"]
+LONG_DURATION = config["LONG_DURATION"]
+TRIALS_PER_LABEL = config["TRIALS_PER_LABEL"]
+OUTPUT_CSV = config["OUTPUT_CSV"]
+N_CHANNELS = config["N_CHANNELS"]
 
 
 def collect_eeg(
@@ -64,7 +68,7 @@ def collect_eeg(
 
 def main():
     params = BrainFlowInputParams()
-    params.serial_port = 'COM8'  # Change to your Cyton's COM port
+    params.serial_port = config["COM_PORT"]  # Use config value
 
     board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
     board.prepare_session()

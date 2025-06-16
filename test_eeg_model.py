@@ -4,13 +4,18 @@ import joblib
 from tensorflow.keras.models import load_model # type: ignore
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+import json
 
-# Parameters (must match training)
-N_CHANNELS = 16
-WINDOW_SIZE = 250
-STEP_SIZE = 125
-CSV_FILE = 'eeg_training_data.csv'
-TEST_SESSION_TYPES = ['jolt', 'hybrid', 'long']  # Change as needed
+# Load configuration from config.json
+with open('config.json', 'r') as f:
+    config = json.load(f)
+
+N_CHANNELS = config["N_CHANNELS"]
+WINDOW_SIZE = config["WINDOW_SIZE"]
+STEP_SIZE = config["STEP_SIZE"]
+CSV_FILE = config["OUTPUT_CSV"]
+TEST_SESSION_TYPES = config["SESSION_TYPES"][1:]  # Example: use all except 'pure' for testing
+NUM_TEST_SAMPLES = config["NUM_TEST_SAMPLES"]
 
 # Load CSV and filter for test session types
 print(f"Loading data from {CSV_FILE} ...")
@@ -40,11 +45,11 @@ print("Windowing test data ...")
 X_windows, y_windows = window_data(test_df, WINDOW_SIZE, STEP_SIZE, N_CHANNELS)
 print(f"Test windows: {X_windows.shape}")
 
-le = joblib.load('eeg_label_encoder.pkl')
-scaler = joblib.load('eeg_scaler.pkl')
-model = load_model('eeg_direction_model.h5')
-rf = joblib.load('eeg_rf_model.pkl')
-xgb = joblib.load('eeg_xgb_model.pkl')
+le = joblib.load(config["LABEL_ENCODER"])
+scaler = joblib.load(config["SCALER_CNN"])
+model = load_model(config["MODEL_CNN"])
+rf = joblib.load(config["MODEL_RF"])
+xgb = joblib.load(config["MODEL_XGB"])
 
 # Standardize features (fit on training data, so use scaler)
 X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
@@ -52,7 +57,7 @@ X_windows_scaled = scaler.transform(X_windows_flat).reshape(X_windows.shape)
 X_windows_flat_scaled = X_windows_scaled.reshape(X_windows.shape[0], -1)
 
 # Pick 10 random windows from the dataset
-num_samples = min(10, X_windows.shape[0])
+num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
 indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
 for idx in indices:

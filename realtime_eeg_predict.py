@@ -2,30 +2,21 @@ import time
 import numpy as np
 import joblib
 import os
+import json
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-# Parameters (must match training)
-N_CHANNELS = 16
-WINDOW_SIZE = 250
+# Load configuration from config.json
+with open('config.json', 'r') as f:
+    config = json.load(f)
 
-# Check for required files before proceeding
-required_files = ['eeg_rf_model.pkl', 'eeg_xgb_model.pkl', 'eeg_scaler_tree.pkl', 'eeg_label_encoder.pkl']
-for f in required_files:
-    if not os.path.exists(f):
-        print(f"Required file missing: {f}. Please ensure all models and encoders are present.")
-        exit(1)
-
-# Load models, scaler, and label encoder
-rf = joblib.load('eeg_rf_model.pkl')
-xgb = joblib.load('eeg_xgb_model.pkl')
-scaler = joblib.load('eeg_scaler_tree.pkl')  # Use the scaler used for tree models
-le = joblib.load('eeg_label_encoder.pkl')
+N_CHANNELS = config["N_CHANNELS"]
+WINDOW_SIZE = config["WINDOW_SIZE"]
 
 # Board parameters
 params = BrainFlowInputParams()
-params.serial_port = 'COM8'  # Change to your Cyton's COM port if needed
+params.serial_port = config["COM_PORT"]  # Use config value
 board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
 CHANNELS = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
 
@@ -45,6 +36,19 @@ print("1: Random Forest\n2: XGBoost\n3: Both")
 model_choice = input("Enter choice (1/2/3): ").strip()
 use_rf = model_choice in ['1', '3']
 use_xgb = model_choice in ['2', '3']
+
+# Check for required files before proceeding
+required_files = [config["MODEL_RF"], config["MODEL_XGB"], config["SCALER_TREE"], config["LABEL_ENCODER"]]
+for f in required_files:
+    if not os.path.exists(f):
+        print(f"Required file missing: {f}. Please ensure all models and encoders are present.")
+        exit(1)
+
+# Load models, scaler, and label encoder
+rf = joblib.load(config["MODEL_RF"])
+xgb = joblib.load(config["MODEL_XGB"])
+scaler = joblib.load(config["SCALER_TREE"])
+le = joblib.load(config["LABEL_ENCODER"])
 
 try:
     while True:
