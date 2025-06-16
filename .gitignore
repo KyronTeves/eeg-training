@@ -3,6 +3,7 @@
 *.npy
 *.h5
 *.pkl
+*.log
 
 # Ignore specific files
  e.g.,

@@ -21,7 +21,10 @@ from xgboost import XGBClassifier
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("eeg_training.log", mode='a')
+    ]
 )
 
 config = load_config()
@@ -37,6 +40,9 @@ try:
     logging.info("Preparing session...")
     board.prepare_session()
     board.start_stream()
+except FileNotFoundError as fnf:
+    logging.error(f"Could not find BrainFlow board or driver: {fnf}")
+    exit(1)
 except Exception as e:
     logging.error(f"Failed to start board session: {e}")
     exit(1)
@@ -63,6 +69,9 @@ try:
     xgb = joblib.load(config["MODEL_XGB"])
     scaler = joblib.load(config["SCALER_TREE"])
     le = joblib.load(config["LABEL_ENCODER"])
+except FileNotFoundError as fnf:
+    logging.error(f"Model or encoder file not found: {fnf}")
+    exit(1)
 except Exception as e:
     logging.error(f"Failed to load models or encoders: {e}")
     exit(1)
@@ -90,6 +99,8 @@ try:
         time.sleep(1)
 except KeyboardInterrupt:
     logging.info("\nStopping...")
+except Exception as e:
+    logging.error(f"Error during real-time prediction loop: {e}")
 finally:
     board.stop_stream()
     board.release_session()
