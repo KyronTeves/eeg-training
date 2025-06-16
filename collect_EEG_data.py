@@ -2,12 +2,11 @@ import time
 import csv
 import os
 import json
+from utils import load_config
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter
 
-# Load configuration from config.json
-with open('config.json', 'r') as f:
-    config = json.load(f)
+config = load_config()
 
 LABELS = config["LABELS"]
 SESSION_TYPES = config["SESSION_TYPES"]

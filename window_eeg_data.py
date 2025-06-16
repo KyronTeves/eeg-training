@@ -1,10 +1,9 @@
 import numpy as np
 import pandas as pd
-import json
+from utils import load_config, window_data
 
 # Load configuration from config.json
-with open('config.json', 'r') as f:
-    config = json.load(f)
+config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
@@ -35,19 +34,8 @@ if X.shape[1] != N_CHANNELS:
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
 
-# Windowing
-X_windows = []
-y_windows = []
-for start in range(0, len(X) - WINDOW_SIZE + 1, STEP_SIZE):
-    window = X[start:start+WINDOW_SIZE]
-    window_labels = labels[start:start+WINDOW_SIZE]
-    # Use the most frequent label in the window as the label
-    unique, counts = np.unique(window_labels, return_counts=True)
-    window_label = unique[np.argmax(counts)]
-    X_windows.append(window)
-    y_windows.append(window_label)
-X_windows = np.array(X_windows)  # shape: [num_windows, WINDOW_SIZE, N_CHANNELS]
-y_windows = np.array(y_windows).flatten()
+# Use the utility function for windowing
+X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
 
 print(f"Windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
 
