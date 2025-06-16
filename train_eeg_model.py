@@ -1,5 +1,6 @@
 import numpy as np
 import joblib
+import logging
 from utils import load_config
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
@@ -10,15 +11,24 @@ from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    handlers=[logging.StreamHandler()]
+)
+
 config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
 
-X_windows = np.load(config["WINDOWED_NPY"])
-y_windows = np.load(config["WINDOWED_LABELS_NPY"])
-
-print(f"Loaded windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
+try:
+    X_windows = np.load(config["WINDOWED_NPY"])
+    y_windows = np.load(config["WINDOWED_LABELS_NPY"])
+    logging.info(f"Loaded windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
+except Exception as e:
+    logging.error(f"Failed to load windowed data: {e}")
+    raise
 
 # Encode labels
 le = LabelEncoder()
@@ -37,7 +47,7 @@ scaler.fit(X_train_flat)
 X_train_scaled = scaler.transform(X_train.reshape(-1, N_CHANNELS)).reshape(X_train.shape)
 X_test_scaled = scaler.transform(X_test.reshape(-1, N_CHANNELS)).reshape(X_test.shape)
 
-print(f"Train shape: {X_train_scaled.shape}, Test shape: {X_test_scaled.shape}")
+logging.info(f"Train shape: {X_train_scaled.shape}, Test shape: {X_test_scaled.shape}")
 
 # Build Conv1D model (channels last)
 model = Sequential([
@@ -62,14 +72,14 @@ model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.
 
 # Evaluate model
 _, acc = model.evaluate(X_test_scaled, y_test)
-print(f"Test accuracy: {acc:.3f}")
+logging.info(f"Test accuracy: {acc:.3f}")
 
 # Print confusion matrix and classification report
 y_pred = model.predict(X_test_scaled)
 y_pred_labels = np.argmax(y_pred, axis=1)
 y_true_labels = np.argmax(y_test, axis=1)
-print(confusion_matrix(y_true_labels, y_pred_labels))
-print(classification_report(y_true_labels, y_pred_labels, target_names=le.classes_))
+logging.info(f"Confusion Matrix:\n{confusion_matrix(y_true_labels, y_pred_labels)}")
+logging.info(f"Classification Report:\n{classification_report(y_true_labels, y_pred_labels, target_names=le.classes_)}")
 
 # Save model and label encoder
 model.save('eeg_direction_model.h5')
@@ -94,17 +104,17 @@ X_test_scaled_tree = scaler_tree.transform(X_test_tree)
 rf = RandomForestClassifier(n_estimators=100, random_state=42)
 rf.fit(X_train_scaled_tree, y_train_tree)
 rf_pred = rf.predict(X_test_scaled_tree)
-print("Random Forest Results:")
-print(confusion_matrix(y_test_tree, rf_pred))
-print(classification_report(y_test_tree, rf_pred, target_names=le.classes_))
+logging.info("Random Forest Results:")
+logging.info(f"Confusion Matrix:\n{confusion_matrix(y_test_tree, rf_pred)}")
+logging.info(f"Classification Report:\n{classification_report(y_test_tree, rf_pred, target_names=le.classes_)}")
 
 # XGBoost
 xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='mlogloss')
 xgb.fit(X_train_scaled_tree, y_train_tree)
 xgb_pred = xgb.predict(X_test_scaled_tree)
-print("XGBoost Results:")
-print(confusion_matrix(y_test_tree, xgb_pred))
-print(classification_report(y_test_tree, xgb_pred, target_names=le.classes_))
+logging.info("XGBoost Results:")
+logging.info(f"Confusion Matrix:\n{confusion_matrix(y_test_tree, xgb_pred)}")
+logging.info(f"Classification Report:\n{classification_report(y_test_tree, xgb_pred, target_names=le.classes_)}")
 
 # Save tree-based models
 joblib.dump(rf, config["MODEL_RF"])
