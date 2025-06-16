@@ -1,6 +1,7 @@
 import time
 import csv
 import os
+import json
 from utils import load_config
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter
