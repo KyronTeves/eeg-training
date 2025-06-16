@@ -1,3 +1,13 @@
+"""
+Perform real-time EEG prediction using trained models.
+
+- Loads trained models and scalers.
+- Streams live EEG data from the board.
+- Applies windowing and predicts direction in real time.
+- Supports Random Forest, XGBoost, or both.
+- Uses logging for status and error messages.
+"""
+
 import time
 import numpy as np
 import joblib

@@ -1,3 +1,13 @@
+"""
+Segment raw EEG data into overlapping windows for model training.
+
+- Loads raw CSV data and filters by session type.
+- Uses only EEG channel columns for features.
+- Uses a utility function for windowing.
+- Saves windowed data and labels as .npy files.
+- Uses logging for status and error messages.
+"""
+
 import numpy as np
 import pandas as pd
 import logging
@@ -51,7 +61,6 @@ X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
 
 logging.info(f"Windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
 
-# Save as .npy for fast loading in training
 try:
     np.save(WINDOWED_NPY, X_windows)
     np.save(WINDOWED_LABELS_NPY, y_windows)

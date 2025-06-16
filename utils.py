@@ -1,3 +1,11 @@
+"""
+utils.py
+
+Utility functions for the EEG training system.
+- Configuration loading
+- Data windowing
+"""
+
 import json
 import numpy as np
 import pandas as pd
@@ -16,7 +24,14 @@ def window_data(
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Segment data and labels into overlapping windows.
-    Returns (X_windows, y_windows)
+
+    Args:
+        data: EEG data array of shape (samples, channels)
+        labels: Array of labels (samples, 1)
+        window_size: Number of samples per window
+        step_size: Step size between windows
+    Returns:
+        Tuple of (X_windows, y_windows)
     """
     X_windows = []
     y_windows = []

@@ -1,3 +1,13 @@
+"""
+Train Conv1D, Random Forest, and XGBoost models on windowed EEG data.
+
+- Loads windowed data from .npy files.
+- Encodes labels and splits data into train/test sets.
+- Standardizes features and trains models.
+- Saves trained models, encoders, and scalers.
+- Uses logging for status and error messages.
+"""
+
 import numpy as np
 import joblib
 import logging

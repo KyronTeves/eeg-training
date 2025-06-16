@@ -1,3 +1,12 @@
+"""
+Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy), label it, and save to CSV for training.
+
+- Prompts user for session type and label.
+- Collects data in trials, with configurable session phases.
+- Saves both raw data and metadata.
+- Uses logging for status and error messages.
+"""
+
 import time
 import csv
 import os
@@ -37,7 +46,16 @@ def collect_eeg(
 ) -> tuple[int, list[float]]:
     """
     Collect EEG data for a given session type and label, write to CSV.
-    Returns: (number of rows written, list of timestamps)
+
+    Args:
+        board: BrainFlow BoardShim instance.
+        eeg_channels: List of EEG channel indices.
+        session_type: Type of session (e.g., 'pure', 'jolt').
+        label: Label for the trial (e.g., 'left', 'right').
+        trial_num: Trial number.
+        output_writer: CSV writer object.
+    Returns:
+        Tuple of (number of rows written, list of timestamps).
     """
     def run_phase(phase_duration, phase_label):
         logging.info(f"Think '{phase_label}' for {phase_duration} seconds.")

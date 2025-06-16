@@ -1,3 +1,13 @@
+"""
+Test trained models on held-out EEG data windows.
+
+- Loads test data and models.
+- Windows the data using the utility function.
+- Evaluates Conv1D, Random Forest, and XGBoost models.
+- Prints predictions and actual labels for comparison.
+- Uses logging for status and error messages.
+"""
+
 import numpy as np
 import pandas as pd
 import joblib
