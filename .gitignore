@@ -1,0 +1,21 @@
+# Ignore large data and model files
+*.csv
+*.npy
+*.h5
+*.pkl
+
+# Ignore specific files
+ e.g.,
+eeg_training_data.csv
+eeg_windowed_X.npy
+eeg_windowed_y.npy
+eeg_direction_model.h5
+eeg_rf_model.pkl
+eeg_xgb_model.pkl
+eeg_label_encoder.pkl
+eeg_scaler.pkl
+eeg_scaler_tree.pkl
+eeg_label_classes.npy
+
+# VS Code settings
+.vscode/
