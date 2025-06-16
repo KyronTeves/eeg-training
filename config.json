@@ -1,5 +1,5 @@
 {
-  "COM_PORT": "COM8",
+  "COM_PORT": "COM3",
   "LABELS": ["forward", "backward", "left", "right", "neutral"],
   "SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
   "TRIAL_DURATION": 10,
