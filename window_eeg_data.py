@@ -49,6 +49,15 @@ eeg_cols = [col for col in raw_data.columns if col.startswith('ch_')]
 X = raw_data[eeg_cols].values
 labels = raw_data['label'].values
 
+# Data validation checks
+if np.isnan(X).any():
+    raise ValueError("EEG data contains NaN values.")
+if pd.isnull(labels).any():
+    raise ValueError("Labels contain NaN values.")
+valid_labels = set(config["LABELS"])
+if not set(np.unique(labels.flatten())).issubset(valid_labels):
+    raise ValueError(f"Found labels outside expected set: {valid_labels}")
+
 # Reshape X to [n_samples, n_channels]
 if X.shape[1] != N_CHANNELS:
     logging.error(f"Expected {N_CHANNELS} channels, but got {X.shape[1]} columns per sample.")
@@ -58,6 +67,12 @@ labels = labels.reshape(-1, 1)
 
 # Use the utility function for windowing
 X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
+
+# Windowed data validation
+if X_windows.shape[1:] != (WINDOW_SIZE, N_CHANNELS):
+    raise ValueError("Windowed data shape mismatch.")
+if X_windows.shape[0] != y_windows.shape[0]:
+    raise ValueError("Number of windows and labels do not match.")
 
 logging.info(f"Windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
 
