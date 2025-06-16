@@ -1,5 +1,5 @@
 """
-Train Conv1D, Random Forest, and XGBoost models on windowed EEG data.
+Train EEGNet, Random Forest, and XGBoost models on windowed EEG data.
 
 - Loads windowed data from .npy files.
 - Encodes labels and splits data into train/test sets.
@@ -15,12 +15,11 @@ import pandas as pd
 from utils import load_config
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from tensorflow.keras.models import Sequential # type: ignore
-from tensorflow.keras.layers import Conv1D, Activation, MaxPooling1D, Flatten, Dense, Dropout # type: ignore
 from tensorflow.keras.utils import to_categorical # type: ignore
 from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
+from EEGModels import EEGNet
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,40 +73,30 @@ X_test_scaled = scaler.transform(X_test.reshape(-1, N_CHANNELS)).reshape(X_test.
 
 logging.info(f"Train shape: {X_train_scaled.shape}, Test shape: {X_test_scaled.shape}")
 
-# Build Conv1D model (channels last)
-model = Sequential([
-    Conv1D(64, kernel_size=3, input_shape=(WINDOW_SIZE, N_CHANNELS)),
-    Activation('relu'),
-    Conv1D(64, kernel_size=2),
-    Activation('relu'),
-    MaxPooling1D(pool_size=2),
-    Conv1D(64, kernel_size=2),
-    Activation('relu'),
-    MaxPooling1D(pool_size=2),
-    Flatten(),
-    Dense(512, activation='relu'),
-    Dropout(0.3),
-    Dense(y_cat.shape[1], activation='softmax')
-])
+# Prepare data for EEGNet: (batch, Samples, Chans) -> (batch, Chans, Samples, 1)
+X_train_eegnet = np.expand_dims(X_train_scaled, -1)
+X_test_eegnet = np.expand_dims(X_test_scaled, -1)
+X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
+X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
+# Build EEGNet model using official implementation
+model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(X_train_eegnet, y_train, epochs=30, batch_size=64, validation_split=0.2)
 
-# Train model
-model.fit(X_train_scaled, y_train, epochs=30, batch_size=64, validation_split=0.2)
-
-# Evaluate model
-_, acc = model.evaluate(X_test_scaled, y_test)
-logging.info(f"Test accuracy: {acc:.3f}")
+# Evaluate EEGNet
+_, acc = model.evaluate(X_test_eegnet, y_test)
+logging.info(f"EEGNet Test accuracy: {acc:.3f}")
 
 # Print confusion matrix and classification report
-y_pred = model.predict(X_test_scaled)
+y_pred = model.predict(X_test_eegnet)
 y_pred_labels = np.argmax(y_pred, axis=1)
 y_true_labels = np.argmax(y_test, axis=1)
-logging.info(f"Confusion Matrix:\n{confusion_matrix(y_true_labels, y_pred_labels)}")
-logging.info(f"Classification Report:\n{classification_report(y_true_labels, y_pred_labels, target_names=le.classes_)}")
+logging.info(f"EEGNet Confusion Matrix:\n{confusion_matrix(y_true_labels, y_pred_labels)}")
+logging.info(f"EEGNet Classification Report:\n{classification_report(y_true_labels, y_pred_labels, target_names=le.classes_)}")
 
-# Save model and label encoder
-model.save('eeg_direction_model.h5')
+# Save EEGNet model and label encoder
+model.save(config["MODEL_CNN"])
 joblib.dump(le, config["LABEL_ENCODER"])
 joblib.dump(scaler, config["SCALER_CNN"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)

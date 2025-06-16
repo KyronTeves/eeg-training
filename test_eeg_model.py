@@ -13,6 +13,8 @@ import pandas as pd
 import joblib
 import logging
 from tensorflow.keras.models import load_model # type: ignore
+from EEGModels import EEGNet
+
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from utils import load_config, window_data
@@ -98,15 +100,20 @@ X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
 X_windows_scaled = scaler.transform(X_windows_flat).reshape(X_windows.shape)
 X_windows_flat_scaled = X_windows_scaled.reshape(X_windows.shape[0], -1)
 
+# Prepare data for EEGNet: (batch, window, channels) -> (batch, channels, window, 1)
+X_windows_eegnet = np.expand_dims(X_windows_scaled, -1)
+X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
+
 num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
 indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
 for idx in indices:
-    # Conv1D model
-    sample_cnn = X_windows_scaled[idx].reshape(1, WINDOW_SIZE, N_CHANNELS)
     actual_label = y_windows[idx]
-    pred_cnn = model.predict(sample_cnn)
-    pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn)])[0]
+    sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
+    pred_eegnet = model.predict(sample_eegnet)
+    pred_label_eegnet = le.inverse_transform([np.argmax(pred_eegnet)])[0]
+    logging.info(f"Actual label:   {actual_label}")
+    logging.info(f"EEGNet Predicted label: {pred_label_eegnet}")
     # Random Forest
     sample_rf = X_windows_flat_scaled[idx].reshape(1, -1)
     pred_rf = rf.predict(sample_rf)
@@ -114,8 +121,6 @@ for idx in indices:
     # XGBoost
     pred_xgb = xgb.predict(sample_rf)
     pred_label_xgb = le.inverse_transform(pred_xgb)[0]
-    logging.info(f"Actual label:   {actual_label}")
-    logging.info(f"Conv1D Predicted label: {pred_label_cnn}")
     logging.info(f"Random Forest Predicted label: {pred_label_rf}")
     logging.info(f"XGBoost Predicted label: {pred_label_xgb}")
     logging.info("-")
