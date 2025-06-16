@@ -20,6 +20,7 @@ from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 from EEGModels import EEGNet
+from sklearn.utils.class_weight import compute_class_weight
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,7 +72,26 @@ scaler.fit(X_train_flat)
 X_train_scaled = scaler.transform(X_train.reshape(-1, N_CHANNELS)).reshape(X_train.shape)
 X_test_scaled = scaler.transform(X_test.reshape(-1, N_CHANNELS)).reshape(X_test.shape)
 
-logging.info(f"Train shape: {X_train_scaled.shape}, Test shape: {X_test_scaled.shape}")
+# Data augmentation: add noisy/drifted/artifacted copies to training set
+def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
+    X_aug = X.copy()
+    # Add Gaussian noise
+    X_aug += np.random.normal(0, noise_std, X_aug.shape)
+    # Add baseline drift (slow sine wave)
+    drift = (np.sin(np.linspace(0, np.pi, X_aug.shape[1])) * drift_max)
+    X_aug += drift[None, :, None]
+    # Randomly zero out some windows (simulate artifacts)
+    mask = np.random.rand(*X_aug.shape) < artifact_prob
+    X_aug[mask] = 0
+    return X_aug
+
+X_train_aug = augment_eeg_data(X_train_scaled)
+y_train_aug = y_train.copy()
+# Concatenate original and augmented data
+X_train_scaled = np.concatenate([X_train_scaled, X_train_aug], axis=0)
+y_train = np.concatenate([y_train, y_train_aug], axis=0)
+
+logging.info(f"Train shape (augmented): {X_train_scaled.shape}, Test shape: {X_test_scaled.shape}")
 
 # Prepare data for EEGNet: (batch, Samples, Chans) -> (batch, Chans, Samples, 1)
 X_train_eegnet = np.expand_dims(X_train_scaled, -1)
@@ -79,10 +99,27 @@ X_test_eegnet = np.expand_dims(X_test_scaled, -1)
 X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
 X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
+# Downsample majority class (neutral) to match minority classes
+unique, counts = np.unique(np.argmax(y_train, axis=1), return_counts=True)
+min_count = np.min(counts)
+indices_per_class = [np.where(np.argmax(y_train, axis=1) == i)[0] for i in range(len(unique))]
+downsampled_indices = np.concatenate([np.random.choice(idxs, min_count, replace=False) for idxs in indices_per_class])
+# Shuffle indices
+np.random.shuffle(downsampled_indices)
+X_train_scaled = X_train_scaled[downsampled_indices]
+y_train = y_train[downsampled_indices]
+
+# Compute class weights for the (now balanced) training set
+labels_train = np.argmax(y_train, axis=1)
+class_weights = compute_class_weight('balanced', classes=np.unique(labels_train), y=labels_train)
+class_weight_dict = dict(enumerate(class_weights))
+
+logging.info(f"Class distribution after downsampling: {np.bincount(labels_train)}")
+
 # Build EEGNet model using official implementation
 model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
 model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-model.fit(X_train_eegnet, y_train, epochs=30, batch_size=64, validation_split=0.2)
+model.fit(X_train_eegnet, y_train, epochs=30, batch_size=64, validation_split=0.2, class_weight=class_weight_dict)
 
 # Evaluate EEGNet
 _, acc = model.evaluate(X_test_eegnet, y_test)

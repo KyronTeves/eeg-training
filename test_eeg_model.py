@@ -107,13 +107,17 @@ X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
 num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
 indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
+correct = 0
 for idx in indices:
     actual_label = y_windows[idx]
     sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
     pred_eegnet = model.predict(sample_eegnet)
     pred_label_eegnet = le.inverse_transform([np.argmax(pred_eegnet)])[0]
+    match = (pred_label_eegnet == actual_label)
+    if match:
+        correct += 1
     logging.info(f"Actual label:   {actual_label}")
-    logging.info(f"EEGNet Predicted label: {pred_label_eegnet}")
+    logging.info(f"EEGNet Predicted label: {pred_label_eegnet} | Match: {match}")
     # Random Forest
     sample_rf = X_windows_flat_scaled[idx].reshape(1, -1)
     pred_rf = rf.predict(sample_rf)
@@ -124,3 +128,4 @@ for idx in indices:
     logging.info(f"Random Forest Predicted label: {pred_label_rf}")
     logging.info(f"XGBoost Predicted label: {pred_label_xgb}")
     logging.info("-")
+logging.info(f"EEGNet accuracy on {num_samples} test samples: {correct}/{num_samples} ({correct/num_samples:.2%})")
