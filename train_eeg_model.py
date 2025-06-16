@@ -24,7 +24,10 @@ from xgboost import XGBClassifier
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("eeg_training.log", mode='a')
+    ]
 )
 
 config = load_config()
@@ -36,9 +39,20 @@ try:
     X_windows = np.load(config["WINDOWED_NPY"])
     y_windows = np.load(config["WINDOWED_LABELS_NPY"])
     logging.info(f"Loaded windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
+except FileNotFoundError:
+    logging.error(f"Windowed data file not found.")
+    raise
 except Exception as e:
     logging.error(f"Failed to load windowed data: {e}")
     raise
+
+# Data validation checks
+if np.isnan(X_windows).any():
+    logging.error("Windowed EEG data contains NaN values.")
+    raise ValueError("Windowed EEG data contains NaN values.")
+if np.isnan(y_windows).any():
+    logging.error("Windowed labels contain NaN values.")
+    raise ValueError("Windowed labels contain NaN values.")
 
 # Encode labels
 le = LabelEncoder()

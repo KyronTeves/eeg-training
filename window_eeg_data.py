@@ -16,7 +16,10 @@ from utils import load_config, window_data
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("eeg_training.log", mode='a')
+    ]
 )
 
 # Load configuration from config.json
@@ -34,6 +37,12 @@ USE_SESSION_TYPES = config["USE_SESSION_TYPES"]
 # Load raw data
 try:
     raw_data = pd.read_csv(RAW_CSV)
+except FileNotFoundError:
+    logging.error(f"Raw data file {RAW_CSV} not found.")
+    raise
+except pd.errors.EmptyDataError:
+    logging.error(f"Raw data file {RAW_CSV} is empty.")
+    raise
 except Exception as e:
     logging.error(f"Failed to load raw data: {e}")
     raise
@@ -51,11 +60,14 @@ labels = raw_data['label'].values
 
 # Data validation checks
 if np.isnan(X).any():
+    logging.error("EEG data contains NaN values.")
     raise ValueError("EEG data contains NaN values.")
 if pd.isnull(labels).any():
+    logging.error("Labels contain NaN values.")
     raise ValueError("Labels contain NaN values.")
 valid_labels = set(config["LABELS"])
 if not set(np.unique(labels.flatten())).issubset(valid_labels):
+    logging.error(f"Found labels outside expected set: {valid_labels}")
     raise ValueError(f"Found labels outside expected set: {valid_labels}")
 
 # Reshape X to [n_samples, n_channels]
@@ -70,8 +82,10 @@ X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
 
 # Windowed data validation
 if X_windows.shape[1:] != (WINDOW_SIZE, N_CHANNELS):
+    logging.error("Windowed data shape mismatch.")
     raise ValueError("Windowed data shape mismatch.")
 if X_windows.shape[0] != y_windows.shape[0]:
+    logging.error("Number of windows and labels do not match.")
     raise ValueError("Number of windows and labels do not match.")
 
 logging.info(f"Windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")

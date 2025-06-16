@@ -16,11 +16,14 @@ from utils import load_config
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter
 
-# Configure logging
+# Configure logging to both console and file
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("eeg_training.log", mode='a')
+    ]
 )
 
 config = load_config()
@@ -99,50 +102,60 @@ def main():
         board.prepare_session()
         board.start_stream()
         eeg_channels = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
+    except FileNotFoundError as fnf:
+        logging.error(f"Could not find BrainFlow board or driver: {fnf}")
+        return
     except Exception as e:
         logging.error(f"Failed to start board session: {e}")
         return
 
-    file_exists = os.path.isfile(OUTPUT_CSV)
-    with open(OUTPUT_CSV, 'a', newline='') as csvfile:
-        writer = csv.writer(csvfile)
-        header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
-        if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
-            writer.writerow(header)
-        logging.info("Session types: pure, jolt, hybrid, long")
-        session_type = input("Enter session type: ").strip().lower()
-        while session_type not in SESSION_TYPES:
-            session_type = input(f"Invalid. Enter session type {SESSION_TYPES}: ").strip().lower()
-        logging.info(f"Available labels: {LABELS}")
-        label = input("Enter direction label: ").strip().lower()
-        while label not in LABELS:
-            label = input(f"Invalid. Enter label {LABELS}: ").strip().lower()
-        if session_type == 'long':
-            n_trials = 1
-        else:
-            n_trials = TRIALS_PER_LABEL
-        meta = {
-            'session_type': session_type,
-            'label': label,
-            'n_trials': n_trials,
-            'timestamps': [],
-            'rows_written': 0
-        }
-        for trial in range(n_trials):
-            logging.info(f"\nGet ready for '{label}' - Trial {trial+1}/{n_trials} ({session_type})...")
-            for sec in range(3, 0, -1):
-                print(f"Starting in {sec}...", end='\r', flush=True)
-                time.sleep(1)
-            print(" " * 20, end='\r')
-            logging.info(f"Collecting data for '{label}' ({session_type})...")
-            rows_written, timestamps = collect_eeg(board, eeg_channels, session_type, label, trial, writer)
-            meta['rows_written'] += rows_written
-            meta['timestamps'].extend(timestamps)
-            logging.info(f"Trial {trial+1} for '{label}' ({session_type}) complete.")
-        # Save metadata
-        meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
-        with open(meta_filename, 'w') as metaf:
-            json.dump(meta, metaf, indent=2) # needs json import
+    try:
+        file_exists = os.path.isfile(OUTPUT_CSV)
+        with open(OUTPUT_CSV, 'a', newline='') as csvfile:
+            writer = csv.writer(csvfile)
+            header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
+            if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
+                writer.writerow(header)
+            logging.info("Session types: pure, jolt, hybrid, long")
+            session_type = input("Enter session type: ").strip().lower()
+            while session_type not in SESSION_TYPES:
+                session_type = input(f"Invalid. Enter session type {SESSION_TYPES}: ").strip().lower()
+            logging.info(f"Available labels: {LABELS}")
+            label = input("Enter direction label: ").strip().lower()
+            while label not in LABELS:
+                label = input(f"Invalid. Enter label {LABELS}: ").strip().lower()
+            if session_type == 'long':
+                n_trials = 1
+            else:
+                n_trials = TRIALS_PER_LABEL
+            meta = {
+                'session_type': session_type,
+                'label': label,
+                'n_trials': n_trials,
+                'timestamps': [],
+                'rows_written': 0
+            }
+            for trial in range(n_trials):
+                logging.info(f"\nGet ready for '{label}' - Trial {trial+1}/{n_trials} ({session_type})...")
+                for sec in range(3, 0, -1):
+                    print(f"Starting in {sec}...", end='\r', flush=True)
+                    time.sleep(1)
+                print(" " * 20, end='\r')
+                logging.info(f"Collecting data for '{label}' ({session_type})...")
+                rows_written, timestamps = collect_eeg(board, eeg_channels, session_type, label, trial, writer)
+                meta['rows_written'] += rows_written
+                meta['timestamps'].extend(timestamps)
+                logging.info(f"Trial {trial+1} for '{label}' ({session_type}) complete.")
+            # Save metadata
+            meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
+            try:
+                with open(meta_filename, 'w') as metaf:
+                    json.dump(meta, metaf, indent=2)
+            except Exception as e:
+                logging.error(f"Failed to save metadata file {meta_filename}: {e}")
+    except Exception as e:
+        logging.error(f"Error during data collection or file writing: {e}")
+        return
 
     board.stop_stream()
     board.release_session()

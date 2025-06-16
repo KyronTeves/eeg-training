@@ -20,7 +20,10 @@ from utils import load_config, window_data
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
-    handlers=[logging.StreamHandler()]
+    handlers=[
+        logging.StreamHandler(),
+        logging.FileHandler("eeg_training.log", mode='a')
+    ]
 )
 
 config = load_config()
@@ -37,6 +40,12 @@ try:
     df = pd.read_csv(CSV_FILE)
     test_df = df[df['session_type'].isin(TEST_SESSION_TYPES)]
     logging.info(f"Test samples: {len(test_df)}")
+except FileNotFoundError:
+    logging.error(f"Test data file {CSV_FILE} not found.")
+    raise
+except pd.errors.EmptyDataError:
+    logging.error(f"Test data file {CSV_FILE} is empty.")
+    raise
 except Exception as e:
     logging.error(f"Failed to load or filter test data: {e}")
     raise
@@ -48,11 +57,14 @@ labels = test_df['label'].values
 
 # Data validation checks
 if np.isnan(X).any():
+    logging.error("EEG data contains NaN values.")
     raise ValueError("EEG data contains NaN values.")
 if pd.isnull(labels).any():
+    logging.error("Labels contain NaN values.")
     raise ValueError("Labels contain NaN values.")
 valid_labels = set(config["LABELS"])
 if not set(np.unique(labels.flatten())).issubset(valid_labels):
+    logging.error(f"Found labels outside expected set: {valid_labels}")
     raise ValueError(f"Found labels outside expected set: {valid_labels}")
 
 X = X.reshape(-1, N_CHANNELS)
@@ -61,8 +73,10 @@ X_windows, y_windows = window_data(X, labels, WINDOW_SIZE, STEP_SIZE)
 
 # Windowed data validation
 if X_windows.shape[1:] != (WINDOW_SIZE, N_CHANNELS):
+    logging.error("Windowed data shape mismatch.")
     raise ValueError("Windowed data shape mismatch.")
 if X_windows.shape[0] != y_windows.shape[0]:
+    logging.error("Number of windows and labels do not match.")
     raise ValueError("Number of windows and labels do not match.")
 
 logging.info(f"Test windows: {X_windows.shape}")
@@ -73,6 +87,9 @@ try:
     model = load_model(config["MODEL_CNN"])
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
+except FileNotFoundError as fnf:
+    logging.error(f"Model or encoder file not found: {fnf}")
+    raise
 except Exception as e:
     logging.error(f"Failed to load models or encoders: {e}")
     raise
