@@ -2,14 +2,12 @@ import time
 import numpy as np
 import joblib
 import os
-import json
+from utils import load_config
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-# Load configuration from config.json
-with open('config.json', 'r') as f:
-    config = json.load(f)
+config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]

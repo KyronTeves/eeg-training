@@ -1,6 +1,6 @@
 import numpy as np
 import joblib
-import json
+from utils import load_config
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow.keras.models import Sequential # type: ignore
@@ -10,14 +10,11 @@ from sklearn.metrics import confusion_matrix, classification_report
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
 
-# Load configuration from config.json
-with open('config.json', 'r') as f:
-    config = json.load(f)
+config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
 
-# Load windowed data
 X_windows = np.load(config["WINDOWED_NPY"])
 y_windows = np.load(config["WINDOWED_LABELS_NPY"])
 
