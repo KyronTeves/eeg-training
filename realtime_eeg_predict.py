@@ -100,8 +100,9 @@ try:
                 eeg_window_flat = eeg_window.flatten().reshape(1, -1)
                 eeg_window_scaled_tree = scaler_tree.transform(eeg_window_flat)
             if use_cnn:
-                eeg_window_scaled_cnn = scaler_cnn.transform(eeg_window)
-                eeg_window_cnn = np.expand_dims(eeg_window_scaled_cnn, axis=0)  # (1, window, channels)
+                eeg_window_scaled_cnn = scaler_cnn.transform(eeg_window)  # (window, channels)
+                eeg_window_cnn = np.expand_dims(eeg_window_scaled_cnn, axis=0)   # (1, window, channels)
+                eeg_window_cnn = np.expand_dims(eeg_window_cnn, axis=-1)         # (1, window, channels, 1)
                 eeg_window_cnn = np.transpose(eeg_window_cnn, (0, 2, 1, 3))      # (1, channels, window, 1)
             if use_rf:
                 pred_rf = rf.predict(eeg_window_scaled_tree)
