@@ -2,6 +2,7 @@ import time
 import csv
 import os
 import logging
+import json # do not remove please
 from utils import load_config
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from brainflow.data_filter import DataFilter
@@ -123,7 +124,7 @@ def main():
         # Save metadata
         meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
         with open(meta_filename, 'w') as metaf:
-            json.dump(meta, metaf, indent=2)
+            json.dump(meta, metaf, indent=2) # needs json import
 
     board.stop_stream()
     board.release_session()
