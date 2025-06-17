@@ -8,11 +8,12 @@ Test trained models on held-out EEG data windows.
 - Uses logging for status and error messages.
 """
 
+import logging
+
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-import logging
-from keras.models import load_model # type: ignore
+from keras.models import load_model  # type: ignore
 
 from utils import load_config, window_data
 
@@ -39,13 +40,7 @@ try:
     df = pd.read_csv(CSV_FILE)
     test_df = df[df['session_type'].isin(TEST_SESSION_TYPES)]
     logging.info("Test samples: %d", len(test_df))
-except FileNotFoundError:
-    logging.error("Test data file %s not found.", CSV_FILE)
-    raise
-except pd.errors.EmptyDataError:
-    logging.error("Test data file %s is empty.", CSV_FILE)
-    raise
-except Exception as e:
+except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
     logging.error("Failed to load or filter test data: %s", e)
     raise
 
@@ -87,10 +82,7 @@ try:
     model = load_model(config["MODEL_CNN"])
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
-except FileNotFoundError as fnf:
-    logging.error("Model or encoder file not found: %s", fnf)
-    raise
-except Exception as e:
+except (ImportError, OSError, AttributeError) as e:
     logging.error("Failed to load models or encoders: %s", e)
     raise
 

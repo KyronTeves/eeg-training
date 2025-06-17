@@ -111,7 +111,7 @@ def main():
     except FileNotFoundError as fnf:
         logging.error("Could not find BrainFlow board or driver: %s", fnf)
         return
-    except Exception as e:
+    except (OSError, ValueError, KeyError) as e:
         logging.error("Failed to start board session: %s", e)
         return
 
@@ -157,16 +157,16 @@ def main():
             try:
                 with open(meta_filename, 'w', encoding='utf-8') as metaf:
                     json.dump(meta, metaf, indent=2)
-            except Exception as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logging.error("Failed to save metadata file %s: %s", meta_filename, e)
-    except Exception as e:
+    except (OSError, ValueError, csv.Error, KeyError) as e:
         logging.error("Error during data collection or file writing: %s", e)
         return
     finally:
         try:
             board.stop_stream()
             board.release_session()
-        except Exception as e:
+        except (OSError, AttributeError) as e:
             logging.error("Error releasing board session: %s", e)
 
 if __name__ == "__main__":

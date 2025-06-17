@@ -8,9 +8,11 @@ Segment raw EEG data into overlapping windows for model training.
 - Uses logging for status and error messages.
 """
 
+import logging
+
 import numpy as np
 import pandas as pd
-import logging
+
 from utils import load_config, window_data
 
 logging.basicConfig(
@@ -37,13 +39,7 @@ USE_SESSION_TYPES = config["USE_SESSION_TYPES"]
 # Load raw data
 try:
     raw_data = pd.read_csv(RAW_CSV)
-except FileNotFoundError:
-    logging.error("Raw data file %s not found.", RAW_CSV)
-    raise
-except pd.errors.EmptyDataError:
-    logging.error("Raw data file %s is empty.", RAW_CSV)
-    raise
-except Exception as e:
+except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
     logging.error("Failed to load raw data: %s", e)
     raise
 
@@ -94,6 +90,6 @@ try:
     np.save(WINDOWED_NPY, X_windows)
     np.save(WINDOWED_LABELS_NPY, y_windows)
     logging.info("Saved windowed data to %s and %s", WINDOWED_NPY, WINDOWED_LABELS_NPY)
-except Exception as e:
+except (OSError, ValueError) as e:
     logging.error("Failed to save windowed data: %s", e)
     raise

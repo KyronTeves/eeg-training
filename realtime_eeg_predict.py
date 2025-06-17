@@ -45,7 +45,7 @@ try:
 except FileNotFoundError as fnf:
     logging.error("Could not find BrainFlow board or driver: %s", fnf)
     exit(1)
-except Exception as e:
+except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to start board session: %s", e)
     exit(1)
 
@@ -105,7 +105,7 @@ try:
 except FileNotFoundError as fnf:
     logging.error("Model or encoder file not found: %s", fnf)
     exit(1)
-except Exception as e:
+except (OSError, joblib.externals.loky.process_executor.TerminatedWorkerError, ImportError, AttributeError) as e:
     logging.error("Failed to load models or encoders: %s", e)
     exit(1)
 
@@ -143,7 +143,7 @@ try:
         time.sleep(1)
 except KeyboardInterrupt:
     logging.info("\nStopping...")
-except Exception as e:
+except (OSError, RuntimeError, ValueError) as e:
     logging.error("Error during real-time prediction loop: %s", e)
 finally:
     board.stop_stream()

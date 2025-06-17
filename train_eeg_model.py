@@ -43,9 +43,9 @@ try:
     y_windows = np.load(config["WINDOWED_LABELS_NPY"])
     logging.info("Loaded windowed data shape: %s, Labels shape: %s", X_windows.shape, y_windows.shape)
 except FileNotFoundError:
-    logging.error(f"Windowed data file not found.")
+    logging.error("Windowed data file not found.")
     raise
-except Exception as e:
+except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
@@ -77,7 +77,7 @@ X_test_scaled = scaler.transform(X_test.reshape(-1, N_CHANNELS)).reshape(X_test.
 # Downsample majority class (neutral) to match minority classes
 unique, counts = np.unique(np.argmax(y_train, axis=1), return_counts=True)
 min_count = np.min(counts)
-indices_per_class = [np.where(np.argmax(y_train, axis=1) == i)[0] for i in range(len(unique))]
+indices_per_class = [np.nonzero(np.argmax(y_train, axis=1) == i)[0] for i in range(len(unique))]
 downsampled_indices = np.concatenate([np.random.choice(idxs, min_count, replace=False) for idxs in indices_per_class])
 np.random.shuffle(downsampled_indices)
 X_train_bal = X_train_scaled[downsampled_indices]
@@ -89,7 +89,7 @@ def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     # Add Gaussian noise
     X_aug += np.random.normal(0, noise_std, X_aug.shape)
     # Add baseline drift (slow sine wave)
-    drift = (np.sin(np.linspace(0, np.pi, X_aug.shape[1])) * drift_max)
+    drift = np.sin(np.linspace(0, np.pi, X_aug.shape[1])) * drift_max
     X_aug += drift[None, :, None]
     # Randomly zero out some windows (simulate artifacts)
     mask = np.random.rand(*X_aug.shape) < artifact_prob

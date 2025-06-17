@@ -79,6 +79,7 @@ def run_session_calibration(X_calib, y_calib, base_model_path, base_scaler_path,
     """
     Windows, preprocesses, and fine-tunes the model/scaler for the session.
     """
+    _ = base_scaler_path  # Dummy assignment to suppress unused argument warning
     le = joblib.load(label_encoder_path)
     y_calib_encoded = le.transform(y_calib)
     y_calib_cat = to_categorical(y_calib_encoded)
