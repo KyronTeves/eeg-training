@@ -83,30 +83,7 @@ if X_windows.shape[0] != y_windows.shape[0]:
 
 logging.info(f"Test windows: {X_windows.shape}")
 
-# Downsample majority class (neutral) in test set to match minority classes
-unique_test, counts_test = np.unique(labels, return_counts=True)
-min_count_test = np.min(counts_test)
-indices_per_class_test = [np.where(labels == c)[0] for c in unique_test]
-downsampled_indices_test = np.concatenate([
-    np.random.choice(idxs, min_count_test, replace=False) if len(idxs) > min_count_test else idxs
-    for idxs in indices_per_class_test
-])
-np.random.shuffle(downsampled_indices_test)
-X = X[downsampled_indices_test]
-labels = labels[downsampled_indices_test]
-
-# Limit the number of 'neutral' samples in the test set to a maximum of 5
-max_neutral = 5
-neutral_label = 'neutral'
-neutral_indices = np.where(labels == neutral_label)[0]
-other_indices = np.where(labels != neutral_label)[0]
-if len(neutral_indices) > max_neutral:
-    neutral_indices = np.random.choice(neutral_indices, max_neutral, replace=False)
-selected_indices = np.concatenate([neutral_indices, other_indices])
-np.random.shuffle(selected_indices)
-X = X[selected_indices]
-labels = labels[selected_indices]
-
+# Proceed with all windowed test data as originally intended
 try:
     le = joblib.load(config["LABEL_ENCODER"])
     scaler = joblib.load(config["SCALER_CNN"])
