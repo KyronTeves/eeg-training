@@ -13,7 +13,7 @@ import logging
 import joblib
 import numpy as np
 import pandas as pd
-from keras.utils import to_categorical  # type: ignore
+from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split

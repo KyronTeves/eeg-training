@@ -18,5 +18,11 @@ eeg_scaler.pkl
 eeg_scaler_tree.pkl
 eeg_label_classes.npy
 
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
 # VS Code settings
 .vscode/
