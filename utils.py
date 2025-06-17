@@ -15,6 +15,7 @@ from typing import Tuple
 import joblib
 import numpy as np
 from keras.models import load_model
+from keras.optimizers import Adam
 from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
@@ -105,6 +106,12 @@ def run_session_calibration(
     X_calib_eegnet = np.expand_dims(X_calib_scaled, -1)
     X_calib_eegnet = np.transpose(X_calib_eegnet, (0, 2, 1, 3))
     model = load_model(base_model_path)
+    # Recompile model with new optimizer to avoid Keras variable mismatch error
+    model.compile(
+        optimizer=Adam(learning_rate=0.001),
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
+    )
     model.fit(
         X_calib_eegnet, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
     )

@@ -1,3 +1,7 @@
+"""
+Unit tests for EEG training system utility functions.
+"""
+
 import numpy as np
 import pytest
 from utils import window_data, load_config

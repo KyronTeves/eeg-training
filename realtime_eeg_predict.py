@@ -11,13 +11,27 @@ Perform real-time EEG prediction using trained models.
 import logging
 import os
 import time
+from collections import Counter
 
 import joblib
 import numpy as np
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 from keras.models import load_model
+import tensorflow as tf
 
 from utils import collect_calibration_data, load_config, run_session_calibration
+
+# Enable TensorFlow debug mode for better error messages
+tf.data.experimental.enable_debug_mode()
+
+# Ensure eager execution is enabled for Keras/TensorFlow compatibility
+try:
+    tf.config.run_functions_eagerly(True)
+except RuntimeError:
+    try:
+        tf.compat.v1.enable_eager_execution()
+    except RuntimeError:
+        pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,20 +84,15 @@ cnn = load_model("models/eeg_direction_model_session.h5")
 scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
 logging.info("Session calibration complete. Using session-specific model and scaler.")
 
-logging.info("Select model for real-time prediction:")
-logging.info("1: Random Forest\n2: XGBoost\n3: Both\n4: EEGNet (CNN)")
-model_choice = input("Enter choice (1/2/3/4): ").strip()
-use_rf = model_choice in ["1", "3"]
-use_xgb = model_choice in ["2", "3"]
-use_cnn = model_choice == "4"
+# Load all models and scalers for ensemble (no user input)
+USE_RF = True
+USE_XGB = True
+USE_CNN = True
 
-required_files = [config["LABEL_ENCODER"]]
-if use_rf:
-    required_files += [config["MODEL_RF"], config["SCALER_TREE"]]
-if use_xgb:
-    required_files += [config["MODEL_XGB"], config["SCALER_TREE"]]
-if use_cnn:
-    required_files += [config["MODEL_CNN"], config["SCALER_CNN"]]
+required_files = [config["LABEL_ENCODER"],
+                  config["MODEL_RF"], config["SCALER_TREE"],
+                  config["MODEL_XGB"], config["SCALER_TREE"],
+                  "models/eeg_direction_model_session.h5", "models/eeg_scaler_session.pkl"]
 for f in required_files:
     if not os.path.exists(f):
         logging.error(
@@ -91,18 +100,12 @@ for f in required_files:
         )
         exit(1)
 
-scaler_tree = None  # Ensure scaler_tree is always defined # pylint: disable=invalid-name
-eeg_window_scaled_tree = None  # Ensure eeg_window_scaled_tree is always defined # pylint: disable=invalid-name
 try:
-    if use_rf:
-        rf = joblib.load(config["MODEL_RF"])
-        scaler_tree = joblib.load(config["SCALER_TREE"])
-    if use_xgb:
-        xgb = joblib.load(config["MODEL_XGB"])
-        scaler_tree = joblib.load(config["SCALER_TREE"])
-    if use_cnn:
-        cnn = load_model(config["MODEL_CNN"])
-        scaler_cnn = joblib.load(config["SCALER_CNN"])
+    rf = joblib.load(config["MODEL_RF"])
+    xgb = joblib.load(config["MODEL_XGB"])
+    scaler_tree = joblib.load(config["SCALER_TREE"])
+    cnn = load_model("models/eeg_direction_model_session.h5")
+    scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
     le = joblib.load(config["LABEL_ENCODER"])
 except FileNotFoundError as fnf:
     logging.error("Model or encoder file not found: %s", fnf)
@@ -118,14 +121,15 @@ except (
 
 try:
     while True:
+        eeg_window_scaled_tree = None  # Initialize at the start of each loop (not a constant)
         data = board.get_current_board_data(WINDOW_SIZE)
         if data.shape[1] >= WINDOW_SIZE:
             eeg_window = data[CHANNELS, -WINDOW_SIZE:]
             eeg_window = eeg_window.T
-            if use_rf or use_xgb:
+            if USE_RF or USE_XGB:
                 eeg_window_flat = eeg_window.flatten().reshape(1, -1)
                 eeg_window_scaled_tree = scaler_tree.transform(eeg_window_flat)
-            if use_cnn:
+            if USE_CNN:
                 eeg_window_scaled_cnn = scaler_cnn.transform(
                     eeg_window
                 )  # (window, channels)
@@ -138,7 +142,7 @@ try:
                 eeg_window_cnn = np.transpose(
                     eeg_window_cnn, (0, 2, 1, 3)
                 )  # (1, channels, window, 1)
-            if use_rf:
+            if USE_RF:
                 pred_rf = rf.predict(eeg_window_scaled_tree)
                 prob_rf = rf.predict_proba(eeg_window_scaled_tree).max()
                 pred_label_rf = le.inverse_transform(pred_rf)[0]
@@ -147,7 +151,8 @@ try:
                     pred_label_rf,
                     prob_rf,
                 )
-            if use_xgb:
+                print(f"Random Forest: {pred_label_rf} (confidence: {prob_rf:.2f})")
+            if USE_XGB:
                 pred_xgb = xgb.predict(eeg_window_scaled_tree)
                 prob_xgb = xgb.predict_proba(eeg_window_scaled_tree).max()
                 pred_label_xgb = le.inverse_transform(pred_xgb)[0]
@@ -156,13 +161,30 @@ try:
                     pred_label_xgb,
                     prob_xgb,
                 )
-            if use_cnn:
+                print(f"XGBoost: {pred_label_xgb} (confidence: {prob_xgb:.2f})")
+            if USE_CNN:
                 pred_cnn = cnn.predict(eeg_window_cnn)
                 prob_cnn = pred_cnn.max()
                 pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn)])[0]
                 logging.info(
                     "EEGNet Prediction: %s (confidence: %.2f)", pred_label_cnn, prob_cnn
                 )
+                print(f"EEGNet: {pred_label_cnn} (confidence: {prob_cnn:.2f})")
+            # Hard voting ensemble
+            votes = []
+            if USE_CNN:
+                votes.append(pred_label_cnn)
+            if USE_RF:
+                votes.append(pred_label_rf)
+            if USE_XGB:
+                votes.append(pred_label_xgb)
+            if votes:
+                final_pred = Counter(votes).most_common(1)[0][0]
+                logging.info(
+                    "Ensemble (hard voting) Prediction: %s | Votes: %s",
+                    final_pred, votes
+                )
+                print(f"Predicted direction (ensemble): {final_pred}")
         else:
             logging.info(
                 "Waiting for enough data... (current samples: %d)", data.shape[1]
