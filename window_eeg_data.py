@@ -38,20 +38,20 @@ USE_SESSION_TYPES = config["USE_SESSION_TYPES"]
 try:
     raw_data = pd.read_csv(RAW_CSV)
 except FileNotFoundError:
-    logging.error(f"Raw data file {RAW_CSV} not found.")
+    logging.error("Raw data file %s not found.", RAW_CSV)
     raise
 except pd.errors.EmptyDataError:
-    logging.error(f"Raw data file {RAW_CSV} is empty.")
+    logging.error("Raw data file %s is empty.", RAW_CSV)
     raise
 except Exception as e:
-    logging.error(f"Failed to load raw data: {e}")
+    logging.error("Failed to load raw data: %s", e)
     raise
 
 # Filter by session_type if present
 if 'session_type' in raw_data.columns:
-    logging.info(f"Available session types: {raw_data['session_type'].unique()}")
+    logging.info("Available session types: %s", raw_data['session_type'].unique())
     raw_data = raw_data[raw_data['session_type'].isin(USE_SESSION_TYPES)]
-    logging.info(f"Using session types: {USE_SESSION_TYPES}, samples: {len(raw_data)}")
+    logging.info("Using session types: %s, samples: %d", USE_SESSION_TYPES, len(raw_data))
 
 # Use only EEG channel columns (ch_*) for features
 eeg_cols = [col for col in raw_data.columns if col.startswith('ch_')]
@@ -67,13 +67,13 @@ if pd.isnull(labels).any():
     raise ValueError("Labels contain NaN values.")
 valid_labels = set(config["LABELS"])
 if not set(np.unique(labels.flatten())).issubset(valid_labels):
-    logging.error(f"Found labels outside expected set: {valid_labels}")
-    raise ValueError(f"Found labels outside expected set: {valid_labels}")
+    logging.error("Found labels outside expected set: %s", valid_labels)
+    raise ValueError("Found labels outside expected set: %s" % valid_labels)
 
 # Reshape X to [n_samples, n_channels]
 if X.shape[1] != N_CHANNELS:
-    logging.error(f"Expected {N_CHANNELS} channels, but got {X.shape[1]} columns per sample.")
-    raise ValueError(f"Expected {N_CHANNELS} channels, but got {X.shape[1]} columns per sample.")
+    logging.error("Expected %d channels, but got %d columns per sample.", N_CHANNELS, X.shape[1])
+    raise ValueError("Expected %d channels, but got %d columns per sample." % (N_CHANNELS, X.shape[1]))
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
 
@@ -88,12 +88,12 @@ if X_windows.shape[0] != y_windows.shape[0]:
     logging.error("Number of windows and labels do not match.")
     raise ValueError("Number of windows and labels do not match.")
 
-logging.info(f"Windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
+logging.info("Windowed data shape: %s, Labels shape: %s", X_windows.shape, y_windows.shape)
 
 try:
     np.save(WINDOWED_NPY, X_windows)
     np.save(WINDOWED_LABELS_NPY, y_windows)
-    logging.info(f"Saved windowed data to {WINDOWED_NPY} and {WINDOWED_LABELS_NPY}")
+    logging.info("Saved windowed data to %s and %s", WINDOWED_NPY, WINDOWED_LABELS_NPY)
 except Exception as e:
-    logging.error(f"Failed to save windowed data: {e}")
+    logging.error("Failed to save windowed data: %s", e)
     raise

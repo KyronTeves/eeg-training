@@ -8,17 +8,16 @@ Utility functions for the EEG training system.
 """
 
 import json
-import numpy as np
-import pandas as pd
-from typing import Tuple, List
-import time
-import joblib
-from tensorflow.keras.models import load_model
-from tensorflow.keras.utils import to_categorical
-from EEGModels import EEGNet
-from sklearn.preprocessing import StandardScaler
 import logging
-import os
+import time
+from typing import Tuple
+
+import joblib
+import numpy as np
+from keras.models import load_model
+from keras.utils import to_categorical
+from sklearn.preprocessing import StandardScaler
+
 
 def load_config(path: str = 'config.json') -> dict:
     """Load configuration from a JSON file."""
@@ -73,7 +72,7 @@ def collect_calibration_data(board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_c
             time.sleep(WINDOW_SIZE / sample_rate)
         calib_X.extend(data)
         calib_y.extend([label] * len(data))
-        logging.info(f"Collected {len(data)} windows for label '{label}'.")
+        logging.info("Collected %d windows for label '%s'.", len(data), label)
     return np.array(calib_X), np.array(calib_y)
 
 def run_session_calibration(X_calib, y_calib, base_model_path, base_scaler_path, label_encoder_path, out_model_path, out_scaler_path, epochs=3, batch_size=16):
@@ -94,4 +93,4 @@ def run_session_calibration(X_calib, y_calib, base_model_path, base_scaler_path,
     model.fit(X_calib_eegnet, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1)
     model.save(out_model_path)
     joblib.dump(scaler, out_scaler_path)
-    logging.info(f"Session calibration complete. Model saved to {out_model_path}, scaler saved to {out_scaler_path}.")
+    logging.info("Session calibration complete. Model saved to %s, scaler saved to %s.", out_model_path, out_scaler_path)

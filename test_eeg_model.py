@@ -12,11 +12,8 @@ import numpy as np
 import pandas as pd
 import joblib
 import logging
-from tensorflow.keras.models import load_model # type: ignore
-from EEGModels import EEGNet
+from keras.models import load_model # type: ignore
 
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
 from utils import load_config, window_data
 
 logging.basicConfig(
@@ -38,18 +35,18 @@ TEST_SESSION_TYPES = config["TEST_SESSION_TYPES"]
 NUM_TEST_SAMPLES = config["NUM_TEST_SAMPLES"]
 
 try:
-    logging.info(f"Loading data from {CSV_FILE} ...")
+    logging.info("Loading data from %s ...", CSV_FILE)
     df = pd.read_csv(CSV_FILE)
     test_df = df[df['session_type'].isin(TEST_SESSION_TYPES)]
-    logging.info(f"Test samples: {len(test_df)}")
+    logging.info("Test samples: %d", len(test_df))
 except FileNotFoundError:
-    logging.error(f"Test data file {CSV_FILE} not found.")
+    logging.error("Test data file %s not found.", CSV_FILE)
     raise
 except pd.errors.EmptyDataError:
-    logging.error(f"Test data file {CSV_FILE} is empty.")
+    logging.error("Test data file %s is empty.", CSV_FILE)
     raise
 except Exception as e:
-    logging.error(f"Failed to load or filter test data: {e}")
+    logging.error("Failed to load or filter test data: %s", e)
     raise
 
 # Use the utility function for windowing
@@ -66,8 +63,8 @@ if pd.isnull(labels).any():
     raise ValueError("Labels contain NaN values.")
 valid_labels = set(config["LABELS"])
 if not set(np.unique(labels.flatten())).issubset(valid_labels):
-    logging.error(f"Found labels outside expected set: {valid_labels}")
-    raise ValueError(f"Found labels outside expected set: {valid_labels}")
+    logging.error("Found labels outside expected set: %s", valid_labels)
+    raise ValueError("Found labels outside expected set: %s" % valid_labels)
 
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
@@ -81,7 +78,7 @@ if X_windows.shape[0] != y_windows.shape[0]:
     logging.error("Number of windows and labels do not match.")
     raise ValueError("Number of windows and labels do not match.")
 
-logging.info(f"Test windows: {X_windows.shape}")
+logging.info("Test windows: %s", X_windows.shape)
 
 # Proceed with all windowed test data as originally intended
 try:
@@ -91,10 +88,10 @@ try:
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
 except FileNotFoundError as fnf:
-    logging.error(f"Model or encoder file not found: {fnf}")
+    logging.error("Model or encoder file not found: %s", fnf)
     raise
 except Exception as e:
-    logging.error(f"Failed to load models or encoders: {e}")
+    logging.error("Failed to load models or encoders: %s", e)
     raise
 
 X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
@@ -117,8 +114,8 @@ for idx in indices:
     match = (pred_label_eegnet == actual_label)
     if match:
         correct += 1
-    logging.info(f"Actual label:   {actual_label}")
-    logging.info(f"EEGNet Predicted label: {pred_label_eegnet} | Match: {match}")
+    logging.info("Actual label:   %s", actual_label)
+    logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
     # Random Forest
     sample_rf = X_windows_flat_scaled[idx].reshape(1, -1)
     pred_rf = rf.predict(sample_rf)
@@ -126,7 +123,7 @@ for idx in indices:
     # XGBoost
     pred_xgb = xgb.predict(sample_rf)
     pred_label_xgb = le.inverse_transform(pred_xgb)[0]
-    logging.info(f"Random Forest Predicted label: {pred_label_rf}")
-    logging.info(f"XGBoost Predicted label: {pred_label_xgb}")
+    logging.info("Random Forest Predicted label: %s", pred_label_rf)
+    logging.info("XGBoost Predicted label: %s", pred_label_xgb)
     logging.info("-")
-logging.info(f"EEGNet accuracy on {num_samples} test samples: {correct}/{num_samples} ({correct/num_samples:.2%})")
+logging.info("EEGNet accuracy on %d test samples: %d/%d (%.2f%%)", num_samples, correct, num_samples, 100*correct/num_samples)

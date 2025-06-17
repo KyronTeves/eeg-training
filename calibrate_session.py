@@ -15,11 +15,11 @@ Usage:
 """
 
 import argparse
-import numpy as np
+
 import joblib
-from tensorflow.keras.models import load_model
-from tensorflow.keras.utils import to_categorical
-from EEGModels import EEGNet
+import numpy as np
+from keras.models import load_model
+from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
 parser = argparse.ArgumentParser(description="Session calibration for EEGNet.")

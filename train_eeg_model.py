@@ -8,19 +8,21 @@ Train EEGNet, Random Forest, and XGBoost models on windowed EEG data.
 - Uses logging for status and error messages.
 """
 
-import numpy as np
-import joblib
 import logging
+
+import joblib
+import numpy as np
 import pandas as pd
-from utils import load_config
+from keras.utils import to_categorical  # type: ignore
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
-from tensorflow.keras.utils import to_categorical # type: ignore
-from sklearn.metrics import confusion_matrix, classification_report
-from sklearn.ensemble import RandomForestClassifier
-from xgboost import XGBClassifier
-from EEGModels import EEGNet
 from sklearn.utils.class_weight import compute_class_weight
+from xgboost import XGBClassifier
+
+from EEGModels import EEGNet
+from utils import load_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,12 +41,12 @@ WINDOW_SIZE = config["WINDOW_SIZE"]
 try:
     X_windows = np.load(config["WINDOWED_NPY"])
     y_windows = np.load(config["WINDOWED_LABELS_NPY"])
-    logging.info(f"Loaded windowed data shape: {X_windows.shape}, Labels shape: {y_windows.shape}")
+    logging.info("Loaded windowed data shape: %s, Labels shape: %s", X_windows.shape, y_windows.shape)
 except FileNotFoundError:
     logging.error(f"Windowed data file not found.")
     raise
 except Exception as e:
-    logging.error(f"Failed to load windowed data: {e}")
+    logging.error("Failed to load windowed data: %s", e)
     raise
 
 # Data validation checks
@@ -105,7 +107,7 @@ labels_train = np.argmax(y_train_final, axis=1)
 class_weights = compute_class_weight('balanced', classes=np.unique(labels_train), y=labels_train)
 class_weight_dict = dict(enumerate(class_weights))
 
-logging.info(f"Class distribution after downsampling and augmentation: {np.bincount(labels_train)}")
+logging.info("Class distribution after downsampling and augmentation: %s", np.bincount(labels_train))
 
 # Prepare for EEGNet
 X_train_eegnet = np.expand_dims(X_train_final, -1)
@@ -120,14 +122,14 @@ model.fit(X_train_eegnet, y_train_final, epochs=30, batch_size=64, validation_sp
 
 # Evaluate EEGNet
 _, acc = model.evaluate(X_test_eegnet, y_test)
-logging.info(f"EEGNet Test accuracy: {acc:.3f}")
+logging.info("EEGNet Test accuracy: %.3f", acc)
 
 # Print confusion matrix and classification report
 y_pred = model.predict(X_test_eegnet)
 y_pred_labels = np.argmax(y_pred, axis=1)
 y_true_labels = np.argmax(y_test, axis=1)
-logging.info(f"EEGNet Confusion Matrix:\n{confusion_matrix(y_true_labels, y_pred_labels)}")
-logging.info(f"EEGNet Classification Report:\n{classification_report(y_true_labels, y_pred_labels, target_names=le.classes_)}")
+logging.info("EEGNet Confusion Matrix:\n%s", confusion_matrix(y_true_labels, y_pred_labels))
+logging.info("EEGNet Classification Report:\n%s", classification_report(y_true_labels, y_pred_labels, target_names=le.classes_))
 
 # Save EEGNet model and label encoder
 model.save(config["MODEL_CNN"])
@@ -153,16 +155,16 @@ rf = RandomForestClassifier(n_estimators=100, random_state=42)
 rf.fit(X_train_scaled_tree, y_train_tree)
 rf_pred = rf.predict(X_test_scaled_tree)
 logging.info("Random Forest Results:")
-logging.info(f"Confusion Matrix:\n{confusion_matrix(y_test_tree, rf_pred)}")
-logging.info(f"Classification Report:\n{classification_report(y_test_tree, rf_pred, target_names=le.classes_)}")
+logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
+logging.info("Classification Report:\n%s", classification_report(y_test_tree, rf_pred, target_names=le.classes_))
 
 # XGBoost
 xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='mlogloss')
 xgb.fit(X_train_scaled_tree, y_train_tree)
 xgb_pred = xgb.predict(X_test_scaled_tree)
 logging.info("XGBoost Results:")
-logging.info(f"Confusion Matrix:\n{confusion_matrix(y_test_tree, xgb_pred)}")
-logging.info(f"Classification Report:\n{classification_report(y_test_tree, xgb_pred, target_names=le.classes_)}")
+logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
+logging.info("Classification Report:\n%s", classification_report(y_test_tree, xgb_pred, target_names=le.classes_))
 
 # Save tree-based models
 joblib.dump(rf, config["MODEL_RF"])
