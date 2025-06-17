@@ -100,6 +100,7 @@ indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
 CORRECT = 0
 ENSEMBLE_CORRECT = 0
+RULE_BASED_CORRECT = 0
 for idx in indices:
     actual_label = y_windows[idx]
     sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
@@ -118,6 +119,16 @@ for idx in indices:
     ensemble_match = final_pred == actual_label
     if ensemble_match:
         ENSEMBLE_CORRECT += 1
+    # Rule-based ensemble
+    if pred_label_eegnet in ["left", "right", "up", "down"]:
+        rule_pred = pred_label_eegnet
+    elif pred_label_rf == "neutral" or pred_label_xgb == "neutral":
+        rule_pred = "neutral"
+    else:
+        rule_pred = final_pred
+    rule_match = rule_pred == actual_label
+    if rule_match:
+        RULE_BASED_CORRECT += 1
     # Individual EEGNet accuracy
     match = pred_label_eegnet == actual_label
     if match:
@@ -127,6 +138,7 @@ for idx in indices:
     logging.info("Random Forest Predicted label: %s", pred_label_rf)
     logging.info("XGBoost Predicted label: %s", pred_label_xgb)
     logging.info("Ensemble (hard voting) label: %s | Match: %s", final_pred, ensemble_match)
+    logging.info("Ensemble (rule-based) label: %s | Match: %s", rule_pred, rule_match)
     logging.info("-")
 logging.info(
     "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
@@ -141,4 +153,11 @@ logging.info(
     ENSEMBLE_CORRECT,
     num_samples,
     100 * ENSEMBLE_CORRECT / num_samples,
+)
+logging.info(
+    "Ensemble (rule-based) accuracy on %d test samples: %d/%d (%.2f%%)",
+    num_samples,
+    RULE_BASED_CORRECT,
+    num_samples,
+    100 * RULE_BASED_CORRECT / num_samples,
 )
