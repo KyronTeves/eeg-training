@@ -13,7 +13,7 @@ import numpy as np
 import joblib
 import os
 import logging
-from utils import load_config
+from utils import load_config, collect_calibration_data, run_session_calibration
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
 from sklearn.ensemble import RandomForestClassifier
 from xgboost import XGBClassifier
@@ -48,10 +48,26 @@ except Exception as e:
     logging.error(f"Failed to start board session: {e}")
     exit(1)
 
+# Calibration step before prediction loop
+LABELS = config["LABELS"]
 CHANNELS = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
-
-logging.info("Started EEG stream. Waiting for data to accumulate...")
-time.sleep(3)
+logging.info("Starting session calibration. Please follow the prompts.")
+X_calib, y_calib = collect_calibration_data(
+    board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=250
+)
+run_session_calibration(
+    X_calib, y_calib,
+    base_model_path=config["MODEL_CNN"],
+    base_scaler_path=config["SCALER_CNN"],
+    label_encoder_path=config["LABEL_ENCODER"],
+    out_model_path="models/eeg_direction_model_session.h5",
+    out_scaler_path="models/eeg_scaler_session.pkl",
+    epochs=3,
+    batch_size=16
+)
+cnn = load_model("models/eeg_direction_model_session.h5")
+scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
+logging.info("Session calibration complete. Using session-specific model and scaler.")
 
 logging.info("Select model for real-time prediction:")
 logging.info("1: Random Forest\n2: XGBoost\n3: Both\n4: EEGNet (CNN)")
