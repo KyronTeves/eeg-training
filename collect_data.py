@@ -1,5 +1,6 @@
 """
-Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy), label it, and save to CSV for training.
+Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy),
+label it, and save to CSV for training.
 
 - Prompts user for session type and label.
 - Collects data in trials, with configurable session phases.
@@ -20,11 +21,11 @@ from utils import load_config
 # Configure logging to both console and file
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode='a')
-    ]
+        logging.FileHandler("eeg_training.log", mode="a"),
+    ],
 )
 
 config = load_config()
@@ -39,13 +40,14 @@ TRIALS_PER_LABEL = config["TRIALS_PER_LABEL"]
 OUTPUT_CSV = config["OUTPUT_CSV"]
 N_CHANNELS = config["N_CHANNELS"]
 
+
 def collect_eeg(
     board: BoardShim,
     eeg_channels: list,
     session_type: str,
     label: str,
     trial_num: int,
-    output_writer: csv.writer
+    output_writer: csv.writer,
 ) -> tuple[int, list[float]]:
     """
     Collect EEG data for a given session type and label, write to CSV.
@@ -61,6 +63,7 @@ def collect_eeg(
         Tuple of (number of rows written, list of timestamps).
     """
     _ = trial_num  # Dummy assignment to suppress unused variable warning
+
     def run_phase(phase_duration, phase_label):
         logging.info("Think '%s' for %d seconds.", phase_label, phase_duration)
         board.get_board_data()  # Clear buffer
@@ -81,10 +84,10 @@ def collect_eeg(
     timestamps = []
 
     session_phases = {
-        'pure': [(TRIAL_DURATION, label)],
-        'jolt': [(5, 'neutral'), (1, label), (5, 'neutral')],
-        'hybrid': [(5, 'neutral'), (5, label)],
-        'long': [(LONG_DURATION, label)]
+        "pure": [(TRIAL_DURATION, label)],
+        "jolt": [(5, "neutral"), (1, label), (5, "neutral")],
+        "hybrid": [(5, "neutral"), (5, label)],
+        "long": [(LONG_DURATION, label)],
     }
 
     for phase_duration, phase_label in session_phases.get(session_type, []):
@@ -117,45 +120,59 @@ def main():
 
     try:
         file_exists = os.path.isfile(OUTPUT_CSV)
-        with open(OUTPUT_CSV, 'a', newline='', encoding='utf-8') as csvfile:
+        with open(OUTPUT_CSV, "a", newline="", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile)
-            header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
+            header = [f"ch_{ch}" for ch in eeg_channels] + ["session_type", "label"]
             if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
                 writer.writerow(header)
             logging.info("Session types: pure, jolt, hybrid, long")
             session_type = input("Enter session type: ").strip().lower()
             while session_type not in SESSION_TYPES:
-                session_type = input(f"Invalid. Enter session type {SESSION_TYPES}: ").strip().lower()
+                session_type = (
+                    input(f"Invalid. Enter session type {SESSION_TYPES}: ")
+                    .strip()
+                    .lower()
+                )
             logging.info("Available labels: %s", LABELS)
             label = input("Enter direction label: ").strip().lower()
             while label not in LABELS:
                 label = input(f"Invalid. Enter label {LABELS}: ").strip().lower()
-            if session_type == 'long':
+            if session_type == "long":
                 n_trials = 1
             else:
                 n_trials = TRIALS_PER_LABEL
             meta = {
-                'session_type': session_type,
-                'label': label,
-                'n_trials': n_trials,
-                'timestamps': [],
-                'rows_written': 0
+                "session_type": session_type,
+                "label": label,
+                "n_trials": n_trials,
+                "timestamps": [],
+                "rows_written": 0,
             }
             for trial in range(n_trials):
-                logging.info("\nGet ready for '%s' - Trial %d/%d (%s)...", label, trial+1, n_trials, session_type)
+                logging.info(
+                    "\nGet ready for '%s' - Trial %d/%d (%s)...",
+                    label,
+                    trial + 1,
+                    n_trials,
+                    session_type,
+                )
                 for sec in range(3, 0, -1):
-                    print(f"Starting in {sec}...", end='\r', flush=True)
+                    print(f"Starting in {sec}...", end="\r", flush=True)
                     time.sleep(1)
-                print(" " * 20, end='\r')
+                print(" " * 20, end="\r")
                 logging.info("Collecting data for '%s' (%s)...", label, session_type)
-                rows_written, timestamps = collect_eeg(board, eeg_channels, session_type, label, trial, writer)
-                meta['rows_written'] += rows_written
-                meta['timestamps'].extend(timestamps)
-                logging.info("Trial %d for '%s' (%s) complete.", trial+1, label, session_type)
+                rows_written, timestamps = collect_eeg(
+                    board, eeg_channels, session_type, label, trial, writer
+                )
+                meta["rows_written"] += rows_written
+                meta["timestamps"].extend(timestamps)
+                logging.info(
+                    "Trial %d for '%s' (%s) complete.", trial + 1, label, session_type
+                )
             # Save metadata
             meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
             try:
-                with open(meta_filename, 'w', encoding='utf-8') as metaf:
+                with open(meta_filename, "w", encoding="utf-8") as metaf:
                     json.dump(meta, metaf, indent=2)
             except (OSError, json.JSONDecodeError) as e:
                 logging.error("Failed to save metadata file %s: %s", meta_filename, e)
@@ -168,6 +185,7 @@ def main():
             board.release_session()
         except (OSError, AttributeError) as e:
             logging.error("Error releasing board session: %s", e)
+
 
 if __name__ == "__main__":
     main()

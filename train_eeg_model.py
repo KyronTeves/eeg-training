@@ -26,11 +26,11 @@ from utils import load_config
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode='a')
-    ]
+        logging.FileHandler("eeg_training.log", mode="a"),
+    ],
 )
 
 config = load_config()
@@ -41,7 +41,11 @@ WINDOW_SIZE = config["WINDOW_SIZE"]
 try:
     X_windows = np.load(config["WINDOWED_NPY"])
     y_windows = np.load(config["WINDOWED_LABELS_NPY"])
-    logging.info("Loaded windowed data shape: %s, Labels shape: %s", X_windows.shape, y_windows.shape)
+    logging.info(
+        "Loaded windowed data shape: %s, Labels shape: %s",
+        X_windows.shape,
+        y_windows.shape,
+    )
 except FileNotFoundError:
     logging.error("Windowed data file not found.")
     raise
@@ -71,20 +75,38 @@ X_train, X_test, y_train, y_test = train_test_split(
 scaler = StandardScaler()
 X_train_flat = X_train.reshape(-1, N_CHANNELS)
 scaler.fit(X_train_flat)
-X_train_scaled = scaler.transform(X_train.reshape(-1, N_CHANNELS)).reshape(X_train.shape)
+X_train_scaled = scaler.transform(X_train.reshape(-1, N_CHANNELS)).reshape(
+    X_train.shape
+)
 X_test_scaled = scaler.transform(X_test.reshape(-1, N_CHANNELS)).reshape(X_test.shape)
 
 # Downsample majority class (neutral) to match minority classes
 unique, counts = np.unique(np.argmax(y_train, axis=1), return_counts=True)
 min_count = np.min(counts)
-indices_per_class = [np.nonzero(np.argmax(y_train, axis=1) == i)[0] for i in range(len(unique))]
-downsampled_indices = np.concatenate([np.random.choice(idxs, min_count, replace=False) for idxs in indices_per_class])
+indices_per_class = [
+    np.nonzero(np.argmax(y_train, axis=1) == i)[0] for i in range(len(unique))
+]
+downsampled_indices = np.concatenate(
+    [np.random.choice(idxs, min_count, replace=False) for idxs in indices_per_class]
+)
 np.random.shuffle(downsampled_indices)
 X_train_bal = X_train_scaled[downsampled_indices]
 y_train_bal = y_train[downsampled_indices]
 
+
 # Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
+    """
+    Augment EEG data by adding Gaussian noise, baseline drift, and random artifacts.
+
+    Args:
+        X: Input EEG data (numpy array).
+        noise_std: Standard deviation of Gaussian noise.
+        drift_max: Maximum amplitude of baseline drift (sine wave).
+        artifact_prob: Probability of zeroing out a value (artifact simulation).
+    Returns:
+        Augmented EEG data (numpy array).
+    """
     X_aug = X.copy()
     # Add Gaussian noise
     X_aug += np.random.normal(0, noise_std, X_aug.shape)
@@ -96,6 +118,7 @@ def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     X_aug[mask] = 0
     return X_aug
 
+
 X_train_aug = augment_eeg_data(X_train_bal)
 y_train_aug = y_train_bal.copy()
 # Concatenate original and augmented data
@@ -104,10 +127,15 @@ y_train_final = np.concatenate([y_train_bal, y_train_aug], axis=0)
 
 # Compute class weights for the (now balanced) training set
 labels_train = np.argmax(y_train_final, axis=1)
-class_weights = compute_class_weight('balanced', classes=np.unique(labels_train), y=labels_train)
+class_weights = compute_class_weight(
+    "balanced", classes=np.unique(labels_train), y=labels_train
+)
 class_weight_dict = dict(enumerate(class_weights))
 
-logging.info("Class distribution after downsampling and augmentation: %s", np.bincount(labels_train))
+logging.info(
+    "Class distribution after downsampling and augmentation: %s",
+    np.bincount(labels_train),
+)
 
 # Prepare for EEGNet
 X_train_eegnet = np.expand_dims(X_train_final, -1)
@@ -117,8 +145,15 @@ X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
 # Build EEGNet model using official implementation
 model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
-model.fit(X_train_eegnet, y_train_final, epochs=30, batch_size=64, validation_split=0.2, class_weight=class_weight_dict)
+model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
+model.fit(
+    X_train_eegnet,
+    y_train_final,
+    epochs=30,
+    batch_size=64,
+    validation_split=0.2,
+    class_weight=class_weight_dict,
+)
 
 # Evaluate EEGNet
 _, acc = model.evaluate(X_test_eegnet, y_test)
@@ -128,8 +163,13 @@ logging.info("EEGNet Test accuracy: %.3f", acc)
 y_pred = model.predict(X_test_eegnet)
 y_pred_labels = np.argmax(y_pred, axis=1)
 y_true_labels = np.argmax(y_test, axis=1)
-logging.info("EEGNet Confusion Matrix:\n%s", confusion_matrix(y_true_labels, y_pred_labels))
-logging.info("EEGNet Classification Report:\n%s", classification_report(y_true_labels, y_pred_labels, target_names=le.classes_))
+logging.info(
+    "EEGNet Confusion Matrix:\n%s", confusion_matrix(y_true_labels, y_pred_labels)
+)
+logging.info(
+    "EEGNet Classification Report:\n%s",
+    classification_report(y_true_labels, y_pred_labels, target_names=le.classes_),
+)
 
 # Save EEGNet model and label encoder
 model.save(config["MODEL_CNN"])
@@ -156,15 +196,23 @@ rf.fit(X_train_scaled_tree, y_train_tree)
 rf_pred = rf.predict(X_test_scaled_tree)
 logging.info("Random Forest Results:")
 logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
-logging.info("Classification Report:\n%s", classification_report(y_test_tree, rf_pred, target_names=le.classes_))
+logging.info(
+    "Classification Report:\n%s",
+    classification_report(y_test_tree, rf_pred, target_names=le.classes_),
+)
 
 # XGBoost
-xgb = XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='mlogloss')
+xgb = XGBClassifier(
+    n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
+)
 xgb.fit(X_train_scaled_tree, y_train_tree)
 xgb_pred = xgb.predict(X_test_scaled_tree)
 logging.info("XGBoost Results:")
 logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
-logging.info("Classification Report:\n%s", classification_report(y_test_tree, xgb_pred, target_names=le.classes_))
+logging.info(
+    "Classification Report:\n%s",
+    classification_report(y_test_tree, xgb_pred, target_names=le.classes_),
+)
 
 # Save tree-based models
 joblib.dump(rf, config["MODEL_RF"])

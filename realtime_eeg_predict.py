@@ -17,16 +17,15 @@ import numpy as np
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 from keras.models import load_model
 
-from utils import (collect_calibration_data, load_config,
-                   run_session_calibration)
+from utils import collect_calibration_data, load_config, run_session_calibration
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode='a')
-    ]
+        logging.FileHandler("eeg_training.log", mode="a"),
+    ],
 )
 
 config = load_config()
@@ -57,14 +56,15 @@ X_calib, y_calib = collect_calibration_data(
     board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=250
 )
 run_session_calibration(
-    X_calib, y_calib,
+    X_calib,
+    y_calib,
     base_model_path=config["MODEL_CNN"],
     base_scaler_path=config["SCALER_CNN"],
     label_encoder_path=config["LABEL_ENCODER"],
     out_model_path="models/eeg_direction_model_session.h5",
     out_scaler_path="models/eeg_scaler_session.pkl",
     epochs=3,
-    batch_size=16
+    batch_size=16,
 )
 cnn = load_model("models/eeg_direction_model_session.h5")
 scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
@@ -73,9 +73,9 @@ logging.info("Session calibration complete. Using session-specific model and sca
 logging.info("Select model for real-time prediction:")
 logging.info("1: Random Forest\n2: XGBoost\n3: Both\n4: EEGNet (CNN)")
 model_choice = input("Enter choice (1/2/3/4): ").strip()
-use_rf = model_choice in ['1', '3']
-use_xgb = model_choice in ['2', '3']
-use_cnn = model_choice == '4'
+use_rf = model_choice in ["1", "3"]
+use_xgb = model_choice in ["2", "3"]
+use_cnn = model_choice == "4"
 
 required_files = [config["LABEL_ENCODER"]]
 if use_rf:
@@ -86,11 +86,13 @@ if use_cnn:
     required_files += [config["MODEL_CNN"], config["SCALER_CNN"]]
 for f in required_files:
     if not os.path.exists(f):
-        logging.error("Required file missing: %s. Ensure all models and encoders are present.", f)
+        logging.error(
+            "Required file missing: %s. Ensure all models and encoders are present.", f
+        )
         exit(1)
 
-scaler_tree = None  # Ensure scaler_tree is always defined
-eeg_window_scaled_tree = None  # Ensure eeg_window_scaled_tree is always defined
+scaler_tree = None  # Ensure scaler_tree is always defined # pylint: disable=invalid-name
+eeg_window_scaled_tree = None  # Ensure eeg_window_scaled_tree is always defined # pylint: disable=invalid-name
 try:
     if use_rf:
         rf = joblib.load(config["MODEL_RF"])
@@ -105,7 +107,12 @@ try:
 except FileNotFoundError as fnf:
     logging.error("Model or encoder file not found: %s", fnf)
     exit(1)
-except (OSError, joblib.externals.loky.process_executor.TerminatedWorkerError, ImportError, AttributeError) as e:
+except (
+    OSError,
+    joblib.externals.loky.process_executor.TerminatedWorkerError,
+    ImportError,
+    AttributeError,
+) as e:
     logging.error("Failed to load models or encoders: %s", e)
     exit(1)
 
@@ -119,27 +126,47 @@ try:
                 eeg_window_flat = eeg_window.flatten().reshape(1, -1)
                 eeg_window_scaled_tree = scaler_tree.transform(eeg_window_flat)
             if use_cnn:
-                eeg_window_scaled_cnn = scaler_cnn.transform(eeg_window)  # (window, channels)
-                eeg_window_cnn = np.expand_dims(eeg_window_scaled_cnn, axis=0)   # (1, window, channels)
-                eeg_window_cnn = np.expand_dims(eeg_window_cnn, axis=-1)         # (1, window, channels, 1)
-                eeg_window_cnn = np.transpose(eeg_window_cnn, (0, 2, 1, 3))      # (1, channels, window, 1)
+                eeg_window_scaled_cnn = scaler_cnn.transform(
+                    eeg_window
+                )  # (window, channels)
+                eeg_window_cnn = np.expand_dims(
+                    eeg_window_scaled_cnn, axis=0
+                )  # (1, window, channels)
+                eeg_window_cnn = np.expand_dims(
+                    eeg_window_cnn, axis=-1
+                )  # (1, window, channels, 1)
+                eeg_window_cnn = np.transpose(
+                    eeg_window_cnn, (0, 2, 1, 3)
+                )  # (1, channels, window, 1)
             if use_rf:
                 pred_rf = rf.predict(eeg_window_scaled_tree)
                 prob_rf = rf.predict_proba(eeg_window_scaled_tree).max()
                 pred_label_rf = le.inverse_transform(pred_rf)[0]
-                logging.info("Random Forest Prediction: %s (confidence: %.2f)", pred_label_rf, prob_rf)
+                logging.info(
+                    "Random Forest Prediction: %s (confidence: %.2f)",
+                    pred_label_rf,
+                    prob_rf,
+                )
             if use_xgb:
                 pred_xgb = xgb.predict(eeg_window_scaled_tree)
                 prob_xgb = xgb.predict_proba(eeg_window_scaled_tree).max()
                 pred_label_xgb = le.inverse_transform(pred_xgb)[0]
-                logging.info("XGBoost Prediction: %s (confidence: %.2f)", pred_label_xgb, prob_xgb)
+                logging.info(
+                    "XGBoost Prediction: %s (confidence: %.2f)",
+                    pred_label_xgb,
+                    prob_xgb,
+                )
             if use_cnn:
                 pred_cnn = cnn.predict(eeg_window_cnn)
                 prob_cnn = pred_cnn.max()
                 pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn)])[0]
-                logging.info("EEGNet Prediction: %s (confidence: %.2f)", pred_label_cnn, prob_cnn)
+                logging.info(
+                    "EEGNet Prediction: %s (confidence: %.2f)", pred_label_cnn, prob_cnn
+                )
         else:
-            logging.info("Waiting for enough data... (current samples: %d)", data.shape[1])
+            logging.info(
+                "Waiting for enough data... (current samples: %d)", data.shape[1]
+            )
         time.sleep(1)
 except KeyboardInterrupt:
     logging.info("\nStopping...")

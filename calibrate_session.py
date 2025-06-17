@@ -1,7 +1,8 @@
 """
 calibrate_session.py
 
-Fine-tune a pre-trained EEGNet model and scaler for a new session using a small labeled calibration set.
+Fine-tune a pre-trained EEGNet model and scaler for a new session 
+using a small labeled calibration set.
 - Loads calibration data (windowed, preprocessed, labeled)
 - Fits a new scaler on calibration data
 - Fine-tunes the pre-trained model for a few epochs
@@ -23,15 +24,29 @@ from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
 parser = argparse.ArgumentParser(description="Session calibration for EEGNet.")
-parser.add_argument('--calib_X', required=True, help='Path to calibration X (npy)')
-parser.add_argument('--calib_y', required=True, help='Path to calibration y (npy)')
-parser.add_argument('--base_model', required=True, help='Path to pre-trained model (h5)')
-parser.add_argument('--base_scaler', required=True, help='Path to pre-trained scaler (pkl)')
-parser.add_argument('--label_encoder', required=True, help='Path to label encoder (pkl)')
-parser.add_argument('--out_model', required=True, help='Path to save session model (h5)')
-parser.add_argument('--out_scaler', required=True, help='Path to save session scaler (pkl)')
-parser.add_argument('--epochs', type=int, default=3, help='Fine-tuning epochs (default: 3)')
-parser.add_argument('--batch_size', type=int, default=16, help='Batch size (default: 16)')
+parser.add_argument("--calib_X", required=True, help="Path to calibration X (npy)")
+parser.add_argument("--calib_y", required=True, help="Path to calibration y (npy)")
+parser.add_argument(
+    "--base_model", required=True, help="Path to pre-trained model (h5)"
+)
+parser.add_argument(
+    "--base_scaler", required=True, help="Path to pre-trained scaler (pkl)"
+)
+parser.add_argument(
+    "--label_encoder", required=True, help="Path to label encoder (pkl)"
+)
+parser.add_argument(
+    "--out_model", required=True, help="Path to save session model (h5)"
+)
+parser.add_argument(
+    "--out_scaler", required=True, help="Path to save session scaler (pkl)"
+)
+parser.add_argument(
+    "--epochs", type=int, default=3, help="Fine-tuning epochs (default: 3)"
+)
+parser.add_argument(
+    "--batch_size", type=int, default=16, help="Batch size (default: 16)"
+)
 args = parser.parse_args()
 
 # 1. Load calibration data
@@ -57,10 +72,18 @@ X_calib_eegnet = np.transpose(X_calib_eegnet, (0, 2, 1, 3))
 model = load_model(args.base_model)
 
 # 6. Fine-tune model on calibration data
-model.fit(X_calib_eegnet, y_calib_cat, epochs=args.epochs, batch_size=args.batch_size, verbose=1)
+model.fit(
+    X_calib_eegnet,
+    y_calib_cat,
+    epochs=args.epochs,
+    batch_size=args.batch_size,
+    verbose=1,
+)
 
 # 7. Save the updated model and scaler for this session
 model.save(args.out_model)
 joblib.dump(scaler, args.out_scaler)
 
-print(f"Session calibration complete. Model saved to {args.out_model}, scaler saved to {args.out_scaler}.")
+print(
+    f"Session calibration complete. Model saved to {args.out_model}, scaler saved to {args.out_scaler}."
+)

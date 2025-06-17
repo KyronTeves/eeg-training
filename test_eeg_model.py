@@ -19,11 +19,11 @@ from utils import load_config, window_data
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode='a')
-    ]
+        logging.FileHandler("eeg_training.log", mode="a"),
+    ],
 )
 
 config = load_config()
@@ -38,16 +38,16 @@ NUM_TEST_SAMPLES = config["NUM_TEST_SAMPLES"]
 try:
     logging.info("Loading data from %s ...", CSV_FILE)
     df = pd.read_csv(CSV_FILE)
-    test_df = df[df['session_type'].isin(TEST_SESSION_TYPES)]
+    test_df = df[df["session_type"].isin(TEST_SESSION_TYPES)]
     logging.info("Test samples: %d", len(test_df))
 except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
     logging.error("Failed to load or filter test data: %s", e)
     raise
 
 # Use the utility function for windowing
-eeg_cols = [col for col in test_df.columns if col.startswith('ch_')]
+eeg_cols = [col for col in test_df.columns if col.startswith("ch_")]
 X = test_df[eeg_cols].values
-labels = test_df['label'].values
+labels = test_df["label"].values
 
 # Data validation checks
 if np.isnan(X).any():
@@ -59,7 +59,7 @@ if pd.isnull(labels).any():
 valid_labels = set(config["LABELS"])
 if not set(np.unique(labels.flatten())).issubset(valid_labels):
     logging.error("Found labels outside expected set: %s", valid_labels)
-    raise ValueError("Found labels outside expected set: %s" % valid_labels)
+    raise ValueError(f"Found labels outside expected set: {valid_labels}")
 
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
@@ -97,15 +97,15 @@ X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
 num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
 indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
-correct = 0
+CORRECT = 0
 for idx in indices:
     actual_label = y_windows[idx]
     sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
     pred_eegnet = model.predict(sample_eegnet)
     pred_label_eegnet = le.inverse_transform([np.argmax(pred_eegnet)])[0]
-    match = (pred_label_eegnet == actual_label)
+    match = pred_label_eegnet == actual_label
     if match:
-        correct += 1
+        CORRECT += 1
     logging.info("Actual label:   %s", actual_label)
     logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
     # Random Forest
@@ -118,4 +118,10 @@ for idx in indices:
     logging.info("Random Forest Predicted label: %s", pred_label_rf)
     logging.info("XGBoost Predicted label: %s", pred_label_xgb)
     logging.info("-")
-logging.info("EEGNet accuracy on %d test samples: %d/%d (%.2f%%)", num_samples, correct, num_samples, 100*correct/num_samples)
+logging.info(
+    "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
+    num_samples,
+    CORRECT,
+    num_samples,
+    100 * CORRECT / num_samples,
+)
