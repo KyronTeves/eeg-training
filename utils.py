@@ -21,7 +21,7 @@ from sklearn.preprocessing import StandardScaler
 
 def load_config(path: str = 'config.json') -> dict:
     """Load configuration from a JSON file."""
-    with open(path, 'r') as f:
+    with open(path, 'r', encoding='utf-8') as f:
         return json.load(f)
 
 def window_data(

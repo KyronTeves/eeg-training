@@ -1,5 +1,5 @@
 """
-Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy), label it, and save to CSV for training.
+Collect EEG data from a BrainFlow-compatible board, label it, and save to CSV for training.
 
 - Prompts user for session type and label.
 - Collects data in trials, with configurable session phases.
@@ -7,14 +7,15 @@ Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy), label it
 - Uses logging for status and error messages.
 """
 
-import time
 import csv
-import os
+import json  # do not remove please
 import logging
-import json # do not remove please
+import os
+import time
+
+from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
+
 from utils import load_config
-from brainflow.board_shim import BoardShim, BrainFlowInputParams, BoardIds
-from brainflow.data_filter import DataFilter
 
 # Configure logging to both console and file
 logging.basicConfig(
@@ -60,6 +61,7 @@ def collect_eeg(
     Returns:
         Tuple of (number of rows written, list of timestamps).
     """
+    _ = trial_num  # Dummy assignment to suppress unused variable warning
     def run_phase(phase_duration, phase_label):
         logging.info("Think '%s' for %d seconds.", phase_label, phase_duration)
         board.get_board_data()  # Clear buffer
@@ -111,7 +113,7 @@ def main():
 
     try:
         file_exists = os.path.isfile(OUTPUT_CSV)
-        with open(OUTPUT_CSV, 'a', newline='') as csvfile:
+        with open(OUTPUT_CSV, 'a', newline='', encoding='utf-8') as csvfile:
             writer = csv.writer(csvfile)
             header = [f'ch_{ch}' for ch in eeg_channels] + ['session_type', 'label']
             if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
@@ -149,7 +151,7 @@ def main():
             # Save metadata
             meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
             try:
-                with open(meta_filename, 'w') as metaf:
+                with open(meta_filename, 'w', encoding='utf-8') as metaf:
                     json.dump(meta, metaf, indent=2)
             except Exception as e:
                 logging.error("Failed to save metadata file %s: %s", meta_filename, e)
