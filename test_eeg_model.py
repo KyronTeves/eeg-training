@@ -9,6 +9,7 @@ Test trained models on held-out EEG data windows.
 """
 
 import logging
+from collections import Counter
 
 import joblib
 import numpy as np
@@ -98,16 +99,12 @@ num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
 indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
 
 CORRECT = 0
+ENSEMBLE_CORRECT = 0
 for idx in indices:
     actual_label = y_windows[idx]
     sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
     pred_eegnet = model.predict(sample_eegnet)
     pred_label_eegnet = le.inverse_transform([np.argmax(pred_eegnet)])[0]
-    match = pred_label_eegnet == actual_label
-    if match:
-        CORRECT += 1
-    logging.info("Actual label:   %s", actual_label)
-    logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
     # Random Forest
     sample_rf = X_windows_flat_scaled[idx].reshape(1, -1)
     pred_rf = rf.predict(sample_rf)
@@ -115,8 +112,21 @@ for idx in indices:
     # XGBoost
     pred_xgb = xgb.predict(sample_rf)
     pred_label_xgb = le.inverse_transform(pred_xgb)[0]
+    # Hard voting ensemble
+    votes = [pred_label_eegnet, pred_label_rf, pred_label_xgb]
+    final_pred = Counter(votes).most_common(1)[0][0]
+    ensemble_match = final_pred == actual_label
+    if ensemble_match:
+        ENSEMBLE_CORRECT += 1
+    # Individual EEGNet accuracy
+    match = pred_label_eegnet == actual_label
+    if match:
+        CORRECT += 1
+    logging.info("Actual label:   %s", actual_label)
+    logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
     logging.info("Random Forest Predicted label: %s", pred_label_rf)
     logging.info("XGBoost Predicted label: %s", pred_label_xgb)
+    logging.info("Ensemble (hard voting) label: %s | Match: %s", final_pred, ensemble_match)
     logging.info("-")
 logging.info(
     "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
@@ -124,4 +134,11 @@ logging.info(
     CORRECT,
     num_samples,
     100 * CORRECT / num_samples,
+)
+logging.info(
+    "Ensemble (hard voting) accuracy on %d test samples: %d/%d (%.2f%%)",
+    num_samples,
+    ENSEMBLE_CORRECT,
+    num_samples,
+    100 * ENSEMBLE_CORRECT / num_samples,
 )
