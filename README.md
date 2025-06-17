@@ -4,7 +4,7 @@ This project provides a complete pipeline for collecting, processing, training, 
 
 ## Project Structure
 
-- `collect_EEG_data.py` — Collects labeled EEG data and saves to CSV.
+- `collect_data.py` — Collects labeled EEG data and saves to CSV.
 - `window_eeg_data.py` — Segments raw EEG data into overlapping windows for model training.
 - `train_eeg_model.py` — Trains Conv1D, Random Forest, and XGBoost models on windowed data.
 - `test_eeg_model.py` — Tests trained models on held-out data.
@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ### 4. Collect data:
 ```sh
-python collect_EEG_data.py
+python collect_data.py
 ```
 
 ### 5. Window data:
