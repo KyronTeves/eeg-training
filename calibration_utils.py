@@ -1,17 +1,13 @@
 """
-utils.py
+calibration_utils.py
 
-Utility functions for the EEG training system.
-- Configuration loading
-- Data windowing
-- Calibration data collection and model fine-tuning
+Modular calibration utilities for EEG session adaptation.
+- collect_calibration_data: Collects labeled calibration data from the user via the board.
+- run_session_calibration: Windows, preprocesses, and fine-tunes the model/scaler for the session.
 """
 
-import json
-import numpy as np
-import pandas as pd
-from typing import Tuple, List
 import time
+import numpy as np
 import joblib
 from tensorflow.keras.models import load_model
 from tensorflow.keras.utils import to_categorical
@@ -19,40 +15,6 @@ from EEGModels import EEGNet
 from sklearn.preprocessing import StandardScaler
 import logging
 import os
-
-def load_config(path: str = 'config.json') -> dict:
-    """Load configuration from a JSON file."""
-    with open(path, 'r') as f:
-        return json.load(f)
-
-def window_data(
-    data: np.ndarray,
-    labels: np.ndarray,
-    window_size: int,
-    step_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Segment data and labels into overlapping windows.
-
-    Args:
-        data: EEG data array of shape (samples, channels)
-        labels: Array of labels (samples, 1)
-        window_size: Number of samples per window
-        step_size: Step size between windows
-    Returns:
-        Tuple of (X_windows, y_windows)
-    """
-    X_windows = []
-    y_windows = []
-    for start in range(0, len(data) - window_size + 1, step_size):
-        window = data[start:start+window_size]
-        window_labels = labels[start:start+window_size]
-        # Use the most frequent label in the window as the label
-        unique, counts = np.unique(window_labels, return_counts=True)
-        window_label = unique[np.argmax(counts)]
-        X_windows.append(window)
-        y_windows.append(window_label)
-    return np.array(X_windows), np.array(y_windows)
 
 def collect_calibration_data(board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=250):
     """
