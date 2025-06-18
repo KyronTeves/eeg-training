@@ -142,7 +142,7 @@ model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accur
 model.fit(
     X_train_eegnet,
     y_train_final,
-    epochs=30,
+    epochs=50,
     batch_size=64,
     validation_split=0.2,
     class_weight=class_weight_dict,
