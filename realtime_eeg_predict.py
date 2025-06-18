@@ -136,66 +136,48 @@ try:
             eeg_window = data[CHANNELS, -WINDOW_SIZE:]
             check_no_nan(eeg_window, name="Real-time EEG window")
             eeg_window = eeg_window.T
-            if USE_RF or USE_XGB:
-                eeg_window_flat = eeg_window.flatten().reshape(1, -1)
-                eeg_window_scaled_tree = scaler_tree.transform(eeg_window_flat)
-            if USE_CNN:
-                eeg_window_scaled_cnn = scaler_cnn.transform(
-                    eeg_window
-                )  # (window, channels)
-                eeg_window_cnn = np.expand_dims(
-                    eeg_window_scaled_cnn, axis=0
-                )  # (1, window, channels)
-                eeg_window_cnn = np.expand_dims(
-                    eeg_window_cnn, axis=-1
-                )  # (1, window, channels, 1)
-                eeg_window_cnn = np.transpose(
-                    eeg_window_cnn, (0, 2, 1, 3)
-                )  # (1, channels, window, 1)
-            if USE_RF:
-                pred_rf = rf.predict(eeg_window_scaled_tree)
-                prob_rf = rf.predict_proba(eeg_window_scaled_tree).max()
-                pred_label_rf = le.inverse_transform(pred_rf)[0]
-                logging.info(
-                    "Random Forest Prediction: %s (confidence: %.2f)",
-                    pred_label_rf,
-                    prob_rf,
-                )
-                print(f"Random Forest: {pred_label_rf} (confidence: {prob_rf:.2f})")
-            if USE_XGB:
-                pred_xgb = xgb.predict(eeg_window_scaled_tree)
-                prob_xgb = xgb.predict_proba(eeg_window_scaled_tree).max()
-                pred_label_xgb = le.inverse_transform(pred_xgb)[0]
-                logging.info(
-                    "XGBoost Prediction: %s (confidence: %.2f)",
-                    pred_label_xgb,
-                    prob_xgb,
-                )
-                print(f"XGBoost: {pred_label_xgb} (confidence: {prob_xgb:.2f})")
-            if USE_CNN:
-                pred_cnn = cnn.predict(eeg_window_cnn)
-                prob_cnn = pred_cnn.max()
-                pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn)])[0]
-                logging.info(
-                    "EEGNet Prediction: %s (confidence: %.2f)", pred_label_cnn, prob_cnn
-                )
-                print(f"EEGNet: {pred_label_cnn} (confidence: {prob_cnn:.2f})")
+            # Tree-based models: flatten and scale
+            eeg_window_flat = eeg_window.flatten().reshape(1, -1)
+            eeg_window_scaled_tree = scaler_tree.transform(eeg_window_flat)
+            # CNN: scale and reshape
+            eeg_window_scaled_cnn = scaler_cnn.transform(eeg_window)
+            eeg_window_cnn = np.expand_dims(eeg_window_scaled_cnn, axis=0)
+            eeg_window_cnn = np.expand_dims(eeg_window_cnn, axis=-1)
+            eeg_window_cnn = np.transpose(eeg_window_cnn, (0, 2, 1, 3))
+
+            # Predictions
+            pred_rf = rf.predict(eeg_window_scaled_tree)
+            prob_rf = rf.predict_proba(eeg_window_scaled_tree).max()
+            pred_label_rf = le.inverse_transform(pred_rf)[0]
+
+            pred_xgb = xgb.predict(eeg_window_scaled_tree)
+            prob_xgb = xgb.predict_proba(eeg_window_scaled_tree).max()
+            pred_label_xgb = le.inverse_transform(pred_xgb)[0]
+
+            pred_cnn = cnn.predict(eeg_window_cnn, verbose=0)
+            prob_cnn = pred_cnn.max()
+            pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn)])[0]
+
             # Hard voting ensemble
-            votes = []
-            if USE_CNN:
-                votes.append(pred_label_cnn)
-            if USE_RF:
-                votes.append(pred_label_rf)
-            if USE_XGB:
-                votes.append(pred_label_xgb)
-            if votes:
-                final_pred = Counter(votes).most_common(1)[0][0]
-                logging.info(
-                    "Ensemble (hard voting) Prediction: %s | Votes: %s",
-                    final_pred,
-                    votes,
-                )
-                print(f"Predicted direction (ensemble): {final_pred}")
+            votes = [pred_label_cnn, pred_label_rf, pred_label_xgb]
+            final_pred = Counter(votes).most_common(1)[0][0]
+
+            # Print a clean summary block
+            print(
+                f"\n--- Real-Time Prediction ---\n"
+                f"EEGNet:        {pred_label_cnn} (conf: {prob_cnn:.2f})\n"
+                f"Random Forest: {pred_label_rf} (conf: {prob_rf:.2f})\n"
+                f"XGBoost:       {pred_label_xgb} (conf: {prob_xgb:.2f})\n"
+                f"Ensemble:      {final_pred} | Votes: {votes}\n"
+            )
+            # Log ensemble prediction at INFO level
+            logging.info(
+                "Ensemble Prediction: %s | Votes: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
+                final_pred, votes,
+                pred_label_cnn, prob_cnn,
+                pred_label_rf, prob_rf,
+                pred_label_xgb, prob_xgb
+            )
         else:
             logging.info(
                 "Waiting for enough data... (current samples: %d)", data.shape[1]
