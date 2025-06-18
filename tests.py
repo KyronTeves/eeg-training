@@ -2,13 +2,18 @@
 Unit tests for EEG training system utility functions.
 """
 
-import numpy as np
-import pytest
-from utils import window_data, load_config, check_no_nan, check_labels_valid
-import tempfile
 import os
+import subprocess
+import tempfile
+
+import numpy as np
+import pandas as pd
+import pytest
 from keras.models import load_model
+
 from EEGModels import EEGNet
+from utils import check_labels_valid, check_no_nan, load_config, window_data
+
 
 def test_window_data_shape():
     """Test that window_data returns correct shapes."""
@@ -90,6 +95,52 @@ def test_eegnet_train_save_load():
         assert os.path.exists(model_path)
         loaded = load_model(model_path)
         assert loaded is not None
+
+def test_end_to_end_pipeline():
+    """Black-box end-to-end test: CSV -> windowed .npy -> model file."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # 1. Create synthetic CSV
+        csv_path = os.path.join(tmpdir, "eeg.csv")
+        n_samples, n_channels = 200, 4
+        data = np.random.randn(n_samples, n_channels)
+        labels = np.random.choice(['left', 'right'], size=n_samples)
+        df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
+        df["session_type"] = 'pure'
+        df["label"] = labels
+        df.to_csv(csv_path, index=False)
+        # 2. Create minimal config.json
+        config_path = os.path.join(tmpdir, "config.json")
+        config = {
+            "N_CHANNELS": n_channels,
+            "WINDOW_SIZE": 50,
+            "STEP_SIZE": 25,
+            "OUTPUT_CSV": csv_path,
+            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
+            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "SESSION_TYPES": ["pure"],
+            "USE_SESSION_TYPES": ["pure"],
+            "LABELS": ["left", "right"],
+            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
+            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+        }
+        import json
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f)
+        # 3. Run windowing script
+        subprocess.run([
+            "python", "window_eeg_data.py"
+        ], env={**os.environ, "CONFIG_PATH": config_path}, capture_output=True, text=True, check=True)
+        assert os.path.exists(config["WINDOWED_NPY"])
+        assert os.path.exists(config["WINDOWED_LABELS_NPY"])
+        # 4. Run training script
+        subprocess.run([
+            "python", "train_eeg_model.py"
+        ], env={**os.environ, "CONFIG_PATH": config_path}, capture_output=True, text=True, check=True)
+        assert os.path.exists(config["MODEL_CNN"])
+        assert os.path.exists(config["LABEL_ENCODER"])
+        assert os.path.exists(config["SCALER_CNN"])
 
 if __name__ == "__main__":
     pytest.main([__file__])
