@@ -178,18 +178,28 @@ def test_error_handling_missing_config():
             env=env,
             capture_output=True,
             text=True,
+            check=False,
         )
         assert result.returncode != 0
-        assert "No such file" in result.stderr or "not found" in result.stderr or "FileNotFoundError" in result.stderr
+        assert (
+            "No such file" in result.stderr
+            or "not found" in result.stderr
+            or "FileNotFoundError" in result.stderr
+        )
         # Training script should fail
         result = subprocess.run(
             ["python", "train_eeg_model.py"],
             env=env,
             capture_output=True,
             text=True,
+            check=False,
         )
         assert result.returncode != 0
-        assert "No such file" in result.stderr or "not found" in result.stderr or "FileNotFoundError" in result.stderr
+        assert (
+            "No such file" in result.stderr
+            or "not found" in result.stderr
+            or "FileNotFoundError" in result.stderr
+        )
 
 
 def test_model_prediction_after_training():
@@ -224,10 +234,21 @@ def test_model_prediction_after_training():
             json.dump(config, f)
         # 2. Run windowing and training scripts
         env = {**os.environ, "CONFIG_PATH": config_path}
-        subprocess.run(["python", "window_eeg_data.py"], env=env, capture_output=True, text=True, check=True)
-        subprocess.run(["python", "train_eeg_model.py"], env=env, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["python", "window_eeg_data.py"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        subprocess.run(
+            ["python", "train_eeg_model.py"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         # 3. Load model and run prediction
-        from keras.models import load_model
         X = np.load(config["WINDOWED_NPY"])
         model = load_model(config["MODEL_CNN"])
         # Model expects (batch, channels, samples, 1) or similar
@@ -267,12 +288,20 @@ def test_windowed_npy_content():
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f)
         env = {**os.environ, "CONFIG_PATH": config_path}
-        subprocess.run(["python", "window_eeg_data.py"], env=env, capture_output=True, text=True, check=True)
+        subprocess.run(
+            ["python", "window_eeg_data.py"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
         X = np.load(config["WINDOWED_NPY"])
         y = np.load(config["WINDOWED_LABELS_NPY"])
         # Check shapes
         assert X.shape[1] == n_channels
-        assert X.shape[2] == config["WINDOW_SIZE"] or X.shape[1] == config["WINDOW_SIZE"]
+        assert (
+            X.shape[2] == config["WINDOW_SIZE"] or X.shape[1] == config["WINDOW_SIZE"]
+        )
         assert X.shape[0] == y.shape[0]
         # Check label values
         assert set(np.unique(y)).issubset({"left", "right"})
