@@ -1,11 +1,13 @@
 """
-Test trained models on held-out EEG data windows.
+Evaluate trained EEGNet, Random Forest, and XGBoost models on held-out EEG data windows.
 
-- Loads test data and models.
-- Windows the data using the utility function.
-- Evaluates Conv1D, Random Forest, and XGBoost models.
-- Prints predictions and actual labels for comparison.
-- Uses logging for status and error messages.
+- Loads test data and trained models
+- Applies windowing and scaling
+- Computes predictions for each model
+- Reports accuracy and ensemble results for comparison
+
+Input: Labeled EEG CSV file, trained model files
+Output: Evaluation metrics, predictions, and logs
 """
 
 import logging
@@ -18,7 +20,7 @@ from keras.models import load_model  # type: ignore
 
 from utils import load_config, window_data, setup_logging, check_no_nan, check_labels_valid
 
-setup_logging()
+setup_logging()  # Set up consistent logging to file and console
 
 config = load_config()
 
@@ -43,8 +45,8 @@ eeg_cols = [col for col in test_df.columns if col.startswith("ch_")]
 X = test_df[eeg_cols].values
 labels = test_df["label"].values
 
-check_no_nan(X, name="EEG data")
-check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
+check_no_nan(X, name="EEG data")  # Validate no NaNs in EEG data
+check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")  # Validate labels
 
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)

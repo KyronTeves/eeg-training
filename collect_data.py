@@ -1,11 +1,14 @@
 """
-Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy),
-label it, and save to CSV for training.
+Collect EEG data from a BrainFlow-compatible board (e.g., Cyton Daisy), label it, and save to
+CSV for supervised model training.
 
-- Prompts user for session type and label.
-- Collects data in trials, with configurable session phases.
-- Saves both raw data and metadata.
-- Uses logging for status and error messages.
+- Prompts the user for session type and label
+- Collects multi-phase EEG trials
+- Writes raw EEG channel data with metadata to a CSV file for downstream processing and model
+  development
+
+Input: Live EEG data stream from board
+Output: Labeled CSV file for training
 """
 
 import csv

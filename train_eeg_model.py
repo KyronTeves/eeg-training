@@ -1,11 +1,17 @@
 """
-Train EEGNet, Random Forest, and XGBoost models on windowed EEG data.
+Train EEGNet (deep learning), Random Forest, and XGBoost models on windowed EEG data.
 
-- Loads windowed data from .npy files.
-- Encodes labels and splits data into train/test sets.
-- Standardizes features and trains models.
-- Saves trained models, encoders, and scalers.
-- Uses logging for status and error messages.
+- Loads windowed EEG data and labels
+- Encodes and balances classes
+- Applies data augmentation
+- Trains:
+    - EEGNet (Keras deep learning model)
+    - Random Forest (scikit-learn)
+    - XGBoost (xgboost)
+- Saves trained models, encoders, and scalers for downstream evaluation and prediction
+
+Input: Windowed EEG data (.npy), windowed labels (.npy)
+Output: Trained model files, encoders, scalers
 """
 
 import logging
@@ -23,7 +29,7 @@ from xgboost import XGBClassifier
 from EEGModels import EEGNet
 from utils import load_config, setup_logging, check_no_nan, check_labels_valid
 
-setup_logging()
+setup_logging()  # Set up consistent logging to file and console
 
 config = load_config()
 
@@ -45,8 +51,8 @@ except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
-check_no_nan(X_windows, name="Windowed EEG data")
-check_labels_valid(y_windows, name="Windowed labels")
+check_no_nan(X_windows, name="Windowed EEG data")  # Validate no NaNs in windowed EEG data
+check_labels_valid(y_windows, name="Windowed labels")  # Validate windowed labels
 
 # Encode labels
 le = LabelEncoder()

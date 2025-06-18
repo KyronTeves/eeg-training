@@ -127,7 +127,9 @@ def run_session_calibration(
 def setup_logging(logfile: str = "eeg_training.log"):
     """
     Set up logging to both console and file with a standard format.
-    Call this at the start of each script.
+    Should be called at the start of each script to ensure consistent logging.
+    Args:
+        logfile: Path to the log file (default: 'eeg_training.log').
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -142,6 +144,11 @@ def setup_logging(logfile: str = "eeg_training.log"):
 def check_no_nan(X, name="data"):
     """
     Check for NaN values in a numpy array and log/raise error if found.
+    Args:
+        X: numpy array to check.
+        name: Name of the data (for error messages).
+    Raises:
+        ValueError: If any NaN values are found in X.
     """
     import logging
     import numpy as np
@@ -154,6 +161,12 @@ def check_no_nan(X, name="data"):
 def check_labels_valid(labels, valid_labels=None, name="labels"):
     """
     Check for NaN values and, if valid_labels is provided, for invalid label values.
+    Args:
+        labels: Array of labels to check.
+        valid_labels: Optional set/list of valid label values.
+        name: Name of the label array (for error messages).
+    Raises:
+        ValueError: If any NaN or invalid label values are found.
     """
     import logging
     import numpy as np

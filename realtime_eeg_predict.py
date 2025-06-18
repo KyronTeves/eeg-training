@@ -1,11 +1,14 @@
 """
-Perform real-time EEG prediction using trained models.
+Perform real-time EEG direction prediction using trained EEGNet, Random Forest, and XGBoost
+models.
 
-- Loads trained models and scalers.
-- Streams live EEG data from the board.
-- Applies windowing and predicts direction in real time.
-- Supports Random Forest, XGBoost, or both.
-- Uses logging for status and error messages.
+- Streams live EEG data
+- Applies windowing and scaling
+- Predicts direction in real time using all models
+- Supports ensemble voting and prints predictions to console
+
+Input: Live EEG data stream, trained model files
+Output: Real-time predictions and logs
 """
 
 import logging

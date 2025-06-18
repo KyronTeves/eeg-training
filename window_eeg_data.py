@@ -1,11 +1,14 @@
 """
-Segment raw EEG data into overlapping windows for model training.
+Segment raw EEG CSV data into overlapping windows for model training.
 
-- Loads raw CSV data and filters by session type.
-- Uses only EEG channel columns for features.
-- Uses a utility function for windowing.
-- Saves windowed data and labels as .npy files.
-- Uses logging for status and error messages.
+- Loads labeled EEG data
+- Filters by session type
+- Extracts EEG channels
+- Segments into overlapping windows for supervised learning
+- Saves windowed data and labels as .npy files for model training
+
+Input: Labeled EEG CSV file
+Output: Windowed EEG data (.npy), windowed labels (.npy)
 """
 
 import logging
@@ -15,7 +18,7 @@ import pandas as pd
 
 from utils import load_config, window_data, setup_logging, check_no_nan, check_labels_valid
 
-setup_logging()
+setup_logging()  # Set up consistent logging to file and console
 
 # Load configuration from config.json
 config = load_config()
@@ -45,12 +48,13 @@ if "session_type" in raw_data.columns:
     )
 
 # Use only EEG channel columns (ch_*) for features
+# X: EEG data, labels: direction labels
 eeg_cols = [col for col in raw_data.columns if col.startswith("ch_")]
 X = raw_data[eeg_cols].values
 labels = raw_data["label"].values
 
-check_no_nan(X, name="EEG data")
-check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
+check_no_nan(X, name="EEG data")  # Validate no NaNs in EEG data
+check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")  # Validate labels
 
 # Reshape X to [n_samples, n_channels]
 if X.shape[1] != N_CHANNELS:
