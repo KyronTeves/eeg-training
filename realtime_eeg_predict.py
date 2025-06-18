@@ -19,6 +19,7 @@ from collections import Counter
 import joblib
 import numpy as np
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
+from brainflow.exit_codes import BrainFlowError
 from keras.models import load_model
 import tensorflow as tf
 
@@ -60,7 +61,7 @@ try:
 except FileNotFoundError as fnf:
     logging.error("Could not find BrainFlow board or driver: %s", fnf)
     exit(1)
-except (OSError, ValueError, KeyError) as e:
+except (OSError, ValueError, KeyError, BrainFlowError) as e:
     logging.error("Failed to start board session: %s", e)
     exit(1)
 
@@ -85,11 +86,6 @@ run_session_calibration(
 cnn = load_model("models/eeg_direction_model_session.h5")
 scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
 logging.info("Session calibration complete. Using session-specific model and scaler.")
-
-# Load all models and scalers for ensemble (no user input)
-USE_RF = True
-USE_XGB = True
-USE_CNN = True
 
 required_files = [
     config["LABEL_ENCODER"],
@@ -125,6 +121,13 @@ except (
 ) as e:
     logging.error("Failed to load models or encoders: %s", e)
     exit(1)
+
+# Prompt user for prediction display mode after calibration
+print("\nChoose prediction display mode:")
+print("1. EEGNet only")
+print("2. Ensemble (EEGNet, Random Forest, XGBoost)")
+mode = input("Enter 1 or 2: ").strip()
+show_ensemble = (mode == "2")
 
 try:
     while True:
@@ -162,22 +165,30 @@ try:
             votes = [pred_label_cnn, pred_label_rf, pred_label_xgb]
             final_pred = Counter(votes).most_common(1)[0][0]
 
-            # Print a clean summary block
-            print(
-                f"\n--- Real-Time Prediction ---\n"
-                f"EEGNet:        {pred_label_cnn} (conf: {prob_cnn:.2f})\n"
-                f"Random Forest: {pred_label_rf} (conf: {prob_rf:.2f})\n"
-                f"XGBoost:       {pred_label_xgb} (conf: {prob_xgb:.2f})\n"
-                f"Ensemble:      {final_pred} | Votes: {votes}\n"
-            )
-            # Log ensemble prediction at INFO level
-            logging.info(
-                "Ensemble Prediction: %s | Votes: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
-                final_pred, votes,
-                pred_label_cnn, prob_cnn,
-                pred_label_rf, prob_rf,
-                pred_label_xgb, prob_xgb
-            )
+            # Print output based on user choice
+            if show_ensemble:
+                print(
+                    f"\n--- Real-Time Prediction ---\n"
+                    f"EEGNet:        {pred_label_cnn} (conf: {prob_cnn:.2f})\n"
+                    f"Random Forest: {pred_label_rf} (conf: {prob_rf:.2f})\n"
+                    f"XGBoost:       {pred_label_xgb} (conf: {prob_xgb:.2f})\n"
+                    f"Ensemble:      {final_pred} | Votes: {votes}\n"
+                )
+                logging.info(
+                    "Ensemble Prediction: %s | Votes: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
+                    final_pred, votes,
+                    pred_label_cnn, prob_cnn,
+                    pred_label_rf, prob_rf,
+                    pred_label_xgb, prob_xgb
+                )
+            else:
+                print(
+                    f"\n--- Real-Time Prediction (EEGNet Only) ---\n"
+                    f"EEGNet: {pred_label_cnn} (conf: {prob_cnn:.2f})\n"
+                )
+                logging.info(
+                    "EEGNet Only Prediction: %s (%.2f)", pred_label_cnn, prob_cnn
+                )
         else:
             logging.info(
                 "Waiting for enough data... (current samples: %d)", data.shape[1]
