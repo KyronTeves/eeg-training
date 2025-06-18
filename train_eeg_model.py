@@ -18,6 +18,7 @@ import logging
 import joblib
 import numpy as np
 
+from keras.callbacks import EarlyStopping
 from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
@@ -136,16 +137,24 @@ X_test_eegnet = np.expand_dims(X_test_scaled, -1)
 X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
 X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
+# Early stopping callback
+early_stopping = EarlyStopping(
+    monitor='val_loss',
+    patience=10,
+    restore_best_weights=True
+)
+
 # Build EEGNet model using official implementation
 model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
 model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 model.fit(
     X_train_eegnet,
     y_train_final,
-    epochs=50,
+    epochs=100,
     batch_size=64,
     validation_split=0.2,
     class_weight=class_weight_dict,
+    callbacks=[early_stopping]
 )
 
 # Evaluate EEGNet

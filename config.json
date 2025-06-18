@@ -22,5 +22,5 @@
   "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy",
   "TEST_SESSION_TYPES": ["jolt", "hybrid", "long"],
   "USE_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
-  "NUM_TEST_SAMPLES": 30
+  "NUM_TEST_SAMPLES": 100
 }
