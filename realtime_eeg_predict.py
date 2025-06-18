@@ -22,7 +22,13 @@ from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 from keras.models import load_model
 import tensorflow as tf
 
-from utils import collect_calibration_data, load_config, run_session_calibration, setup_logging, check_no_nan
+from utils import (
+    collect_calibration_data,
+    load_config,
+    run_session_calibration,
+    setup_logging,
+    check_no_nan,
+)
 
 # Enable TensorFlow debug mode for better error messages
 tf.data.experimental.enable_debug_mode()
@@ -85,10 +91,15 @@ USE_RF = True
 USE_XGB = True
 USE_CNN = True
 
-required_files = [config["LABEL_ENCODER"],
-                  config["MODEL_RF"], config["SCALER_TREE"],
-                  config["MODEL_XGB"], config["SCALER_TREE"],
-                  "models/eeg_direction_model_session.h5", "models/eeg_scaler_session.pkl"]
+required_files = [
+    config["LABEL_ENCODER"],
+    config["MODEL_RF"],
+    config["SCALER_TREE"],
+    config["MODEL_XGB"],
+    config["SCALER_TREE"],
+    "models/eeg_direction_model_session.h5",
+    "models/eeg_scaler_session.pkl",
+]
 for f in required_files:
     if not os.path.exists(f):
         logging.error(
@@ -117,7 +128,9 @@ except (
 
 try:
     while True:
-        eeg_window_scaled_tree = None  # Initialize at the start of each loop (not a constant)
+        eeg_window_scaled_tree = (
+            None  # Initialize at the start of each loop (not a constant)
+        )
         data = board.get_current_board_data(WINDOW_SIZE)
         if data.shape[1] >= WINDOW_SIZE:
             eeg_window = data[CHANNELS, -WINDOW_SIZE:]
@@ -179,7 +192,8 @@ try:
                 final_pred = Counter(votes).most_common(1)[0][0]
                 logging.info(
                     "Ensemble (hard voting) Prediction: %s | Votes: %s",
-                    final_pred, votes
+                    final_pred,
+                    votes,
                 )
                 print(f"Predicted direction (ensemble): {final_pred}")
         else:

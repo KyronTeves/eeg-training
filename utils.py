@@ -14,6 +14,7 @@ from typing import Tuple
 
 import joblib
 import numpy as np
+import pandas as pd
 from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
@@ -64,7 +65,7 @@ def collect_calibration_data(
     calib_y = []
     for label in labels:
         input(
-            f"Get ready for calibration: {label}. Press Enter to start recording {seconds_per_class} seconds..."
+            f"Calibrating '{label}': Press Enter to record for {seconds_per_class} seconds..."
         )
         data = []
         start_time = time.time()
@@ -150,11 +151,8 @@ def check_no_nan(X, name="data"):
     Raises:
         ValueError: If any NaN values are found in X.
     """
-    import logging
-    import numpy as np
-
     if np.isnan(X).any():
-        logging.error(f"{name} contains NaN values.")
+        logging.error("%s contains NaN values.", name)
         raise ValueError(f"{name} contains NaN values.")
 
 
@@ -168,15 +166,11 @@ def check_labels_valid(labels, valid_labels=None, name="labels"):
     Raises:
         ValueError: If any NaN or invalid label values are found.
     """
-    import logging
-    import numpy as np
-    import pandas as pd
-
     if pd.isnull(labels).any():
-        logging.error(f"{name} contain NaN values.")
+        logging.error("%s contain NaN values.", name)
         raise ValueError(f"{name} contain NaN values.")
     if valid_labels is not None:
         invalid = set(labels) - set(valid_labels)
         if invalid:
-            logging.error(f"{name} contain invalid values: {invalid}")
+            logging.error("%s contain invalid values: %s", name, invalid)
             raise ValueError(f"{name} contain invalid values: {invalid}")

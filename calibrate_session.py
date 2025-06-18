@@ -11,7 +11,8 @@ using a small labeled calibration set.
 Usage:
     python calibrate_session.py --calib_X data/calib_X.npy --calib_y data/calib_y.npy \
         --base_model models/eeg_direction_model.h5 --base_scaler models/eeg_scaler.pkl \
-        --label_encoder models/eeg_label_encoder.pkl --out_model models/eeg_direction_model_session.h5 \
+        --label_encoder models/eeg_label_encoder.pkl --out_model 
+        models/eeg_direction_model_session.h5 \
         --out_scaler models/eeg_scaler_session.pkl
 """
 
@@ -85,5 +86,5 @@ model.save(args.out_model)
 joblib.dump(scaler, args.out_scaler)
 
 print(
-    f"Session calibration complete. Model saved to {args.out_model}, scaler saved to {args.out_scaler}."
+    f"Calibration done. Model: {args.out_model}, Scaler: {args.out_scaler}"
 )
