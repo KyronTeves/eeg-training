@@ -16,17 +16,9 @@ import time
 
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 
-from utils import load_config
+from utils import load_config, setup_logging
 
-# Configure logging to both console and file
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode="a"),
-    ],
-)
+setup_logging()
 
 config = load_config()
 

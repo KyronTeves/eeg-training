@@ -16,16 +16,9 @@ import numpy as np
 import pandas as pd
 from keras.models import load_model  # type: ignore
 
-from utils import load_config, window_data
+from utils import load_config, window_data, setup_logging, check_no_nan, check_labels_valid
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode="a"),
-    ],
-)
+setup_logging()
 
 config = load_config()
 
@@ -50,17 +43,8 @@ eeg_cols = [col for col in test_df.columns if col.startswith("ch_")]
 X = test_df[eeg_cols].values
 labels = test_df["label"].values
 
-# Data validation checks
-if np.isnan(X).any():
-    logging.error("EEG data contains NaN values.")
-    raise ValueError("EEG data contains NaN values.")
-if pd.isnull(labels).any():
-    logging.error("Labels contain NaN values.")
-    raise ValueError("Labels contain NaN values.")
-valid_labels = set(config["LABELS"])
-if not set(np.unique(labels.flatten())).issubset(valid_labels):
-    logging.error("Found labels outside expected set: %s", valid_labels)
-    raise ValueError(f"Found labels outside expected set: {valid_labels}")
+check_no_nan(X, name="EEG data")
+check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
 
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)

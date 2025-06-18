@@ -19,7 +19,7 @@ from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 from keras.models import load_model
 import tensorflow as tf
 
-from utils import collect_calibration_data, load_config, run_session_calibration
+from utils import collect_calibration_data, load_config, run_session_calibration, setup_logging, check_no_nan
 
 # Enable TensorFlow debug mode for better error messages
 tf.data.experimental.enable_debug_mode()
@@ -33,14 +33,7 @@ except RuntimeError:
     except RuntimeError:
         pass
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode="a"),
-    ],
-)
+setup_logging()
 
 config = load_config()
 
@@ -125,6 +118,7 @@ try:
         data = board.get_current_board_data(WINDOW_SIZE)
         if data.shape[1] >= WINDOW_SIZE:
             eeg_window = data[CHANNELS, -WINDOW_SIZE:]
+            check_no_nan(eeg_window, name="Real-time EEG window")
             eeg_window = eeg_window.T
             if USE_RF or USE_XGB:
                 eeg_window_flat = eeg_window.flatten().reshape(1, -1)

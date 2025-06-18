@@ -9,10 +9,9 @@ Train EEGNet, Random Forest, and XGBoost models on windowed EEG data.
 """
 
 import logging
-
 import joblib
 import numpy as np
-import pandas as pd
+
 from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
@@ -22,16 +21,9 @@ from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet
-from utils import load_config
+from utils import load_config, setup_logging, check_no_nan, check_labels_valid
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler("eeg_training.log", mode="a"),
-    ],
-)
+setup_logging()
 
 config = load_config()
 
@@ -53,13 +45,8 @@ except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
-# Data validation checks
-if np.isnan(X_windows).any():
-    logging.error("Windowed EEG data contains NaN values.")
-    raise ValueError("Windowed EEG data contains NaN values.")
-if pd.isnull(y_windows).any():
-    logging.error("Windowed labels contain NaN values.")
-    raise ValueError("Windowed labels contain NaN values.")
+check_no_nan(X_windows, name="Windowed EEG data")
+check_labels_valid(y_windows, name="Windowed labels")
 
 # Encode labels
 le = LabelEncoder()

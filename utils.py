@@ -122,3 +122,48 @@ def run_session_calibration(
         out_model_path,
         out_scaler_path,
     )
+
+
+def setup_logging(logfile: str = "eeg_training.log"):
+    """
+    Set up logging to both console and file with a standard format.
+    Call this at the start of each script.
+    """
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.StreamHandler(),
+            logging.FileHandler(logfile, mode="a"),
+        ],
+    )
+
+
+def check_no_nan(X, name="data"):
+    """
+    Check for NaN values in a numpy array and log/raise error if found.
+    """
+    import logging
+    import numpy as np
+
+    if np.isnan(X).any():
+        logging.error(f"{name} contains NaN values.")
+        raise ValueError(f"{name} contains NaN values.")
+
+
+def check_labels_valid(labels, valid_labels=None, name="labels"):
+    """
+    Check for NaN values and, if valid_labels is provided, for invalid label values.
+    """
+    import logging
+    import numpy as np
+    import pandas as pd
+
+    if pd.isnull(labels).any():
+        logging.error(f"{name} contain NaN values.")
+        raise ValueError(f"{name} contain NaN values.")
+    if valid_labels is not None:
+        invalid = set(labels) - set(valid_labels)
+        if invalid:
+            logging.error(f"{name} contain invalid values: {invalid}")
+            raise ValueError(f"{name} contain invalid values: {invalid}")
