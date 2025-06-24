@@ -92,7 +92,6 @@ required_files = [
     config["MODEL_RF"],
     config["SCALER_TREE"],
     config["MODEL_XGB"],
-    config["SCALER_TREE"],
     "models/eeg_direction_model_session.h5",
     "models/eeg_scaler_session.pkl",
 ]
