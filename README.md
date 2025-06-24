@@ -1,5 +1,35 @@
 # EEG Direction Classification & Real-Time Prediction
 
+## ⚠️ CURRENT STATUS - WORK IN PROGRESS ⚠️
+
+**This system is currently under development and has known limitations in real-time performance:**
+
+### What Works:
+- ✅ Data collection and preprocessing pipeline
+- ✅ Model training achieves ~86% accuracy on test data
+- ✅ All three models (EEGNet, Random Forest, XGBoost) train successfully
+- ✅ System can detect when brain activity changes occur
+
+### Current Limitations:
+- ⚠️ **Individual EEGNet performance declining**: ~65-68% accuracy (down from ~80%)
+- ⚠️ **False directional predictions on neutral states**: System frequently predicts movements when user is neutral
+- ⚠️ **Ensemble method inconsistencies**: Hard voting (85%) vs Rule-based (75%) performance gap
+- ⚠️ **Forward direction classification weakness**: Particularly challenging for ensemble methods
+- ⚠️ **Model disagreement patterns**: EEGNet detects directions while RF/XGBoost predict neutral
+
+### Development Status:
+Recent testing reveals a complex performance pattern where individual models show different strengths:
+- **EEGNet**: Good at detecting actual directional movements but prone to false positives on neutral states
+- **Random Forest/XGBoost**: Stable ~86% accuracy but conservative (often predict neutral)
+- **Hard Voting Ensemble**: Most reliable at 85% accuracy by balancing model disagreements
+- **Rule-based Ensemble**: Struggles when EEGNet is overconfident in wrong directions
+
+The core issue appears to be **feature overlap** between neutral states and directional intentions, leading to model confusion rather than complete failure to detect brain activity changes.
+
+**Use this system for research and development purposes only. It is not suitable for reliable brain-computer interface applications in its current state.**
+
+---
+
 A complete pipeline for collecting, processing, training, evaluating, and performing real-time
 prediction of EEG-based direction commands using deep learning (EEGNet) and ensemble methods.
 
@@ -178,6 +208,16 @@ The system trains and evaluates three complementary models:
 2. **Random Forest** - Tree-based ensemble for robust predictions  
 3. **XGBoost** - Gradient boosting for high accuracy
 
+### Performance Summary:
+- **Recent Test Performance**: 
+  - EEGNet individual: 65-68% (declining trend)
+  - Hard Voting Ensemble: 84-85% (most stable)
+  - Rule-based Ensemble: 74-75% (inconsistent)
+  - Random Forest/XGBoost: ~86% (stable but conservative)
+- **Key Challenge**: False positive directional predictions when user is in neutral state
+- **Model Behavior**: EEGNet sensitive to movements, RF/XGBoost conservative toward neutral
+- **Best Performance**: Hard voting ensemble balances model disagreements effectively
+
 ### Evaluation Methods:
 - **Individual Model Accuracy**: Performance of each model separately
 - **Hard Voting Ensemble**: Majority vote across all three models
@@ -187,7 +227,10 @@ The system trains and evaluates three complementary models:
 - Classification accuracy on held-out test data
 - Confusion matrices for detailed performance analysis
 - Per-class precision, recall, and F1-scores
-- Real-time prediction latency and throughput
+- Real-time prediction confidence and stability analysis
+
+### Performance Gap:
+Analysis of recent test runs shows the primary challenge is **discriminating neutral states from directional intentions**. The EEGNet model has become increasingly sensitive, detecting movement patterns but sometimes misclassifying neutral brain states as directional commands. The ensemble approaches help mitigate this by leveraging the more conservative Random Forest and XGBoost models, with hard voting providing the most balanced and stable performance at 85% accuracy.
 
 Run `python test_eeg_model.py` to evaluate trained models on test data.
 
