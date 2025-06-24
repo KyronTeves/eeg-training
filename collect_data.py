@@ -60,6 +60,17 @@ def collect_eeg(
     _ = trial_num  # Dummy assignment to suppress unused variable warning
 
     def run_phase(phase_duration, phase_label):
+        """
+        Execute a single phase of EEG data collection.
+
+        Args:
+            phase_duration (int): Duration of the phase in seconds.
+            phase_label (str): Label for this phase of the trial.
+
+        Note:
+            Clears the board buffer, inserts a marker, collects data for the specified
+            duration, and writes the data to CSV with timestamps.
+        """
         logging.info("Think '%s' for %d seconds.", phase_label, phase_duration)
         board.get_board_data()  # Clear buffer
         board.insert_marker(1)

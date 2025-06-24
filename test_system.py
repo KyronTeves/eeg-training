@@ -1,5 +1,16 @@
 """
 Unit tests for EEG training system utility functions.
+
+This module contains comprehensive unit tests for the EEG training pipeline,
+including tests for:
+- Data windowing functionality
+- Configuration loading and validation
+- Data validation utilities (NaN checks, label validation)
+- Model training integration tests
+- Pipeline integration tests for end-to-end functionality
+
+The tests ensure the reliability and correctness of the EEG data processing
+and model training workflow.
 """
 
 import os
