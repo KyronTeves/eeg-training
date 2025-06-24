@@ -15,6 +15,9 @@ from keras.models import load_model
 from EEGModels import EEGNet
 from utils import check_labels_valid, check_no_nan, load_config, window_data
 
+# Add a default timeout for all subprocess.run calls
+DEFAULT_TIMEOUT = 30  # seconds
+
 
 def test_window_data_shape():
     """Test that window_data returns correct shapes."""
@@ -151,6 +154,7 @@ def test_end_to_end_pipeline():
             capture_output=True,
             text=True,
             check=True,
+            timeout=DEFAULT_TIMEOUT,
         )
         assert os.path.exists(config["WINDOWED_NPY"])
         assert os.path.exists(config["WINDOWED_LABELS_NPY"])
@@ -161,6 +165,7 @@ def test_end_to_end_pipeline():
             capture_output=True,
             text=True,
             check=True,
+            timeout=DEFAULT_TIMEOUT,
         )
         assert os.path.exists(config["MODEL_CNN"])
         assert os.path.exists(config["LABEL_ENCODER"])
@@ -179,6 +184,7 @@ def test_error_handling_missing_config():
             capture_output=True,
             text=True,
             check=False,
+            timeout=DEFAULT_TIMEOUT,
         )
         assert result.returncode != 0
         assert (
@@ -193,6 +199,7 @@ def test_error_handling_missing_config():
             capture_output=True,
             text=True,
             check=False,
+            timeout=DEFAULT_TIMEOUT,
         )
         assert result.returncode != 0
         assert (
@@ -240,6 +247,7 @@ def test_model_prediction_after_training():
             capture_output=True,
             text=True,
             check=True,
+            timeout=DEFAULT_TIMEOUT,
         )
         subprocess.run(
             ["python", "train_eeg_model.py"],
@@ -247,6 +255,7 @@ def test_model_prediction_after_training():
             capture_output=True,
             text=True,
             check=True,
+            timeout=DEFAULT_TIMEOUT,
         )
         # 3. Load model and run prediction
         X = np.load(config["WINDOWED_NPY"])
@@ -294,6 +303,7 @@ def test_windowed_npy_content():
             capture_output=True,
             text=True,
             check=True,
+            timeout=DEFAULT_TIMEOUT,
         )
         X = np.load(config["WINDOWED_NPY"])
         y = np.load(config["WINDOWED_LABELS_NPY"])
@@ -305,6 +315,93 @@ def test_windowed_npy_content():
         assert X.shape[0] == y.shape[0]
         # Check label values
         assert set(np.unique(y)).issubset({"left", "right"})
+
+
+def test_windowing_with_malformed_csv():
+    """Test that window_eeg_data.py fails gracefully on malformed CSV input."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a malformed CSV (missing columns, bad delimiter)
+        malformed_csv_path = os.path.join(tmpdir, "malformed.csv")
+        with open(malformed_csv_path, "w", encoding="utf-8") as f:
+            f.write("badly,formatted,data\n1,2\n3,4\n")
+        # Minimal config
+        config = {
+            "N_CHANNELS": 2,
+            "WINDOW_SIZE": 10,
+            "STEP_SIZE": 5,
+            "OUTPUT_CSV": malformed_csv_path,
+            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
+            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "SESSION_TYPES": ["pure"],
+            "USE_SESSION_TYPES": ["pure"],
+            "LABELS": ["left", "right"],
+            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
+            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+        }
+        config_path = os.path.join(tmpdir, "config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f)
+        env = {**os.environ, "CONFIG_PATH": config_path}
+        # Run windowing script and expect failure
+        result = subprocess.run(
+            ["python", "window_eeg_data.py"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,  # Explicitly set check to avoid error if omitted
+            timeout=DEFAULT_TIMEOUT,
+        )
+        assert result.returncode != 0
+        assert (
+            "error" in result.stderr.lower()
+            or "exception" in result.stderr.lower()
+            or "traceback" in result.stderr.lower()
+        )
+
+
+def test_training_with_wrong_shape_npy():
+    """Test that train_eeg_model.py fails gracefully on wrong-shape .npy input."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create a valid config
+        config = {
+            "N_CHANNELS": 4,
+            "WINDOW_SIZE": 10,
+            "STEP_SIZE": 5,
+            "OUTPUT_CSV": os.path.join(tmpdir, "dummy.csv"),
+            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
+            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "SESSION_TYPES": ["pure"],
+            "USE_SESSION_TYPES": ["pure"],
+            "LABELS": ["left", "right"],
+            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
+            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+        }
+        config_path = os.path.join(tmpdir, "config.json")
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(config, f)
+        # Write wrong-shape .npy files
+        np.save(config["WINDOWED_NPY"], np.random.randn(5, 5, 5))  # Should be (n_windows, window, channels)
+        np.save(config["WINDOWED_LABELS_NPY"], np.array(["left", "right", "left", "right", "left"]))
+        env = {**os.environ, "CONFIG_PATH": config_path}
+        # Run training script and expect failure
+        result = subprocess.run(
+            ["python", "train_eeg_model.py"],
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        assert result.returncode != 0
+        assert (
+            "error" in result.stderr.lower()
+            or "exception" in result.stderr.lower()
+            or "traceback" in result.stderr.lower()
+        )
 
 
 if __name__ == "__main__":
