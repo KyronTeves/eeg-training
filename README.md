@@ -35,7 +35,7 @@ prediction of EEG-based direction commands using deep learning (EEGNet) and ense
 
 1. **Clone the repository:**
    ```sh
-   git clone <your-repo-url>
+   git clone https://github.com/KyronTeves/eeg-training/tree/test-coverage-improvements
    cd eeg-training
    ```
 2. **Create and activate a virtual environment (recommended):**
