@@ -37,6 +37,7 @@ WINDOW_SIZE = config["WINDOW_SIZE"]
 STEP_SIZE = config["STEP_SIZE"]
 CSV_FILE = config["OUTPUT_CSV"]
 TEST_SESSION_TYPES = config["TEST_SESSION_TYPES"]
+SAMPLING_RATE = config["SAMPLING_RATE"]
 
 
 try:
@@ -74,7 +75,6 @@ logging.info("Test windows: %s", X_windows.shape)
 
 # --- Feature Extraction for Tree-based Models ---
 logging.info("Extracting features for tree-based models...")
-SAMPLING_RATE = 250  # TODO: Move to config.json
 X_features = np.array(
     [extract_features(window, SAMPLING_RATE) for window in X_windows]
 )

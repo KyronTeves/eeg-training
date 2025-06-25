@@ -50,6 +50,7 @@ config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
+SAMPLING_RATE = config["SAMPLING_RATE"]
 
 params = BrainFlowInputParams()
 params.serial_port = config["COM_PORT"]
@@ -145,7 +146,6 @@ try:
             eeg_window_cnn = np.transpose(eeg_window_cnn, (0, 2, 1, 3))
 
             # Tree-based
-            SAMPLING_RATE = 250  # TODO: Add to config
             features = extract_features(eeg_window, SAMPLING_RATE).reshape(1, -1)
             features_scaled = scaler_tree.transform(features)
 

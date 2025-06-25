@@ -36,6 +36,7 @@ config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
+SAMPLING_RATE = config["SAMPLING_RATE"]
 
 try:
     X_windows = np.load(config["WINDOWED_NPY"])
@@ -199,9 +200,6 @@ np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
 # --- Feature Extraction for Tree-based Models ---
 logging.info("Extracting features for tree-based models...")
-# Assuming a sampling rate of 250Hz, which is common for Cyton boards.
-# This should be added to config.json if it varies.
-SAMPLING_RATE = 250
 X_features = np.array([extract_features(window, SAMPLING_RATE) for window in X_windows])
 logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
