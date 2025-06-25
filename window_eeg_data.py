@@ -16,7 +16,13 @@ import logging
 import numpy as np
 import pandas as pd
 
-from utils import load_config, window_data, setup_logging, check_no_nan, check_labels_valid
+from utils import (
+    load_config,
+    window_data,
+    setup_logging,
+    check_no_nan,
+    check_labels_valid,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -47,6 +53,17 @@ if "session_type" in raw_data.columns:
         "Using session types: %s, samples: %d", USE_SESSION_TYPES, len(raw_data)
     )
 
+    # Session type impact analysis
+    for session_type in raw_data["session_type"].unique():
+        session_count = len(raw_data[raw_data["session_type"] == session_type])
+        session_pct = (session_count / len(raw_data)) * 100
+        logging.info(
+            "Session type '%s': %d samples (%.1f%%)",
+            session_type,
+            session_count,
+            session_pct,
+        )
+
 # Use only EEG channel columns (ch_*) for features
 # X: EEG data, labels: direction labels
 eeg_cols = [col for col in raw_data.columns if col.startswith("ch_")]
@@ -54,13 +71,14 @@ X = raw_data[eeg_cols].values
 labels = raw_data["label"].values
 
 check_no_nan(X, name="EEG data")  # Validate no NaNs in EEG data
-check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")  # Validate labels
+check_labels_valid(
+    labels, valid_labels=config["LABELS"], name="Labels"
+)  # Validate labels
 
 # Reshape X to [n_samples, n_channels]
 if X.shape[1] != N_CHANNELS:
     logging.error(
-        "Expected %d channels, but got %d columns per sample.",
-        N_CHANNELS, X.shape[1]
+        "Expected %d channels, but got %d columns per sample.", N_CHANNELS, X.shape[1]
     )
     raise ValueError(
         f"Expected {N_CHANNELS} channels, but got {X.shape[1]} columns per sample."

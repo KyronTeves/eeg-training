@@ -126,10 +126,17 @@ print("\nChoose prediction display mode:")
 print("1. EEGNet only")
 print("2. Ensemble (EEGNet, Random Forest, XGBoost)")
 mode = input("Enter 1 or 2: ").strip()
-show_ensemble = (mode == "2")
+show_ensemble = mode == "2"
 
 try:
+    # Performance monitoring variables
+    prediction_times = []
+    recent_predictions = []
+
     while True:
+        # Start timing for this prediction
+        start_time = time.time()
+
         eeg_window_scaled_tree = (
             None  # Initialize at the start of each loop (not a constant)
         )
@@ -173,21 +180,65 @@ try:
                     f"XGBoost:       {pred_label_xgb} (conf: {prob_xgb:.2f})\n"
                     f"Ensemble:      {final_pred} | Votes: {votes}\n"
                 )
-                logging.info(
-                    "Ensemble Prediction: %s | Votes: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
-                    final_pred, votes,
-                    pred_label_cnn, prob_cnn,
-                    pred_label_rf, prob_rf,
-                    pred_label_xgb, prob_xgb
-                )
+
+                # Performance monitoring
+                pred_time = time.time() - start_time
+                prediction_times.append(pred_time)
+                recent_predictions.append(final_pred)
+
+                # Enhanced logging with performance and pattern info
+                if len(recent_predictions) >= 10:
+                    pattern_info = f"Last 10: {dict(Counter(recent_predictions[-10:]))}"
+                    avg_time = sum(prediction_times[-10:]) / len(prediction_times[-10:])
+                    logging.info(
+                        "Ensemble Prediction: %s | Avg time: %.3fs | %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
+                        final_pred,
+                        avg_time,
+                        pattern_info,
+                        pred_label_cnn,
+                        prob_cnn,
+                        pred_label_rf,
+                        prob_rf,
+                        pred_label_xgb,
+                        prob_xgb,
+                    )
+                else:
+                    logging.info(
+                        "Ensemble Prediction: %s | Votes: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
+                        final_pred,
+                        votes,
+                        pred_label_cnn,
+                        prob_cnn,
+                        pred_label_rf,
+                        prob_rf,
+                        pred_label_xgb,
+                        prob_xgb,
+                    )
             else:
                 print(
                     f"\n--- Real-Time Prediction (EEGNet Only) ---\n"
                     f"EEGNet: {pred_label_cnn} (conf: {prob_cnn:.2f})\n"
                 )
-                logging.info(
-                    "EEGNet Only Prediction: %s (%.2f)", pred_label_cnn, prob_cnn
-                )
+
+                # Performance monitoring for EEGNet only mode
+                pred_time = time.time() - start_time
+                prediction_times.append(pred_time)
+                recent_predictions.append(pred_label_cnn)
+
+                if len(recent_predictions) >= 10:
+                    pattern_info = f"Last 10: {dict(Counter(recent_predictions[-10:]))}"
+                    avg_time = sum(prediction_times[-10:]) / len(prediction_times[-10:])
+                    logging.info(
+                        "EEGNet Only Prediction: %s (%.2f) | Avg time: %.3fs | %s",
+                        pred_label_cnn,
+                        prob_cnn,
+                        avg_time,
+                        pattern_info,
+                    )
+                else:
+                    logging.info(
+                        "EEGNet Only Prediction: %s (%.2f)", pred_label_cnn, prob_cnn
+                    )
         else:
             logging.info(
                 "Waiting for enough data... (current samples: %d)", data.shape[1]

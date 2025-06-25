@@ -18,7 +18,13 @@ import numpy as np
 import pandas as pd
 from keras.models import load_model  # type: ignore
 
-from utils import load_config, window_data, setup_logging, check_no_nan, check_labels_valid
+from utils import (
+    load_config,
+    window_data,
+    setup_logging,
+    check_no_nan,
+    check_labels_valid,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -46,7 +52,9 @@ X = test_df[eeg_cols].values
 labels = test_df["label"].values
 
 check_no_nan(X, name="EEG data")  # Validate no NaNs in EEG data
-check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")  # Validate labels
+check_labels_valid(
+    labels, valid_labels=config["LABELS"], name="Labels"
+)  # Validate labels
 
 X = X.reshape(-1, N_CHANNELS)
 labels = labels.reshape(-1, 1)
@@ -119,11 +127,24 @@ for idx in indices:
     match = pred_label_eegnet == actual_label
     if match:
         CORRECT += 1
+
+    # Track model disagreements for debugging
+    if len(set([pred_label_eegnet, pred_label_rf, pred_label_xgb])) > 1:
+        logging.info(
+            "DISAGREEMENT: EEGNet=%s, RF=%s, XGB=%s (Actual=%s)",
+            pred_label_eegnet,
+            pred_label_rf,
+            pred_label_xgb,
+            actual_label,
+        )
+
     logging.info("Actual label:   %s", actual_label)
     logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
     logging.info("Random Forest Predicted label: %s", pred_label_rf)
     logging.info("XGBoost Predicted label: %s", pred_label_xgb)
-    logging.info("Ensemble (hard voting) label: %s | Match: %s", final_pred, ensemble_match)
+    logging.info(
+        "Ensemble (hard voting) label: %s | Match: %s", final_pred, ensemble_match
+    )
     logging.info("Ensemble (rule-based) label: %s | Match: %s", rule_pred, rule_match)
     logging.info("-")
 logging.info(

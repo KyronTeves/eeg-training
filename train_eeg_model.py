@@ -142,6 +142,13 @@ logging.info(
     np.bincount(labels_train),
 )
 
+# Training context information for debugging
+logging.info("Training context: %d total samples, %d classes",
+            len(X_train_final), len(np.unique(y_train_final)))
+unique_labels, label_counts = np.unique(y_train_final, return_counts=True)
+class_dist = dict(zip(unique_labels, label_counts))
+logging.info("Detailed class distribution: %s", class_dist)
+
 # Prepare for EEGNet
 X_train_eegnet = np.expand_dims(X_train_final, -1)
 X_test_eegnet = np.expand_dims(X_test_scaled, -1)

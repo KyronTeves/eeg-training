@@ -395,8 +395,13 @@ def test_training_with_wrong_shape_npy():
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(config, f)
         # Write wrong-shape .npy files
-        np.save(config["WINDOWED_NPY"], np.random.randn(5, 5, 5))  # Should be (n_windows, window, channels)
-        np.save(config["WINDOWED_LABELS_NPY"], np.array(["left", "right", "left", "right", "left"]))
+        np.save(
+            config["WINDOWED_NPY"], np.random.randn(5, 5, 5)
+        )  # Should be (n_windows, window, channels)
+        np.save(
+            config["WINDOWED_LABELS_NPY"],
+            np.array(["left", "right", "left", "right", "left"]),
+        )
         env = {**os.environ, "CONFIG_PATH": config_path}
         # Run training script and expect failure
         result = subprocess.run(

@@ -51,7 +51,20 @@ def window_data(
         window_label = unique[np.argmax(counts)]
         X_windows.append(window)
         y_windows.append(window_label)
-    return np.array(X_windows), np.array(y_windows)
+
+    X_windows = np.array(X_windows)
+    y_windows = np.array(y_windows)
+
+    # Data quality assessment
+    logging.info(
+        "Data quality: Range [%.3f, %.3f], Std: %.3f, NaN count: %d",
+        np.min(X_windows),
+        np.max(X_windows),
+        np.std(X_windows),
+        np.isnan(X_windows).sum(),
+    )
+
+    return X_windows, y_windows
 
 
 def collect_calibration_data(
