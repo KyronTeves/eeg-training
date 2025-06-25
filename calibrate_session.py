@@ -1,22 +1,14 @@
 """
-calibrate_session.py
+Fine-tune a pre-trained EEGNet model and create a session-specific scaler
+using a small labeled calibration dataset.
 
-Fine-tune a pre-trained EEGNet model and scaler for a new session 
-using a small labeled calibration set.
 - Loads calibration data (windowed, preprocessed, labeled)
-- Fits a new scaler on calibration data
+- Fits a new scaler on the calibration data
 - Fine-tunes the pre-trained model for a few epochs
-- Saves the session-specific model and scaler
-
-Usage:
-    python calibrate_session.py --calib_X data/calib_X.npy --calib_y data/calib_y.npy \
-        --base_model models/eeg_direction_model.h5 --base_scaler models/eeg_scaler.pkl \
-        --label_encoder models/eeg_label_encoder.pkl --out_model 
-        models/eeg_direction_model_session.h5 \
-        --out_scaler models/eeg_scaler_session.pkl
+- Saves the session-specific model and scaler for real-time use
 """
 
-import argparse
+import logging
 
 import joblib
 import numpy as np
@@ -24,67 +16,108 @@ from keras.models import load_model
 from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
-parser = argparse.ArgumentParser(description="Session calibration for EEGNet.")
-parser.add_argument("--calib_X", required=True, help="Path to calibration X (npy)")
-parser.add_argument("--calib_y", required=True, help="Path to calibration y (npy)")
-parser.add_argument(
-    "--base_model", required=True, help="Path to pre-trained model (h5)"
-)
-parser.add_argument(
-    "--base_scaler", required=True, help="Path to pre-trained scaler (pkl)"
-)
-parser.add_argument(
-    "--label_encoder", required=True, help="Path to label encoder (pkl)"
-)
-parser.add_argument(
-    "--out_model", required=True, help="Path to save session model (h5)"
-)
-parser.add_argument(
-    "--out_scaler", required=True, help="Path to save session scaler (pkl)"
-)
-parser.add_argument(
-    "--epochs", type=int, default=3, help="Fine-tuning epochs (default: 3)"
-)
-parser.add_argument(
-    "--batch_size", type=int, default=16, help="Batch size (default: 16)"
-)
-args = parser.parse_args()
+from utils import load_config, setup_logging
 
-# 1. Load calibration data
-X_calib = np.load(args.calib_X)  # (samples, window, channels)
-y_calib = np.load(args.calib_y)  # (samples,)
+setup_logging()
 
-# 2. Load label encoder and encode labels
-le = joblib.load(args.label_encoder)
-y_calib_encoded = le.transform(y_calib)
-y_calib_cat = to_categorical(y_calib_encoded)
 
-# 3. Fit a new scaler on calibration data
-scaler = StandardScaler()
-X_calib_flat = X_calib.reshape(-1, X_calib.shape[-1])
-scaler.fit(X_calib_flat)
-X_calib_scaled = scaler.transform(X_calib_flat).reshape(X_calib.shape)
+def load_artifacts(config: dict) -> tuple:
+    """Loads all necessary files for calibration."""
+    logging.info("Loading calibration artifacts...")
+    try:
+        X_calib = np.load(config["CALIB_X_NPY"])
+        y_calib = np.load(config["CALIB_Y_NPY"])
+        le = joblib.load(config["LABEL_ENCODER"])
+        model = load_model(config["MODEL_CNN"])
+        logging.info("Artifacts loaded successfully.")
+        return X_calib, y_calib, le, model
+    except FileNotFoundError as e:
+        logging.error(
+            "Failed to load artifact: %s. Ensure calibration data and base model exist.",
+            e,
+        )
+        raise
 
-# 4. Prepare for EEGNet: (batch, window, channels) -> (batch, channels, window, 1)
-X_calib_eegnet = np.expand_dims(X_calib_scaled, -1)
-X_calib_eegnet = np.transpose(X_calib_eegnet, (0, 2, 1, 3))
 
-# 5. Load pre-trained model
-model = load_model(args.base_model)
+def process_and_scale_data(
+    X_calib: np.ndarray, y_calib: np.ndarray, le
+) -> tuple:
+    """Encodes labels, fits a new scaler, and prepares data for EEGNet."""
+    logging.info("Processing and scaling calibration data...")
 
-# 6. Fine-tune model on calibration data
-model.fit(
-    X_calib_eegnet,
-    y_calib_cat,
-    epochs=args.epochs,
-    batch_size=args.batch_size,
-    verbose=1,
-)
+    # Encode labels
+    y_calib_encoded = le.transform(y_calib.ravel())
+    y_calib_cat = to_categorical(y_calib_encoded)
 
-# 7. Save the updated model and scaler for this session
-model.save(args.out_model)
-joblib.dump(scaler, args.out_scaler)
+    # Fit a new scaler on the session-specific calibration data
+    scaler = StandardScaler()
+    X_calib_flat = X_calib.reshape(-1, X_calib.shape[-1])
+    scaler.fit(X_calib_flat)
+    X_calib_scaled = scaler.transform(X_calib_flat).reshape(X_calib.shape)
 
-print(
-    f"Calibration done. Model: {args.out_model}, Scaler: {args.out_scaler}"
-)
+    # Prepare for EEGNet input shape: (batch, window, channels) -> (batch, channels, window, 1)
+    X_calib_eegnet = np.expand_dims(X_calib_scaled, -1)
+    X_calib_eegnet = np.transpose(X_calib_eegnet, (0, 2, 1, 3))
+
+    logging.info("Data processed. Scaler fitted on %d samples.", len(X_calib_flat))
+    return X_calib_eegnet, y_calib_cat, scaler
+
+
+def fine_tune_model(model, X_data: np.ndarray, y_data: np.ndarray, config: dict):
+    """Fine-tunes the model on the calibration data."""
+    logging.info("Starting fine-tuning for %d epochs...", config["CALIB_EPOCHS"])
+    model.fit(
+        X_data,
+        y_data,
+        epochs=config["CALIB_EPOCHS"],
+        batch_size=config["CALIB_BATCH_SIZE"],
+        verbose=1,
+    )
+    logging.info("Fine-tuning complete.")
+    return model
+
+
+def save_session_artifacts(model, scaler, config: dict):
+    """Saves the fine-tuned model and session-specific scaler."""
+    try:
+        model_path = config["MODEL_CNN_SESSION"]
+        scaler_path = config["SCALER_CNN_SESSION"]
+        model.save(model_path)
+        joblib.dump(scaler, scaler_path)
+        logging.info("Saved session model to %s", model_path)
+        logging.info("Saved session scaler to %s", scaler_path)
+    except (OSError, AttributeError) as e:
+        logging.error("Failed to save session artifacts: %s", e)
+        raise
+
+
+def main():
+    """Main function to run the calibration process."""
+    logging.info("--- Starting Session Calibration ---")
+    config = load_config()
+
+    try:
+        # Load data and base models
+        X_calib, y_calib, le, model = load_artifacts(config)
+
+        # Process data and fit a new scaler
+        X_calib_processed, y_calib_processed, session_scaler = process_and_scale_data(
+            X_calib, y_calib, le
+        )
+
+        # Fine-tune the model
+        session_model = fine_tune_model(
+            model, X_calib_processed, y_calib_processed, config
+        )
+
+        # Save the new session-specific artifacts
+        save_session_artifacts(session_model, session_scaler, config)
+
+        logging.info("--- Session Calibration Complete ---")
+
+    except (FileNotFoundError, ValueError, RuntimeError) as e:
+        logging.error("Calibration process failed: %s", e)
+
+
+if __name__ == "__main__":
+    main()

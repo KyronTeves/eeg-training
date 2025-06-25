@@ -12,10 +12,11 @@ Output: Labeled CSV file for training
 """
 
 import csv
-import json  # do not remove please
+import json
 import logging
 import os
 import time
+from datetime import datetime
 
 from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
 
@@ -25,6 +26,7 @@ setup_logging()
 
 config = load_config()
 
+# --- Configuration ---
 LABELS = config["LABELS"]
 SESSION_TYPES = config["SESSION_TYPES"]
 TRIAL_DURATION = config["TRIAL_DURATION"]
@@ -34,9 +36,31 @@ LONG_DURATION = config["LONG_DURATION"]
 TRIALS_PER_LABEL = config["TRIALS_PER_LABEL"]
 OUTPUT_CSV = config["OUTPUT_CSV"]
 N_CHANNELS = config["N_CHANNELS"]
+SAMPLING_RATE = config["SAMPLING_RATE"]
+BOARD_ID = BoardIds.CYTON_DAISY_BOARD.value
 
 
-def collect_eeg(
+def get_session_phases(session_type: str, label: str) -> list[tuple[int, str]]:
+    """
+    Get the phases for a given session type.
+
+    Args:
+        session_type: The type of session.
+        label: The label for the trial.
+
+    Returns:
+        A list of tuples, where each tuple contains the duration and label for a phase.
+    """
+    return {
+        "pure": [(TRIAL_DURATION, label)],
+        "jolt": [(5, "neutral"), (1, label), (5, "neutral")],
+        "hybrid": [(5, "neutral"), (5, label)],
+        "long": [(LONG_DURATION, label)],
+        "test": [(2, label)],  # Quick 2-second test trials
+    }.get(session_type, [])
+
+
+def collect_trial_eeg(
     board: BoardShim,
     eeg_channels: list,
     session_type: str,
@@ -45,7 +69,7 @@ def collect_eeg(
     output_writer: csv.writer,
 ) -> tuple[int, list[float]]:
     """
-    Collect EEG data for a given session type and label, write to CSV.
+    Collect EEG data for a single trial, consisting of one or more phases.
 
     Args:
         board: BrainFlow BoardShim instance.
@@ -54,54 +78,58 @@ def collect_eeg(
         label: Label for the trial (e.g., 'left', 'right').
         trial_num: Trial number.
         output_writer: CSV writer object.
+
     Returns:
         Tuple of (number of rows written, list of timestamps).
     """
-    _ = trial_num  # Dummy assignment to suppress unused variable warning
+    _ = trial_num  # Suppress unused variable warning
 
-    def run_phase(phase_duration, phase_label):
-        """
-        Execute a single phase of EEG data collection.
+    rows = []
+    timestamps = []
+    session_phases = get_session_phases(session_type, label)
 
-        Args:
-            phase_duration (int): Duration of the phase in seconds.
-            phase_label (str): Label for this phase of the trial.
-
-        Note:
-            Clears the board buffer, inserts a marker, collects data for the specified
-            duration, and writes the data to CSV with timestamps.
-        """
-        logging.info("Think '%s' for %d seconds.", phase_label, phase_duration)
+    for phase_duration, phase_label in session_phases:
+        logging.info("Thinking '%s' for %d seconds.", phase_label, phase_duration)
         board.get_board_data()  # Clear buffer
         board.insert_marker(1)
-        start_time = time.time()
-        while time.time() - start_time < phase_duration:
-            time.sleep(0.1)
+        time.sleep(phase_duration)
         data = board.get_board_data()
-        n_samples = int(phase_duration * sampling_rate)
-        for i in range(-n_samples, 0):
-            if abs(i) <= data.shape[1]:
-                row = [data[ch][i] for ch in eeg_channels] + [session_type, phase_label]
+
+        # Use the actual number of samples returned by the board
+        n_samples = data.shape[1]
+        if n_samples > 0:
+            for i in range(n_samples):
+                row = [data[ch][i] for ch in eeg_channels] + [
+                    session_type,
+                    phase_label,
+                ]
                 rows.append(row)
                 timestamps.append(time.time())
 
-    sampling_rate = BoardShim.get_sampling_rate(BoardIds.CYTON_DAISY_BOARD.value)
-    rows = []
-    timestamps = []
-
-    session_phases = {
-        "pure": [(TRIAL_DURATION, label)],
-        "jolt": [(5, "neutral"), (1, label), (5, "neutral")],
-        "hybrid": [(5, "neutral"), (5, label)],
-        "long": [(LONG_DURATION, label)],
-    }
-
-    for phase_duration, phase_label in session_phases.get(session_type, []):
-        run_phase(phase_duration, phase_label)
-
     for row in rows:
         output_writer.writerow(row)
+
     return len(rows), timestamps
+
+
+def get_user_input(prompt: str, valid_options: list[str]) -> str:
+    """
+    Prompt the user for input and validate it against a list of valid options.
+
+    Args:
+        prompt: The message to display to the user.
+        valid_options: A list of valid string inputs.
+
+    Returns:
+        The validated user input.
+    """
+    while True:
+        user_input = input(prompt).strip().lower()
+        if user_input in valid_options:
+            return user_input
+        logging.warning(
+            "Invalid input. Please choose from: %s", ", ".join(valid_options)
+        )
 
 
 def main():
@@ -112,15 +140,12 @@ def main():
     """
     try:
         params = BrainFlowInputParams()
-        params.serial_port = config["COM_PORT"]  # Use config value
-        board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
+        params.serial_port = config["COM_PORT"]
+        board = BoardShim(BOARD_ID, params)
         board.prepare_session()
         board.start_stream()
-        eeg_channels = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
-    except FileNotFoundError as fnf:
-        logging.error("Could not find BrainFlow board or driver: %s", fnf)
-        return
-    except (OSError, ValueError, KeyError) as e:
+        eeg_channels = BoardShim.get_eeg_channels(BOARD_ID)
+    except (OSError, ValueError, RuntimeError) as e:
         logging.error("Failed to start board session: %s", e)
         return
 
@@ -128,32 +153,22 @@ def main():
         file_exists = os.path.isfile(OUTPUT_CSV)
         with open(OUTPUT_CSV, "a", newline="", encoding="utf-8") as csvfile:
             writer = csv.writer(csvfile)
-            header = [f"ch_{ch}" for ch in eeg_channels] + ["session_type", "label"]
             if not file_exists or os.stat(OUTPUT_CSV).st_size == 0:
+                header = [f"ch_{ch}" for ch in eeg_channels] + [
+                    "session_type",
+                    "label",
+                ]
                 writer.writerow(header)
-            logging.info("Session types: pure, jolt, hybrid, long")
-            session_type = input("Enter session type: ").strip().lower()
-            while session_type not in SESSION_TYPES:
-                session_type = (
-                    input(f"Invalid. Enter session type {SESSION_TYPES}: ")
-                    .strip()
-                    .lower()
-                )
-            logging.info("Available labels: %s", LABELS)
-            label = input("Enter direction label: ").strip().lower()
-            while label not in LABELS:
-                label = input(f"Invalid. Enter label {LABELS}: ").strip().lower()
-            if session_type == "long":
-                n_trials = 1
-            else:
-                n_trials = TRIALS_PER_LABEL
-            meta = {
-                "session_type": session_type,
-                "label": label,
-                "n_trials": n_trials,
-                "timestamps": [],
-                "rows_written": 0,
-            }
+
+            session_type = get_user_input(
+                f"Enter session type ({', '.join(SESSION_TYPES)}): ", SESSION_TYPES
+            )
+            label = get_user_input(
+                f"Enter direction label ({', '.join(LABELS)}): ", LABELS
+            )
+
+            n_trials = 1 if session_type in ["long", "test"] else TRIALS_PER_LABEL
+
             for trial in range(n_trials):
                 logging.info(
                     "\nGet ready for '%s' - Trial %d/%d (%s)...",
@@ -166,30 +181,51 @@ def main():
                     print(f"Starting in {sec}...", end="\r", flush=True)
                     time.sleep(1)
                 print(" " * 20, end="\r")
-                logging.info("Collecting data for '%s' (%s)...", label, session_type)
-                rows_written, timestamps = collect_eeg(
+
+                rows_written, _ = collect_trial_eeg(
                     board, eeg_channels, session_type, label, trial, writer
                 )
-                meta["rows_written"] += rows_written
-                meta["timestamps"].extend(timestamps)
-                logging.info(
-                    "Trial %d for '%s' (%s) complete.", trial + 1, label, session_type
+
+                # Save metadata for this specific trial
+                meta = {
+                    "session_type": session_type,
+                    "label": label,
+                    "trial_num": trial + 1,
+                    "n_trials": n_trials,
+                    "rows_written": rows_written,
+                    "timestamp_utc": datetime.now(datetime.timezone.utc).isoformat(),
+                }
+                meta_filename = (
+                    f"meta_{session_type}_{label}_{trial + 1}_{int(time.time())}.json"
                 )
-            # Save metadata
-            meta_filename = f"meta_{session_type}_{label}_{int(time.time())}.json"
-            try:
-                with open(meta_filename, "w", encoding="utf-8") as metaf:
-                    json.dump(meta, metaf, indent=2)
-            except (OSError, json.JSONDecodeError) as e:
-                logging.error("Failed to save metadata file %s: %s", meta_filename, e)
-    except (OSError, ValueError, csv.Error, KeyError) as e:
-        logging.error("Error during data collection or file writing: %s", e)
-        return
+                try:
+                    with open(
+                        os.path.join("data", "metadata", meta_filename),
+                        "w",
+                        encoding="utf-8",
+                    ) as metaf:
+                        json.dump(meta, metaf, indent=2)
+                except (OSError, json.JSONDecodeError) as e:
+                    logging.error(
+                        "Failed to save metadata file %s: %s", meta_filename, e
+                    )
+
+                logging.info(
+                    "Trial %d for '%s' (%s) complete. Wrote %d rows.",
+                    trial + 1,
+                    label,
+                    session_type,
+                    rows_written,
+                )
+
+    except (OSError, ValueError, RuntimeError) as e:
+        logging.error("An error occurred during data collection: %s", e)
     finally:
         try:
             board.stop_stream()
             board.release_session()
-        except (OSError, AttributeError) as e:
+            logging.info("Board session released.")
+        except (OSError, RuntimeError) as e:
             logging.error("Error releasing board session: %s", e)
 
 
