@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 from keras.models import load_model  # type: ignore
 from sklearn.metrics import classification_report, confusion_matrix
+from joblib import Parallel, delayed
 
 from utils import (
     load_config,
@@ -75,8 +76,11 @@ logging.info("Test windows: %s", X_windows.shape)
 
 # --- Feature Extraction for Tree-based Models ---
 logging.info("Extracting features for tree-based models...")
+# Parallel feature extraction for speed
 X_features = np.array(
-    [extract_features(window, SAMPLING_RATE) for window in X_windows]
+    Parallel(n_jobs=-1, prefer="threads")(
+        delayed(extract_features)(window, SAMPLING_RATE) for window in X_windows
+    )
 )
 logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 

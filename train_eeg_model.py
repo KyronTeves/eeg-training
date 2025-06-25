@@ -17,6 +17,7 @@ Output: Trained model files, encoders, scalers
 import logging
 import joblib
 import numpy as np
+from joblib import Parallel, delayed
 
 from keras.callbacks import EarlyStopping
 from keras.utils import to_categorical
@@ -277,7 +278,12 @@ np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
 # --- Feature Extraction for Tree-based Models ---
 logging.info("Extracting features for tree-based models...")
-X_features = np.array([extract_features(window, SAMPLING_RATE) for window in X_windows])
+# Parallel feature extraction for speed
+X_features = np.array(
+    Parallel(n_jobs=-1, prefer="threads")(
+        delayed(extract_features)(window, SAMPLING_RATE) for window in X_windows
+    )
+)
 logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
 # Train tree-based models
