@@ -188,13 +188,13 @@ if num_samples_to_log > 0:
     )
 
 
-def evaluate_model(y_true, y_pred, le, model_name):
+def evaluate_model(y_true, y_pred, label_encoder, model_name):
     """Log confusion matrix and classification report for a model."""
-    logging.info(f"--- {model_name} Evaluation ---")
+    logging.info("--- %s Evaluation ---", model_name)
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true, y_pred))
     logging.info(
         "Classification Report:\n%s",
-        classification_report(y_true, y_pred, target_names=le.classes_),
+        classification_report(y_true, y_pred, target_names=label_encoder.classes_),
     )
 
 

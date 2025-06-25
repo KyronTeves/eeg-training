@@ -201,7 +201,9 @@ class OptimizedPredictionPipeline:
     # Buffer management helpers
     def _get_current_window(self) -> np.ndarray:
         """Return the most recent window from the buffer."""
-        return np.array(list(self.buffer)[-self.window_size :]).reshape((1, self.window_size, self.n_channels))
+        return np.array(list(self.buffer)[-self.window_size :]).reshape(
+            (1, self.window_size, self.n_channels)
+        )
 
     def _reset_prediction_times(self):
         """Reset the prediction times buffer."""
@@ -274,7 +276,7 @@ class OptimizedPredictionPipeline:
             if not hasattr(self, "_eegnet_error_logged"):
                 logging.error("EEGNet prediction failed: %s", e)
                 logging.error(
-                    "EEGNet will be disabled for this session." 
+                    "EEGNet will be disabled for this session."
                     "Please retrain models with correct window size."
                 )
                 self._eegnet_error_logged = True
