@@ -130,6 +130,64 @@ for i in range(len(y_true_labels)):
 pred_ensemble_numeric = le.transform(pred_ensemble_labels)
 
 
+# --- Detailed per-sample predictions ---
+y_true_str = y_windows.ravel()
+pred_cnn_str = le.inverse_transform(pred_cnn_labels)
+pred_rf_str = le.inverse_transform(pred_rf_labels)
+pred_xgb_str = le.inverse_transform(pred_xgb_labels)
+
+# Log predictions for a subset of test samples
+num_samples_to_log = min(100, len(y_true_labels))
+if num_samples_to_log > 0:
+    eegnet_matches = 0
+    ensemble_matches = 0
+
+    logging.info("--- Individual Sample Predictions ---")
+    for i in range(num_samples_to_log):
+        actual_label = y_true_str[i]
+
+        # EEGNet
+        eegnet_pred = pred_cnn_str[i]
+        eegnet_match = actual_label == eegnet_pred
+        if eegnet_match:
+            eegnet_matches += 1
+
+        # Ensemble
+        ensemble_pred = pred_ensemble_labels[i]
+        ensemble_match = actual_label == ensemble_pred
+        if ensemble_match:
+            ensemble_matches += 1
+
+        logging.info("-")
+        logging.info("Actual label:   %s", actual_label)
+        logging.info("EEGNet Predicted label: %s | Match: %s", eegnet_pred, eegnet_match)
+        logging.info("Random Forest Predicted label: %s", pred_rf_str[i])
+        logging.info("XGBoost Predicted label: %s", pred_xgb_str[i])
+        logging.info(
+            "Ensemble (hard voting) label: %s | Match: %s",
+            ensemble_pred,
+            ensemble_match,
+        )
+        logging.info("-")
+
+    eegnet_accuracy = eegnet_matches / num_samples_to_log
+    ensemble_accuracy = ensemble_matches / num_samples_to_log
+    logging.info(
+        "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
+        num_samples_to_log,
+        eegnet_matches,
+        num_samples_to_log,
+        eegnet_accuracy * 100,
+    )
+    logging.info(
+        "Ensemble accuracy on %d test samples: %d/%d (%.2f%%)",
+        num_samples_to_log,
+        ensemble_matches,
+        num_samples_to_log,
+        ensemble_accuracy * 100,
+    )
+
+
 # --- Evaluation ---
 logging.info("--- EEGNet Evaluation ---")
 logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_cnn_labels))
