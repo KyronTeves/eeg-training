@@ -54,7 +54,10 @@ try:
         y_windows.shape,
     )
 except FileNotFoundError:
-    logging.error("Windowed data file not found. Please ensure window_eeg_data.py has been run and the config paths are correct.")
+    logging.error(
+        "Windowed data file not found. Please ensure window_eeg_data.py has been run "
+        "and the config paths are correct."
+    )
     raise
 except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
