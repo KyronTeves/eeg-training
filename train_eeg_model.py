@@ -53,16 +53,18 @@ try:
         y_windows.shape,
     )
 except FileNotFoundError:
-    logging.error("Windowed data file not found.")
+    logging.error("Windowed data file not found. Please ensure window_eeg_data.py has been run and the config paths are correct.")
     raise
 except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
+# All validation and windowing is handled by utility functions in utils.py
 check_no_nan(
     X_windows, name="Windowed EEG data"
 )  # Validate no NaNs in windowed EEG data
 check_labels_valid(y_windows, name="Windowed labels")  # Validate windowed labels
+# (Reminder: Any future validation/windowing logic should use utils.py)
 
 # Encode labels
 le = LabelEncoder()

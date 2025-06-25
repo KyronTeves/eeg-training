@@ -23,7 +23,7 @@ from datetime import datetime
 import numpy as np
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import load_config, setup_logging
+from utils import load_config, setup_logging, check_no_nan, check_labels_valid
 
 setup_logging()
 config = load_config()
@@ -93,9 +93,17 @@ def write_phase_to_csv(
 ):
     """
     Writes phase data to CSV and updates rows and timestamps lists.
+    Performs data validation using utils.py before writing.
     """
+
     if phase_data:
         phase_data = np.array(phase_data)
+        try:
+            check_no_nan(phase_data, name="Phase EEG data")
+            check_labels_valid([label], valid_labels=LABELS, name="Phase label")
+        except ValueError as e:
+            logging.error("Data validation failed for phase '%s': %s", phase_label, e)
+            return
         logging.info(
             "Collected %d samples for phase '%s'", len(phase_data), phase_label
         )

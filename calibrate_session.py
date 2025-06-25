@@ -18,7 +18,7 @@ from keras.models import load_model
 from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
-from utils import load_config, setup_logging, extract_features
+from utils import load_config, setup_logging, extract_features, check_no_nan, check_labels_valid
 
 tf.config.run_functions_eagerly(True)  # Enable eager execution
 
@@ -47,7 +47,11 @@ def load_artifacts(config: dict) -> tuple:
 
 def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> tuple:
     """Encodes labels, fits a new scaler, and prepares data for EEGNet."""
+
     logging.info("Processing and scaling CNN data...")
+    check_no_nan(x_calib, name="Calibration EEG data")
+    check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels")
+
     y_calib_encoded = le.transform(y_calib.ravel())
     y_calib_cat = to_categorical(y_calib_encoded)
 
@@ -87,7 +91,10 @@ def calibrate_tree_models(
     x_calib: np.ndarray, y_calib: np.ndarray, le, model_rf, model_xgb, config: dict
 ) -> tuple:
     """Extracts features, scales, and retrains tree-based models."""
+
     logging.info("Calibrating tree-based models (RF and XGBoost)...")
+    check_no_nan(x_calib, name="Calibration EEG data (tree)")
+    check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels (tree)")
 
     sampling_rate = config["SAMPLING_RATE"]
     x_features = np.array(
@@ -158,6 +165,7 @@ def main():
 
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         logging.error("Calibration process failed: %s", e)
+        raise
 
 
 if __name__ == "__main__":

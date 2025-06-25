@@ -26,3 +26,7 @@ __pycache__/
 
 # VS Code settings
 .vscode/
+
+# Linter and config files to ignore
+.pylintrc
+pyproject.toml
