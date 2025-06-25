@@ -316,14 +316,14 @@ def test_windowed_npy_content():
             check=True,
             timeout=DEFAULT_TIMEOUT,
         )
-        X = np.load(config["WINDOWED_NPY"])
+        x = np.load(config["WINDOWED_NPY"])
         y = np.load(config["WINDOWED_LABELS_NPY"])
         # Check shapes
-        assert X.shape[1] == n_channels
+        assert x.shape[1] == n_channels
         assert (
-            X.shape[2] == config["WINDOW_SIZE"] or X.shape[1] == config["WINDOW_SIZE"]
+            x.shape[2] == config["WINDOW_SIZE"] or x.shape[1] == config["WINDOW_SIZE"]
         )
-        assert X.shape[0] == y.shape[0]
+        assert x.shape[0] == y.shape[0]
         # Check label values
         assert set(np.unique(y)).issubset({"left", "right"})
 

@@ -139,8 +139,8 @@ pred_xgb_str = le.inverse_transform(pred_xgb_labels)
 # Log predictions for a subset of test samples
 num_samples_to_log = min(100, len(y_true_labels))
 if num_samples_to_log > 0:
-    eegnet_matches = 0
-    ensemble_matches = 0
+    EEGNET_MATCHES = 0
+    ENSEMBLE_MATCHES = 0
 
     logging.info("--- Individual Sample Predictions ---")
     for i in range(num_samples_to_log):
@@ -150,13 +150,13 @@ if num_samples_to_log > 0:
         eegnet_pred = pred_cnn_str[i]
         eegnet_match = actual_label == eegnet_pred
         if eegnet_match:
-            eegnet_matches += 1
+            EEGNET_MATCHES += 1
 
         # Ensemble
         ensemble_pred = pred_ensemble_labels[i]
         ensemble_match = actual_label == ensemble_pred
         if ensemble_match:
-            ensemble_matches += 1
+            ENSEMBLE_MATCHES += 1
 
         logging.info("-")
         logging.info("Actual label:   %s", actual_label)
@@ -170,19 +170,19 @@ if num_samples_to_log > 0:
         )
         logging.info("-")
 
-    eegnet_accuracy = eegnet_matches / num_samples_to_log
-    ensemble_accuracy = ensemble_matches / num_samples_to_log
+    eegnet_accuracy = EEGNET_MATCHES / num_samples_to_log
+    ensemble_accuracy = ENSEMBLE_MATCHES / num_samples_to_log
     logging.info(
         "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
         num_samples_to_log,
-        eegnet_matches,
+        EEGNET_MATCHES,
         num_samples_to_log,
         eegnet_accuracy * 100,
     )
     logging.info(
         "Ensemble accuracy on %d test samples: %d/%d (%.2f%%)",
         num_samples_to_log,
-        ensemble_matches,
+        ENSEMBLE_MATCHES,
         num_samples_to_log,
         ensemble_accuracy * 100,
     )

@@ -169,9 +169,9 @@ X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
 # Early stopping callback
 early_stopping = EarlyStopping(
-    monitor=config["EARLY_STOPPING_MONITOR"], 
-    patience=config["EARLY_STOPPING_PATIENCE"], 
-    restore_best_weights=True
+    monitor=config["EARLY_STOPPING_MONITOR"],
+    patience=config["EARLY_STOPPING_PATIENCE"],
+    restore_best_weights=True,
 )
 
 # Build EEGNet model using official implementation
@@ -227,9 +227,9 @@ for model_name in models_to_train:
 
     # Compile and train
     model.compile(
-        optimizer=config["OPTIMIZER"], 
-        loss=config["LOSS_FUNCTION"], 
-        metrics=["accuracy"]
+        optimizer=config["OPTIMIZER"],
+        loss=config["LOSS_FUNCTION"],
+        metrics=["accuracy"],
     )
     history = model.fit(
         X_train_eegnet,
