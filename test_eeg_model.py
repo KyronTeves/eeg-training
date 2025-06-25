@@ -129,7 +129,7 @@ for idx in indices:
         CORRECT += 1
 
     # Track model disagreements for debugging
-    if len(set([pred_label_eegnet, pred_label_rf, pred_label_xgb])) > 1:
+    if len({pred_label_eegnet, pred_label_rf, pred_label_xgb}) > 1:
         logging.info(
             "DISAGREEMENT: EEGNet=%s, RF=%s, XGB=%s (Actual=%s)",
             pred_label_eegnet,

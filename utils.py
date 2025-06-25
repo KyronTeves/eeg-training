@@ -9,7 +9,10 @@ Utility functions for the EEG training system.
 
 import json
 import logging
+import os
 import time
+from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from typing import Tuple
 
 import joblib
@@ -140,19 +143,54 @@ def run_session_calibration(
 
 def setup_logging(logfile: str = "eeg_training.log"):
     """
-    Set up logging to both console and file with a standard format.
+    Set up logging to both console and file with automatic rotation.
     Should be called at the start of each script to ensure consistent logging.
     Args:
         logfile: Path to the log file (default: 'eeg_training.log').
     """
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(logfile, mode="a"),
-        ],
+
+    # Create rotating file handler (10MB max, keep 5 backup files)
+    file_handler = RotatingFileHandler(
+        logfile,
+        maxBytes=10 * 1024 * 1024,  # 10MB per file
+        backupCount=5,  # Keep 5 old files (eeg_training.log.1, .2, etc.)
+        encoding="utf-8",
     )
+
+    # Console handler for immediate feedback
+    console_handler = logging.StreamHandler()
+
+    # Set up formatting
+    formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # Configure root logger
+    logging.basicConfig(
+        level=logging.INFO, handlers=[console_handler, file_handler]
+    )
+
+
+def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
+    """
+    Manual cleanup function for oversized log files.
+    Call this if log rotation wasn't previously enabled.
+    """
+
+    if not os.path.exists(logfile):
+        return
+
+    file_size_mb = os.path.getsize(logfile) / (1024 * 1024)
+
+    if file_size_mb > max_size_mb:
+        # Archive the current log
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_name = f"{logfile}.archive_{timestamp}"
+
+        os.rename(logfile, archive_name)
+
+        logging.info("Large log file archived to %s (%.1fMB)", archive_name, file_size_mb)
+        logging.info("Starting fresh log file with rotation enabled")
 
 
 def check_no_nan(X, name="data"):
