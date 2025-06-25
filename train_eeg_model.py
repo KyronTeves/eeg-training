@@ -27,8 +27,14 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
-from EEGModels import EEGNet
-from utils import load_config, setup_logging, check_no_nan, check_labels_valid, extract_features
+from EEGModels import EEGNet, ShallowConvNet
+from utils import (
+    load_config,
+    setup_logging,
+    check_no_nan,
+    check_labels_valid,
+    extract_features,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -53,7 +59,9 @@ except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
-check_no_nan(X_windows, name="Windowed EEG data")  # Validate no NaNs in windowed EEG data
+check_no_nan(
+    X_windows, name="Windowed EEG data"
+)  # Validate no NaNs in windowed EEG data
 check_labels_valid(y_windows, name="Windowed labels")  # Validate windowed labels
 
 # Encode labels
@@ -144,8 +152,11 @@ logging.info(
 )
 
 # Training context information for debugging
-logging.info("Training context: %d total samples, %d classes",
-            len(X_train_final), len(np.unique(y_train_final)))
+logging.info(
+    "Training context: %d total samples, %d classes",
+    len(X_train_final),
+    len(np.unique(y_train_final)),
+)
 unique_labels, label_counts = np.unique(y_train_final, return_counts=True)
 class_dist = dict(zip(unique_labels, label_counts))
 logging.info("Detailed class distribution: %s", class_dist)
@@ -158,9 +169,7 @@ X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
 # Early stopping callback
 early_stopping = EarlyStopping(
-    monitor='val_loss',
-    patience=10,
-    restore_best_weights=True
+    monitor="val_loss", patience=10, restore_best_weights=True
 )
 
 # Build EEGNet model using official implementation
@@ -180,44 +189,75 @@ logging.info(
     F2,
 )
 
-model = EEGNet(
-    nb_classes=y_cat.shape[1],
-    Chans=N_CHANNELS,
-    Samples=WINDOW_SIZE,
-    kernLength=kernLength,
-    F1=F1,
-    D=D,
-    F2=F2,
-)
-model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-model.fit(
-    X_train_eegnet,
-    y_train_final,
-    epochs=100,
-    batch_size=64,
-    validation_split=0.2,
-    class_weight=class_weight_dict,
-    callbacks=[early_stopping]
-)
+# Build and compare models
+models_to_train = config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
 
-# Evaluate EEGNet
-_, acc = model.evaluate(X_test_eegnet, y_test)
-logging.info("EEGNet Test accuracy: %.3f", acc)
+for model_name in models_to_train:
+    logging.info("=== Training %s ===", model_name)
 
-# Print confusion matrix and classification report
-y_pred = model.predict(X_test_eegnet)
-y_pred_labels = np.argmax(y_pred, axis=1)
-y_true_labels = np.argmax(y_test, axis=1)
-logging.info(
-    "EEGNet Confusion Matrix:\n%s", confusion_matrix(y_true_labels, y_pred_labels)
-)
-logging.info(
-    "EEGNet Classification Report:\n%s",
-    classification_report(y_true_labels, y_pred_labels, target_names=le.classes_),
-)
+    if model_name == "EEGNet":
+        model = EEGNet(
+            nb_classes=y_cat.shape[1],
+            Chans=N_CHANNELS,
+            Samples=WINDOW_SIZE,
+            kernLength=kernLength,
+            F1=F1,
+            D=D,
+            F2=F2,
+        )
+        model_path = config["MODEL_CNN"]
 
-# Save EEGNet model and label encoder
-model.save(config["MODEL_CNN"])
+    elif model_name == "ShallowConvNet":
+        model = ShallowConvNet(
+            nb_classes=y_cat.shape[1],
+            Chans=N_CHANNELS,
+            Samples=WINDOW_SIZE,
+            dropoutRate=0.5,
+        )
+        model_path = config.get("MODEL_SHALLOW", "models/eeg_shallow_model.h5")
+
+    else:
+        logging.warning("Unknown model: %s. Skipping.", model_name)
+        continue
+
+    # Compile and train
+    model.compile(
+        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+    )
+    history = model.fit(
+        X_train_eegnet,
+        y_train_final,
+        epochs=100,
+        batch_size=64,
+        validation_split=0.2,
+        class_weight=class_weight_dict,
+        callbacks=[early_stopping],
+        verbose=1,
+    )
+
+    # Evaluate
+    _, acc = model.evaluate(X_test_eegnet, y_test)
+    logging.info("%s Test accuracy: %.3f", model_name, acc)
+
+    # Detailed evaluation
+    y_pred = model.predict(X_test_eegnet)
+    y_pred_labels = np.argmax(y_pred, axis=1)
+    y_true_labels = np.argmax(y_test, axis=1)
+
+    logging.info(
+        f"{model_name} Confusion Matrix:\n%s",
+        confusion_matrix(y_true_labels, y_pred_labels),
+    )
+    logging.info(
+        f"{model_name} Classification Report:\n%s",
+        classification_report(y_true_labels, y_pred_labels, target_names=le.classes_),
+    )
+
+    # Save model
+    model.save(model_path)
+    logging.info("%s saved to %s", model_name, model_path)
+
+# Save shared components (use the last trained model's encoder/scaler)
 joblib.dump(le, config["LABEL_ENCODER"])
 joblib.dump(scaler, config["SCALER_CNN"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)

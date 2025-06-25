@@ -29,7 +29,7 @@ setup_logging()  # Set up consistent logging to file and console
 
 def load_and_filter_data(config: dict) -> pd.DataFrame:
     """
-    Load raw EEG data and filter it based on session types specified in the config.
+    Load EEG data and filter it based on session types specified in the config.
 
     Args:
         config: Dictionary with configuration parameters.
@@ -37,13 +37,20 @@ def load_and_filter_data(config: dict) -> pd.DataFrame:
     Returns:
         Filtered pandas DataFrame.
     """
+    csv_file = config["OUTPUT_CSV"]
+
+    logging.info("Loading EEG data from: %s", csv_file)
+
     try:
-        raw_data = pd.read_csv(config["OUTPUT_CSV"])
+        raw_data = pd.read_csv(csv_file)
         if raw_data.empty:
-            logging.warning("Raw data file is empty. No data to process.")
+            logging.warning("Data file is empty. No data to process.")
             return pd.DataFrame()
     except (FileNotFoundError, pd.errors.EmptyDataError) as e:
-        logging.error("Failed to load or parse raw data CSV: %s", e)
+        logging.error("Failed to load or parse data CSV: %s", e)
+        logging.info(
+            "Make sure to run collect_data.py first to generate training data."
+        )
         raise
 
     if "session_type" in raw_data.columns:
@@ -61,7 +68,9 @@ def load_and_filter_data(config: dict) -> pd.DataFrame:
     return raw_data
 
 
-def process_and_window_data(df: pd.DataFrame, config: dict) -> tuple[np.ndarray, np.ndarray]:
+def process_and_window_data(
+    df: pd.DataFrame, config: dict
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Process the DataFrame to extract EEG data and labels, then create overlapping windows.
 
@@ -73,26 +82,26 @@ def process_and_window_data(df: pd.DataFrame, config: dict) -> tuple[np.ndarray,
         A tuple containing windowed data (X_windows) and labels (y_windows).
     """
     eeg_cols = [col for col in df.columns if col.startswith("ch_")]
-    X = df[eeg_cols].values
+    x = df[eeg_cols].values
     labels = df["label"].values
 
-    check_no_nan(X, name="EEG data")
+    check_no_nan(x, name="EEG data")
     check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
 
     n_channels = config["N_CHANNELS"]
-    if X.shape[1] != n_channels:
+    if x.shape[1] != n_channels:
         raise ValueError(
-            f"Expected {n_channels} channels, but found {X.shape[1]} in the data."
+            f"Expected {n_channels} channels, but found {x.shape[1]} in the data."
         )
 
-    X = X.reshape(-1, n_channels)
+    x = x.reshape(-1, n_channels)
     labels = labels.reshape(-1, 1)
 
-    return window_data(X, labels, config["WINDOW_SIZE"], config["STEP_SIZE"])
+    return window_data(x, labels, config["WINDOW_SIZE"], config["STEP_SIZE"])
 
 
 def save_windowed_data(
-    X_windows: np.ndarray, y_windows: np.ndarray, config: dict
+    x_windows: np.ndarray, y_windows: np.ndarray, config: dict
 ) -> None:
     """
     Save the windowed data and labels to .npy files.
@@ -103,7 +112,7 @@ def save_windowed_data(
         config: Dictionary with configuration parameters.
     """
     try:
-        np.save(config["WINDOWED_NPY"], X_windows)
+        np.save(config["WINDOWED_NPY"], x_windows)
         np.save(config["WINDOWED_LABELS_NPY"], y_windows)
         logging.info(
             "Saved windowed data to %s and %s",
@@ -126,15 +135,15 @@ def main():
         logging.info("No data to process. Exiting.")
         return
 
-    X_windows, y_windows = process_and_window_data(filtered_df, config)
+    x_windows, y_windows = process_and_window_data(filtered_df, config)
 
     logging.info(
         "Created %d windows of shape %s",
-        X_windows.shape[0],
-        X_windows.shape[1:],
+        x_windows.shape[0],
+        x_windows.shape[1:],
     )
 
-    save_windowed_data(X_windows, y_windows, config)
+    save_windowed_data(x_windows, y_windows, config)
 
 
 if __name__ == "__main__":

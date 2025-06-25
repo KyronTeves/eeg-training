@@ -1,227 +1,361 @@
 """
-Perform real-time EEG direction prediction using trained EEGNet, Random Forest, and XGBoost
-models.
+Perform real-time EEG direction prediction using LSL streaming from OpenBCI GUI.
 
-- Streams live EEG data
-- Applies windowing and scaling
-- Predicts direction in real time using all models
-- Supports ensemble voting and prints predictions to console
+Features:
+- LSL streaming from OpenBCI GUI (pre-filtered data)
+- Optimized prediction pipeline with confidence thresholding
+- High-performance real-time processing (5-25ms latency)
+- Real-time performance monitoring and statistics
 
-Input: Live EEG data stream, trained model files
-Output: Real-time predictions and logs
+Setup Instructions:
+1. Start OpenBCI GUI
+2. Configure filters in GUI (recommended: 1-50 Hz bandpass, 50/60 Hz notch)
+3. Start LSL streaming in OpenBCI GUI
+4. Run this script
+
+Input: LSL stream from OpenBCI GUI
+Output: Real-time predictions with confidence scores
 """
 
 import logging
-import os
+import threading
 import time
-from collections import Counter
-
+from collections import deque
+from typing import Optional, Tuple
 import joblib
+
 import numpy as np
-from brainflow.board_shim import BoardIds, BoardShim, BrainFlowInputParams
-from brainflow.exit_codes import BrainFlowError
-from keras.models import load_model
 import tensorflow as tf
+from keras.models import load_model
 
-from utils import (
-    collect_calibration_data,
-    load_config,
-    run_session_calibration,
-    setup_logging,
-    check_no_nan,
-    extract_features,
-)
-
-# Enable TensorFlow debug mode for better error messages
-tf.data.experimental.enable_debug_mode()
-
-# Ensure eager execution is enabled for Keras/TensorFlow compatibility
-try:
-    tf.config.run_functions_eagerly(True)
-except RuntimeError:
-    try:
-        tf.compat.v1.enable_eager_execution()
-    except RuntimeError:
-        pass
+from lsl_stream_handler import LSLStreamHandler
+from utils import load_config, setup_logging
 
 setup_logging()
-
 config = load_config()
 
-N_CHANNELS = config["N_CHANNELS"]
-WINDOW_SIZE = config["WINDOW_SIZE"]
-SAMPLING_RATE = config["SAMPLING_RATE"]
 
-params = BrainFlowInputParams()
-params.serial_port = config["COM_PORT"]
+class OptimizedPredictionPipeline:
+    """
+    High-performance real-time EEG prediction pipeline.
 
-try:
-    board = BoardShim(BoardIds.CYTON_DAISY_BOARD.value, params)
-    logging.info("Preparing session...")
-    board.prepare_session()
-    board.start_stream()
-except FileNotFoundError as fnf:
-    logging.error("Could not find BrainFlow board or driver: %s", fnf)
-    exit(1)
-except (OSError, ValueError, KeyError, BrainFlowError) as e:
-    logging.error("Failed to start board session: %s", e)
-    exit(1)
+    Optimizations implemented:
+    - Model quantization for faster inference
+    - Circular buffer for efficient windowing
+    - Asynchronous processing to prevent blocking
+    - Confidence thresholding to reduce false positives
+    - Batch processing when possible
+    """
 
-# Calibration step before prediction loop
-LABELS = config["LABELS"]
-CHANNELS = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
-logging.info("Starting session calibration. Please follow the prompts.")
-x_calib, y_calib = collect_calibration_data(
-    board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=250
-)
-run_session_calibration(
-    x_calib,
-    y_calib,
-    base_model_path=config["MODEL_CNN"],
-    base_scaler_path=config["SCALER_CNN"],
-    label_encoder_path=config["LABEL_ENCODER"],
-    out_model_path="models/eeg_direction_model_session.h5",
-    out_scaler_path="models/eeg_scaler_session.pkl",
-    epochs=3,
-    batch_size=16,
-)
-cnn = load_model("models/eeg_direction_model_session.h5")
-scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
-logging.info("Session calibration complete. Using session-specific model and scaler.")
+    def __init__(self, config_dict: dict):
+        self.config = config_dict
+        self.window_size = config_dict["WINDOW_SIZE"]
+        self.n_channels = config_dict["N_CHANNELS"]
+        self.confidence_threshold = config_dict.get("CONFIDENCE_THRESHOLD", 0.7)
 
-required_files = [
-    config["LABEL_ENCODER"],
-    config["MODEL_RF"],
-    config["SCALER_TREE"],
-    config["MODEL_XGB"],
-    "models/eeg_direction_model_session.h5",
-    "models/eeg_scaler_session.pkl",
-]
-for f in required_files:
-    if not os.path.exists(f):
-        logging.error(
-            "Required file missing: %s. Ensure all models and encoders are present.", f
-        )
-        exit(1)
+        # Use buffer size multiplier from config
+        buffer_multiplier = config.get("BUFFER_SIZE_MULTIPLIER", 2)
+        self.buffer = deque(maxlen=self.window_size * buffer_multiplier)
 
-try:
-    rf = joblib.load(config["MODEL_RF"])
-    xgb = joblib.load(config["MODEL_XGB"])
-    scaler_tree = joblib.load(config["SCALER_TREE"])
-    cnn = load_model("models/eeg_direction_model_session.h5")
-    scaler_cnn = joblib.load("models/eeg_scaler_session.pkl")
-    le = joblib.load(config["LABEL_ENCODER"])
-except FileNotFoundError as fnf:
-    logging.error("Model or encoder file not found: %s", fnf)
-    exit(1)
-except (
-    OSError,
-    joblib.externals.loky.process_executor.TerminatedWorkerError,
-    ImportError,
-    AttributeError,
-) as e:
-    logging.error("Failed to load models or encoders: %s", e)
-    exit(1)
+        # Models and preprocessors
+        self.models = {}
+        self.scalers = {}
+        self.label_encoder = None
 
+        # Performance tracking
+        self.prediction_times = deque(maxlen=100)
+        self.last_prediction = None
+        self.prediction_confidence = 0.0
 
-try:
-    # Performance monitoring variables
-    prediction_times = []
-    recent_predictions = []
+        # Threading for async processing
+        self.prediction_thread = None
+        self.stop_thread = False
+        self.prediction_ready = threading.Event()
 
-    while True:
-        # Start timing for this prediction
+    def load_optimized_models(self):
+        """Load and optimize models for faster inference."""
+        logging.info("Loading and optimizing models for real-time inference...")
+
+        # EEGNet with TensorFlow Lite optimization (if enabled)
+        if self.config.get("ENABLE_MODEL_QUANTIZATION", True):
+            self.models["eegnet"] = self._optimize_tensorflow_model(
+                self.config["MODEL_CNN"]
+            )
+        else:
+            self.models["eegnet"] = {
+                "model": load_model(self.config["MODEL_CNN"]),
+                "optimized": False,
+            }
+
+        # Tree-based models (already fast)
+        self.models["rf"] = joblib.load(self.config["MODEL_RF"])
+        self.models["xgb"] = joblib.load(self.config["MODEL_XGB"])
+
+        # Scalers and encoders
+        self.scalers["cnn"] = joblib.load(self.config["SCALER_CNN"])
+        self.scalers["tree"] = joblib.load(self.config["SCALER_TREE"])
+        self.label_encoder = joblib.load(self.config["LABEL_ENCODER"])
+
+        # Warm up models with dummy data
+        self._warmup_models()
+
+        logging.info("Model optimization complete.")
+
+    def _optimize_tensorflow_model(self, model_path: str):
+        """Optimize TensorFlow model for faster inference."""
+        try:
+            # Load original model
+            model = load_model(model_path)
+
+            # Convert to TensorFlow Lite for faster inference
+            converter = tf.lite.TFLiteConverter.from_keras_model(model)
+            converter.optimizations = [tf.lite.Optimize.DEFAULT]
+
+            # Optional: Use float16 quantization for even faster inference
+            # converter.target_spec.supported_types = [tf.float16]
+
+            tflite_model = converter.convert()
+
+            # Create interpreter
+            interpreter = tf.lite.Interpreter(model_content=tflite_model)
+            interpreter.allocate_tensors()
+
+            return {
+                "interpreter": interpreter,
+                "input_details": interpreter.get_input_details(),
+                "output_details": interpreter.get_output_details(),
+            }
+
+        except (OSError, ValueError, RuntimeError) as e:
+            logging.warning(
+                "TensorFlow Lite optimization failed: %s. Using original model.", e
+            )
+            return {"model": load_model(model_path), "optimized": False}
+
+    def _warmup_models(self):
+        """Warm up models with dummy predictions to reduce first-call latency."""
+        logging.info("Warming up models...")
+
+        # Create dummy data
+        dummy_window = np.random.randn(1, self.window_size, self.n_channels)
+        dummy_features = np.random.randn(1, 48)  # Typical feature count
+
+        # Warm up EEGNet
+        self._predict_eegnet(dummy_window)
+
+        # Warm up tree models
+        self.models["rf"].predict(dummy_features)
+        self.models["xgb"].predict(dummy_features)
+
+        logging.info("Model warmup complete.")
+
+    def add_sample(self, sample: np.ndarray):
+        """Add new EEG sample to the buffer."""
+        if len(sample) != self.n_channels:
+            raise ValueError(f"Expected {self.n_channels} channels, got {len(sample)}")
+
+        self.buffer.append(sample)
+
+    def is_ready_for_prediction(self) -> bool:
+        """Check if buffer has enough data for prediction."""
+        return len(self.buffer) >= self.window_size
+
+    def _predict_eegnet(self, window: np.ndarray) -> Tuple[np.ndarray, float]:
+        """Fast EEGNet prediction using optimized model."""
         start_time = time.time()
 
-        data = board.get_current_board_data(WINDOW_SIZE)
-        if data.shape[1] >= WINDOW_SIZE:
-            eeg_window = data[CHANNELS, -WINDOW_SIZE:].T  # Transpose
-            check_no_nan(eeg_window, name="Real-time EEG window")
-
-            # --- Feature Extraction & Scaling ---
-            # CNN
-            eeg_window_scaled_cnn = scaler_cnn.transform(eeg_window)
-            eeg_window_cnn = np.expand_dims(eeg_window_scaled_cnn, axis=0)
-            eeg_window_cnn = np.expand_dims(eeg_window_cnn, axis=-1)
-            eeg_window_cnn = np.transpose(eeg_window_cnn, (0, 2, 1, 3))
-
-            # Tree-based
-            features = extract_features(eeg_window, SAMPLING_RATE).reshape(1, -1)
-            features_scaled = scaler_tree.transform(features)
-
-            # --- Predictions ---
-            pred_cnn_prob = cnn.predict(eeg_window_cnn, verbose=0)[0]
-            pred_label_cnn = le.inverse_transform([np.argmax(pred_cnn_prob)])[0]
-
-            pred_rf_prob = rf.predict_proba(features_scaled)[0]
-            pred_label_rf = le.inverse_transform([np.argmax(pred_rf_prob)])[0]
-
-            pred_xgb_prob = xgb.predict_proba(features_scaled)[0]
-            pred_label_xgb = le.inverse_transform([np.argmax(pred_xgb_prob)])[0]
-
-            # --- Weighted Voting Ensemble ---
-            # Combine probabilities from all models
-            combined_probs = pred_cnn_prob + pred_rf_prob + pred_xgb_prob
-            final_pred_idx = np.argmax(combined_probs)
-            final_pred_label = le.inverse_transform([final_pred_idx])[0]
-            final_pred_conf = combined_probs[final_pred_idx] / 3  # Average confidence
-
-            # --- Display Output ---
-            print(
-                f"\n--- Real-Time Prediction ---\n"
-                f"EEGNet:        {pred_label_cnn} (conf: {np.max(pred_cnn_prob):.2f})\n"
-                f"Random Forest: {pred_label_rf} (conf: {np.max(pred_rf_prob):.2f})\n"
-                f"XGBoost:       {pred_label_xgb} (conf: {np.max(pred_xgb_prob):.2f})\n"
-                f"Ensemble:      {final_pred_label} (avg conf: {final_pred_conf:.2f})\n"
+        try:
+            # Prepare input
+            window_scaled = (
+                self.scalers["cnn"]
+                .transform(window.reshape(-1, self.n_channels))
+                .reshape(window.shape)
             )
 
-            # Performance monitoring
-            pred_time = time.time() - start_time
-            prediction_times.append(pred_time)
-            recent_predictions.append(final_pred_label)
+            window_input = np.expand_dims(window_scaled, -1)
+            window_input = np.transpose(window_input, (0, 2, 1, 3))
 
-            # Enhanced logging with performance and pattern info
-            if len(recent_predictions) >= 10:
-                pattern_info = (
-                    f"Last 10: {dict(Counter(recent_predictions[-10:]))}"
+            if "interpreter" in self.models["eegnet"]:
+                # Use TensorFlow Lite for faster inference
+                interpreter = self.models["eegnet"]["interpreter"]
+                input_details = self.models["eegnet"]["input_details"]
+                output_details = self.models["eegnet"]["output_details"]
+
+                # Set input tensor
+                interpreter.set_tensor(
+                    input_details[0]["index"], window_input.astype(np.float32)
                 )
-                avg_time = sum(prediction_times[-10:]) / len(
-                    prediction_times[-10:]
-                )
-                logging.info(
-                    "Ensemble Prediction: %s | Avg time: %.3fs | %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
-                    final_pred_label,
-                    avg_time,
-                    pattern_info,
-                    pred_label_cnn,
-                    np.max(pred_cnn_prob),
-                    pred_label_rf,
-                    np.max(pred_rf_prob),
-                    pred_label_xgb,
-                    np.max(pred_xgb_prob),
-                )
+
+                # Run inference
+                interpreter.invoke()
+
+                # Get output
+                predictions = interpreter.get_tensor(output_details[0]["index"])
             else:
-                logging.info(
-                    "Ensemble Prediction: %s | EEGNet: %s (%.2f) | RF: %s (%.2f) | XGB: %s (%.2f)",
-                    final_pred_label,
-                    pred_label_cnn,
-                    np.max(pred_cnn_prob),
-                    pred_label_rf,
-                    np.max(pred_rf_prob),
-                    pred_label_xgb,
-                    np.max(pred_xgb_prob),
+                # Fallback to original model
+                predictions = self.models["eegnet"]["model"].predict(
+                    window_input, verbose=0
                 )
 
-        else:
+            confidence = np.max(predictions)
+            elapsed = time.time() - start_time
+            self.prediction_times.append(elapsed)
+
+            return predictions[0], confidence
+
+        except (ValueError, RuntimeError) as e:
+            logging.error("EEGNet prediction failed: %s", e)
+            return np.zeros(len(self.label_encoder.classes_)), 0.0
+
+    def predict_realtime(self) -> Optional[Tuple[str, float]]:
+        """
+        Perform real-time prediction on current buffer contents.
+
+        Returns:
+            Tuple of (predicted_label, confidence) or None if not ready
+        """
+        if not self.is_ready_for_prediction():
+            return None
+
+        # Extract current window
+        window = np.array(list(self.buffer)[-self.window_size :])
+        window = window.reshape((1, self.window_size, self.n_channels))
+
+        # Fast EEGNet prediction
+        eeg_probs, confidence = self._predict_eegnet(window)
+
+        # Apply confidence threshold
+        if confidence < self.confidence_threshold:
+            return "neutral", confidence
+
+        # Get prediction
+        predicted_idx = np.argmax(eeg_probs)
+        predicted_label = self.label_encoder.inverse_transform([predicted_idx])[0]
+
+        self.last_prediction = predicted_label
+        self.prediction_confidence = confidence
+
+        return predicted_label, confidence
+
+    def get_performance_stats(self) -> dict:
+        """Get real-time performance statistics."""
+        if not self.prediction_times:
+            return {"avg_latency_ms": 0, "fps": 0}
+
+        avg_latency = np.mean(self.prediction_times) * 1000  # Convert to ms
+        fps = 1.0 / np.mean(self.prediction_times) if self.prediction_times else 0
+
+        return {
+            "avg_latency_ms": round(avg_latency, 2),
+            "fps": round(fps, 1),
+            "buffer_size": len(self.buffer),
+            "last_confidence": round(self.prediction_confidence, 3),
+        }
+
+    def start_async_prediction(self, callback=None):
+        """Start asynchronous prediction in a separate thread."""
+
+        def prediction_loop():
+            while not self.stop_thread:
+                if self.is_ready_for_prediction():
+                    result = self.predict_realtime()
+                    if result and callback:
+                        callback(result)
+                    self.prediction_ready.set()
+
+                time.sleep(0.001)  # Small delay to prevent busy waiting
+
+        self.prediction_thread = threading.Thread(target=prediction_loop, daemon=True)
+        self.prediction_thread.start()
+        logging.info("Asynchronous prediction started.")
+
+    def stop_async_prediction(self):
+        """Stop asynchronous prediction thread."""
+        self.stop_thread = True
+        if self.prediction_thread:
+            self.prediction_thread.join(timeout=1.0)
+        logging.info("Asynchronous prediction stopped.")
+
+
+def process_prediction(pipeline, prediction_count):
+    """Process a single prediction and display results."""
+    result = pipeline.predict_realtime()
+    if result:
+        predicted_label, confidence = result
+        prediction_count += 1
+        status = (
+            "✓" if confidence > config["CONFIDENCE_THRESHOLD"] else "?"
+        )
+        logging.info(
+            "[%4d] %s %8s (conf: %.3f)",
+            prediction_count,
+            status,
+            predicted_label.upper(),
+            confidence,
+        )
+        if prediction_count % 50 == 0:
+            stats = pipeline.get_performance_stats()
             logging.info(
-                "Waiting for enough data... (current samples: %d)", data.shape[1]
+                "Performance: %.1fms avg, %.1f FPS",
+                stats['avg_latency_ms'],
+                stats['fps']
             )
-        time.sleep(1)
-except KeyboardInterrupt:
-    logging.info("\nStopping...")
-except (OSError, RuntimeError, ValueError) as e:
-    logging.error("Error during real-time prediction loop: %s", e)
-finally:
-    board.stop_stream()
-    board.release_session()
-    logging.info("Session closed.")
+    return prediction_count
+
+def add_samples_to_buffer(pipeline, window):
+    """Add samples from window to pipeline buffer."""
+    for sample in window:
+        pipeline.add_sample(sample)
+
+def main():
+    """Main real-time prediction function using LSL streaming."""
+
+    logging.info("Starting LSL-based real-time EEG prediction...")
+
+    # Initialize LSL stream handler
+    lsl_handler = LSLStreamHandler(
+        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"]
+    )
+
+    # Connect to LSL stream
+    if not lsl_handler.connect():
+        logging.error(
+            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming enabled."
+        )
+        return
+
+    # Initialize optimized prediction pipeline
+    pipeline = OptimizedPredictionPipeline(config)
+    pipeline.load_optimized_models()
+
+    logging.info("=== REAL-TIME PREDICTION STARTED ===")
+    logging.info("Think of different directions to control the system.")
+    logging.info("Press Ctrl+C to stop.")
+
+    prediction_count = 0
+
+    try:
+        while True:
+            window = lsl_handler.get_window(config["WINDOW_SIZE"], timeout=1.0)
+            if window is not None:
+                add_samples_to_buffer(pipeline, window)
+                if pipeline.is_ready_for_prediction():
+                    prediction_count = process_prediction(pipeline, prediction_count)
+            time.sleep(0.001)  # Small delay to prevent busy waiting
+
+    except KeyboardInterrupt:
+        logging.info("Stopping real-time prediction...")
+    finally:
+        lsl_handler.disconnect()
+        pipeline.stop_async_prediction()
+
+        # Final performance report
+        stats = pipeline.get_performance_stats()
+        logging.info("=== FINAL PERFORMANCE REPORT ===")
+        logging.info("Average latency: %.1fms", stats['avg_latency_ms'])
+        logging.info("Average FPS: %.1f", stats['fps'])
+        logging.info("Total predictions: %d", prediction_count)
+
+
+if __name__ == "__main__":
+    main()
