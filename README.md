@@ -83,7 +83,7 @@ prediction of EEG-based direction commands using LSL streaming and advanced neur
    pip install -r requirements.txt
    ```
 
-### LSL Streaming Setup (Only Method)
+### LSL Streaming Setup
 
 #### OpenBCI GUI Setup
 1. **Start OpenBCI GUI** and connect to your Cyton board
