@@ -97,7 +97,6 @@ X_train_bal = X_train_scaled[downsampled_indices]
 y_train_bal = y_train[downsampled_indices]
 
 
-# Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     """
     Augment EEG data by adding realistic noise patterns and artifacts.
@@ -133,13 +132,120 @@ def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     return x_aug
 
 
+def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
+    """Train and evaluate EEGNet or ShallowConvNet."""
+    X_train_eegnet = np.expand_dims(_X_train, -1)
+    X_test_eegnet = np.expand_dims(_X_test, -1)
+    X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
+    X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
+
+    early_stopping = EarlyStopping(
+        monitor=_config["EARLY_STOPPING_MONITOR"],
+        patience=_config["EARLY_STOPPING_PATIENCE"],
+        restore_best_weights=True,
+    )
+    kernLength = _config["EEGNET_KERN_LENGTH"]
+    F1 = _config["EEGNET_F1"]
+    D = _config["EEGNET_D"]
+    F2 = _config["EEGNET_F2"]
+    models_to_train = _config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
+    for model_name in models_to_train:
+        logging.info("=== Training %s ===", model_name)
+        if model_name == "EEGNet":
+            model = EEGNet(
+                nb_classes=_y_train.shape[1],
+                Chans=_config["N_CHANNELS"],
+                Samples=_config["WINDOW_SIZE"],
+                kernLength=kernLength,
+                F1=F1,
+                D=D,
+                F2=F2,
+                dropoutRate=_config["EEGNET_DROPOUT_RATE"],
+                dropoutType=_config["EEGNET_DROPOUT_TYPE"],
+                norm_rate=_config["EEGNET_NORM_RATE"],
+            )
+            model_path = _config["MODEL_CNN"]
+        elif model_name == "ShallowConvNet":
+            model = ShallowConvNet(
+                nb_classes=_y_train.shape[1],
+                Chans=_config["N_CHANNELS"],
+                Samples=_config["WINDOW_SIZE"],
+                dropoutRate=_config["EEGNET_DROPOUT_RATE"],
+            )
+            model_path = _config.get("MODEL_SHALLOW", "models/eeg_shallow_model.h5")
+        else:
+            logging.warning("Unknown model: %s. Skipping.", model_name)
+            continue
+        model.compile(
+            optimizer=_config["OPTIMIZER"],
+            loss=_config["LOSS_FUNCTION"],
+            metrics=["accuracy"],
+        )
+        model.fit(
+            X_train_eegnet,
+            _y_train,
+            epochs=_config["EPOCHS"],
+            batch_size=_config["BATCH_SIZE"],
+            validation_split=_config["VALIDATION_SPLIT"],
+            class_weight=None,  # Set externally if needed
+            callbacks=[early_stopping],
+            verbose=1,
+        )
+        _, acc = model.evaluate(X_test_eegnet, _y_test)
+        logging.info("%s Test accuracy: %.3f", model_name, acc)
+        y_pred = model.predict(X_test_eegnet)
+        y_pred_labels = np.argmax(y_pred, axis=1)
+        y_true_labels = np.argmax(_y_test, axis=1)
+        logging.info(
+            f"{model_name} Confusion Matrix:\n%s",
+            confusion_matrix(y_true_labels, y_pred_labels),
+        )
+        logging.info(
+            f"{model_name} Classification Report:\n%s",
+            classification_report(y_true_labels, y_pred_labels, target_names=_le.classes_),
+        )
+        model.save(model_path)
+        logging.info("%s saved to %s", model_name, model_path)
+
+
+def train_tree_models(_X_features, _y_encoded, _config, _le):
+    """Train and evaluate Random Forest and XGBoost models."""
+    X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
+        _X_features, _y_encoded, test_size=0.2, random_state=42, stratify=_y_encoded
+    )
+    scaler_tree = StandardScaler()
+    X_train_scaled_tree = scaler_tree.fit_transform(X_train_tree)
+    X_test_scaled_tree = scaler_tree.transform(X_test_tree)
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(X_train_scaled_tree, y_train_tree)
+    rf_pred = rf.predict(X_test_scaled_tree)
+    logging.info("Random Forest Results:")
+    logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
+    logging.info(
+        "Classification Report:\n%s",
+        classification_report(y_test_tree, rf_pred, target_names=_le.classes_),
+    )
+    xgb = XGBClassifier(
+        n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
+    )
+    xgb.fit(X_train_scaled_tree, y_train_tree)
+    xgb_pred = xgb.predict(X_test_scaled_tree)
+    logging.info("XGBoost Results:")
+    logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
+    logging.info(
+        "Classification Report:\n%s",
+        classification_report(y_test_tree, xgb_pred, target_names=_le.classes_),
+    )
+    joblib.dump(rf, _config["MODEL_RF"])
+    joblib.dump(xgb, _config["MODEL_XGB"])
+    joblib.dump(scaler_tree, _config["SCALER_TREE"])
+
+# Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 X_train_aug = augment_eeg_data(X_train_bal)
 y_train_aug = y_train_bal.copy()
-# Concatenate original and augmented data
 X_train_final = np.concatenate([X_train_bal, X_train_aug], axis=0)
 y_train_final = np.concatenate([y_train_bal, y_train_aug], axis=0)
 
-# Compute class weights for the (now balanced) training set
 labels_train = np.argmax(y_train_final, axis=1)
 class_weights = compute_class_weight(
     "balanced", classes=np.unique(labels_train), y=labels_train
@@ -150,8 +256,6 @@ logging.info(
     "Class distribution after downsampling and augmentation: %s",
     np.bincount(labels_train),
 )
-
-# Training context information for debugging
 logging.info(
     "Training context: %d total samples, %d classes",
     len(X_train_final),
@@ -161,110 +265,10 @@ unique_labels, label_counts = np.unique(y_train_final, return_counts=True)
 class_dist = dict(zip(unique_labels, label_counts))
 logging.info("Detailed class distribution: %s", class_dist)
 
-# Prepare for EEGNet
-X_train_eegnet = np.expand_dims(X_train_final, -1)
-X_test_eegnet = np.expand_dims(X_test_scaled, -1)
-X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
-X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
+# Train deep learning models
+train_eegnet_model(X_train_final, y_train_final, X_test_scaled, y_test, config, le)
 
-# Early stopping callback
-early_stopping = EarlyStopping(
-    monitor=config["EARLY_STOPPING_MONITOR"],
-    patience=config["EARLY_STOPPING_PATIENCE"],
-    restore_best_weights=True,
-)
-
-# Build EEGNet model using official implementation
-# --- Hyperparameter Tuning for EEGNet ---
-# As per the EEGNet paper, kernLength should be about half the sampling rate.
-kernLength = config["EEGNET_KERN_LENGTH"]
-# Experimenting with more filters as per analysis
-F1 = config["EEGNET_F1"]
-D = config["EEGNET_D"]
-F2 = config["EEGNET_F2"]
-
-logging.info(
-    "Building EEGNet with tuned hyperparameters: kernLength=%d, F1=%d, D=%d, F2=%d",
-    kernLength,
-    F1,
-    D,
-    F2,
-)
-
-# Build and compare models
-models_to_train = config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
-
-for model_name in models_to_train:
-    logging.info("=== Training %s ===", model_name)
-
-    if model_name == "EEGNet":
-        model = EEGNet(
-            nb_classes=y_cat.shape[1],
-            Chans=N_CHANNELS,
-            Samples=WINDOW_SIZE,
-            kernLength=kernLength,
-            F1=F1,
-            D=D,
-            F2=F2,
-            dropoutRate=config["EEGNET_DROPOUT_RATE"],
-            dropoutType=config["EEGNET_DROPOUT_TYPE"],
-            norm_rate=config["EEGNET_NORM_RATE"],
-        )
-        model_path = config["MODEL_CNN"]
-
-    elif model_name == "ShallowConvNet":
-        model = ShallowConvNet(
-            nb_classes=y_cat.shape[1],
-            Chans=N_CHANNELS,
-            Samples=WINDOW_SIZE,
-            dropoutRate=config["EEGNET_DROPOUT_RATE"],
-        )
-        model_path = config.get("MODEL_SHALLOW", "models/eeg_shallow_model.h5")
-
-    else:
-        logging.warning("Unknown model: %s. Skipping.", model_name)
-        continue
-
-    # Compile and train
-    model.compile(
-        optimizer=config["OPTIMIZER"],
-        loss=config["LOSS_FUNCTION"],
-        metrics=["accuracy"],
-    )
-    history = model.fit(
-        X_train_eegnet,
-        y_train_final,
-        epochs=config["EPOCHS"],
-        batch_size=config["BATCH_SIZE"],
-        validation_split=config["VALIDATION_SPLIT"],
-        class_weight=class_weight_dict,
-        callbacks=[early_stopping],
-        verbose=1,
-    )
-
-    # Evaluate
-    _, acc = model.evaluate(X_test_eegnet, y_test)
-    logging.info("%s Test accuracy: %.3f", model_name, acc)
-
-    # Detailed evaluation
-    y_pred = model.predict(X_test_eegnet)
-    y_pred_labels = np.argmax(y_pred, axis=1)
-    y_true_labels = np.argmax(y_test, axis=1)
-
-    logging.info(
-        f"{model_name} Confusion Matrix:\n%s",
-        confusion_matrix(y_true_labels, y_pred_labels),
-    )
-    logging.info(
-        f"{model_name} Classification Report:\n%s",
-        classification_report(y_true_labels, y_pred_labels, target_names=le.classes_),
-    )
-
-    # Save model
-    model.save(model_path)
-    logging.info("%s saved to %s", model_name, model_path)
-
-# Save shared components (use the last trained model's encoder/scaler)
+# Save shared components
 joblib.dump(le, config["LABEL_ENCODER"])
 joblib.dump(scaler, config["SCALER_CNN"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)
@@ -274,42 +278,5 @@ logging.info("Extracting features for tree-based models...")
 X_features = np.array([extract_features(window, SAMPLING_RATE) for window in X_windows])
 logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
-# Train/test split for tree-based models
-X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
-    X_features, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
-)
-
-# Standardize features
-scaler_tree = StandardScaler()
-X_train_scaled_tree = scaler_tree.fit_transform(X_train_tree)
-X_test_scaled_tree = scaler_tree.transform(X_test_tree)
-
-# Random Forest
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-rf.fit(X_train_scaled_tree, y_train_tree)
-rf_pred = rf.predict(X_test_scaled_tree)
-logging.info("Random Forest Results:")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_test_tree, rf_pred, target_names=le.classes_),
-)
-
-# XGBoost
-xgb = XGBClassifier(
-    n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
-)
-xgb.fit(X_train_scaled_tree, y_train_tree)
-xgb_pred = xgb.predict(X_test_scaled_tree)
-logging.info("XGBoost Results:")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_test_tree, xgb_pred, target_names=le.classes_),
-)
-
-# Save tree-based models
-joblib.dump(rf, config["MODEL_RF"])
-joblib.dump(xgb, config["MODEL_XGB"])
-joblib.dump(le, config["LABEL_ENCODER"])
-joblib.dump(scaler_tree, config["SCALER_TREE"])
+# Train tree-based models
+train_tree_models(X_features, y_encoded, config, le)

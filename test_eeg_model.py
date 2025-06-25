@@ -188,35 +188,18 @@ if num_samples_to_log > 0:
     )
 
 
+def evaluate_model(y_true, y_pred, le, model_name):
+    """Log confusion matrix and classification report for a model."""
+    logging.info(f"--- {model_name} Evaluation ---")
+    logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true, y_pred))
+    logging.info(
+        "Classification Report:\n%s",
+        classification_report(y_true, y_pred, target_names=le.classes_),
+    )
+
+
 # --- Evaluation ---
-logging.info("--- EEGNet Evaluation ---")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_cnn_labels))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_true_labels, pred_cnn_labels, target_names=le.classes_),
-)
-
-logging.info("--- Random Forest Evaluation ---")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_rf_labels))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_true_labels, pred_rf_labels, target_names=le.classes_),
-)
-
-logging.info("--- XGBoost Evaluation ---")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_xgb_labels))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_true_labels, pred_xgb_labels, target_names=le.classes_),
-)
-
-logging.info("--- Ensemble (Hard Voting) Evaluation ---")
-logging.info(
-    "Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_ensemble_numeric)
-)
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(
-        y_true_labels, pred_ensemble_numeric, target_names=le.classes_
-    ),
-)
+evaluate_model(y_true_labels, pred_cnn_labels, le, "EEGNet")
+evaluate_model(y_true_labels, pred_rf_labels, le, "Random Forest")
+evaluate_model(y_true_labels, pred_xgb_labels, le, "XGBoost")
+evaluate_model(y_true_labels, pred_ensemble_numeric, le, "Ensemble (Hard Voting)")

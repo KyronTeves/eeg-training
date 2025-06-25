@@ -2,11 +2,11 @@
   "_comment": "=== EEG Direction Classification Configuration ===",
   
   "_lsl_config": "--- LSL Streaming Configuration ---",
-  "LSL_STREAM_NAME": "OpenBCIGUI",
+  "LSL_STREAM_NAME": "obci_eeg1",
   "LSL_TIMEOUT": 10.0,
   
   "_hardware_config": "--- EEG Hardware Configuration ---",
-  "SAMPLING_RATE": 250,
+  "SAMPLING_RATE": 125,
   "N_CHANNELS": 16,
   
   "_data_collection_config": "--- Data Collection Configuration ---",
@@ -19,8 +19,8 @@
   "TRIALS_PER_LABEL": 30,
   
   "_data_processing_config": "--- Data Processing Configuration ---",
-  "WINDOW_SIZE": 250,
-  "STEP_SIZE": 125,
+  "WINDOW_SIZE": 125,
+  "STEP_SIZE": 62,
   "USE_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
   "TEST_SESSION_TYPES": ["jolt", "hybrid", "long"],
   
@@ -38,7 +38,7 @@
   "EEGNET_F1": 16,
   "EEGNET_D": 2,
   "EEGNET_F2": 32,
-  "EEGNET_KERN_LENGTH": 125,
+  "EEGNET_KERN_LENGTH": 62,
   "EEGNET_DROPOUT_RATE": 0.5,
   "EEGNET_DROPOUT_TYPE": "Dropout",
   "EEGNET_NORM_RATE": 0.25,
@@ -50,7 +50,7 @@
   "CALIB_Y_NPY": "data/calib_y.npy",
   
   "_realtime_prediction_config": "--- Real-time Prediction Configuration ---",
-  "CONFIDENCE_THRESHOLD": 0.7,
+  "CONFIDENCE_THRESHOLD": 0.4,
   "PREDICTION_LATENCY_TARGET_MS": 50,
   "USE_OPTIMIZED_PIPELINE": true,
   "ENABLE_MODEL_QUANTIZATION": true,

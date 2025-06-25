@@ -12,11 +12,15 @@ import logging
 
 import joblib
 import numpy as np
+import tensorflow as tf
+
 from keras.models import load_model
 from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
 from utils import load_config, setup_logging, extract_features
+
+tf.config.run_functions_eagerly(True)  # Enable eager execution
 
 setup_logging()
 
@@ -41,9 +45,7 @@ def load_artifacts(config: dict) -> tuple:
         raise
 
 
-def process_and_scale_cnn_data(
-    x_calib: np.ndarray, y_calib: np.ndarray, le
-) -> tuple:
+def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> tuple:
     """Encodes labels, fits a new scaler, and prepares data for EEGNet."""
     logging.info("Processing and scaling CNN data...")
     y_calib_encoded = le.transform(y_calib.ravel())
@@ -64,6 +66,12 @@ def process_and_scale_cnn_data(
 def fine_tune_cnn_model(model, x_data: np.ndarray, y_data: np.ndarray, config: dict):
     """Fine-tunes the CNN model on the calibration data."""
     logging.info("Starting CNN fine-tuning for %d epochs...", config["CALIB_EPOCHS"])
+
+    # Recompile the model to ensure optimizer compatibility
+    model.compile(
+        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+    )
+
     model.fit(
         x_data,
         y_data,
@@ -133,8 +141,8 @@ def main():
         model_cnn_session = fine_tune_cnn_model(model_cnn, x_cnn, y_cnn, config)
 
         # Calibrate Tree-based Models
-        model_rf_session, model_xgb_session, scaler_tree_session = calibrate_tree_models(
-            x_calib, y_calib, le, model_rf, model_xgb, config
+        model_rf_session, model_xgb_session, scaler_tree_session = (
+            calibrate_tree_models(x_calib, y_calib, le, model_rf, model_xgb, config)
         )
 
         save_session_artifacts(

@@ -52,7 +52,9 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
         channel_data = window[:, i]
 
         # --- Spectral Features (Band Power) ---
-        freqs, psd = welch(channel_data, fs=fs)
+        # Use nperseg that is appropriate for the window size
+        nperseg = min(256, len(channel_data))
+        freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
 
         total_power = np.sum(psd)
         if total_power == 0:
