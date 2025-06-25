@@ -22,6 +22,7 @@ from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 from scipy.signal import welch
+from scipy.stats import mode
 from sklearn.preprocessing import StandardScaler
 
 
@@ -86,29 +87,26 @@ def window_data(
     data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Segment data and labels into overlapping windows.
-
-    Args:
-        data: EEG data array of shape (samples, channels)
-        labels: Array of labels (samples, 1)
-        window_size: Number of samples per window
-        step_size: Step size between windows
-    Returns:
-        Tuple of (x_windows, y_windows)
+    Vectorized segmentation of data and labels into overlapping windows.
+    Uses numpy stride tricks for efficient window creation.
     """
-    x_windows = []
-    y_windows = []
-    for start in range(0, len(data) - window_size + 1, step_size):
-        window = data[start : start + window_size]
-        window_labels = labels[start : start + window_size]
-        # Use the most frequent label in the window as the label
-        unique, counts = np.unique(window_labels, return_counts=True)
-        window_label = unique[np.argmax(counts)]
-        x_windows.append(window)
-        y_windows.append(window_label)
+    n_windows = (len(data) - window_size) // step_size + 1
+    if n_windows <= 0:
+        return np.empty((0, window_size, data.shape[1])), np.empty((0,))
 
-    x_windows = np.array(x_windows)
-    y_windows = np.array(y_windows)
+    # Create windows using stride tricks
+    shape = (n_windows, window_size, data.shape[1])
+    strides = (data.strides[0] * step_size, data.strides[0], data.strides[1])
+    x_windows = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
+
+    # For labels, use the mode (most frequent) in each window
+    label_windows = np.lib.stride_tricks.as_strided(
+        labels,
+        shape=(n_windows, window_size, 1),
+        strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
+    )
+    # Compute mode along window axis
+    y_windows = mode(label_windows, axis=1, keepdims=False)[0].reshape(-1)
 
     # Data quality assessment
     logging.info(
@@ -118,7 +116,6 @@ def window_data(
         np.std(x_windows),
         np.isnan(x_windows).sum(),
     )
-
     return x_windows, y_windows
 
 

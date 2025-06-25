@@ -13,6 +13,7 @@ import logging
 import joblib
 import numpy as np
 import tensorflow as tf
+from joblib import Parallel, delayed
 
 from keras.models import load_model
 from keras.utils import to_categorical
@@ -98,7 +99,9 @@ def calibrate_tree_models(
 
     sampling_rate = config["SAMPLING_RATE"]
     x_features = np.array(
-        [extract_features(window, sampling_rate) for window in x_calib]
+        Parallel(n_jobs=-1, prefer="threads")(
+            delayed(extract_features)(window, sampling_rate) for window in x_calib
+        )
     )
     y_encoded = le.transform(y_calib.ravel())
 
