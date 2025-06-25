@@ -164,7 +164,31 @@ early_stopping = EarlyStopping(
 )
 
 # Build EEGNet model using official implementation
-model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
+# --- Hyperparameter Tuning for EEGNet ---
+# As per the EEGNet paper, kernLength should be about half the sampling rate.
+kernLength = SAMPLING_RATE // 2
+# Experimenting with more filters as per analysis
+F1 = 16
+D = 4
+F2 = F1 * D  # As recommended in EEGNet docs
+
+logging.info(
+    "Building EEGNet with tuned hyperparameters: kernLength=%d, F1=%d, D=%d, F2=%d",
+    kernLength,
+    F1,
+    D,
+    F2,
+)
+
+model = EEGNet(
+    nb_classes=y_cat.shape[1],
+    Chans=N_CHANNELS,
+    Samples=WINDOW_SIZE,
+    kernLength=kernLength,
+    F1=F1,
+    D=D,
+    F2=F2,
+)
 model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
 model.fit(
     X_train_eegnet,
