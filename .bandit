@@ -1,0 +1,6 @@
+[bandit]
+# Exclude B101 (assert) for all test files
+skips: B101
+
+glob: test_*.py
+dirs: .

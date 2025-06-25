@@ -14,7 +14,8 @@ and model training workflow.
 """
 
 import os
-import subprocess
+import subprocess  # nosec B404: subprocess is used safely with explicit argument lists and no shell=True
+import sys
 import tempfile
 import json
 
@@ -25,6 +26,7 @@ from keras.models import load_model
 
 from EEGModels import EEGNet
 from utils import check_labels_valid, check_no_nan, load_config, window_data
+
 
 # Add a default timeout for all subprocess.run calls
 DEFAULT_TIMEOUT = 30  # seconds
@@ -168,24 +170,24 @@ class TestIntegration:
                 json.dump(config, f)
             # 3. Run windowing script
             subprocess.run(
-                ["python", "window_eeg_data.py"],
+                [sys.executable, "window_eeg_data.py"],
                 env={**os.environ, "CONFIG_PATH": config_path},
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=DEFAULT_TIMEOUT,
-            )
+            )  # nosec B603
             assert os.path.exists(config["WINDOWED_NPY"])
             assert os.path.exists(config["WINDOWED_LABELS_NPY"])
             # 4. Run training script
             subprocess.run(
-                ["python", "train_eeg_model.py"],
+                [sys.executable, "train_eeg_model.py"],
                 env={**os.environ, "CONFIG_PATH": config_path},
                 capture_output=True,
                 text=True,
                 check=True,
                 timeout=DEFAULT_TIMEOUT,
-            )
+            )  # nosec B603
             assert os.path.exists(config["MODEL_EEGNET"])
             assert os.path.exists(config["LABEL_ENCODER"])
             assert os.path.exists(config["SCALER_EEGNET"])
@@ -197,13 +199,13 @@ class TestIntegration:
             env = {**os.environ, "CONFIG_PATH": os.path.join(tmpdir, "missing_config.json")}
             # Windowing script should fail
             result = subprocess.run(
-                ["python", "window_eeg_data.py"],
+                [sys.executable, "window_eeg_data.py"],
                 env=env,
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=DEFAULT_TIMEOUT,
-            )
+            )  # nosec B603
             assert result.returncode != 0
             assert (
                 "No such file" in result.stderr
@@ -212,13 +214,13 @@ class TestIntegration:
             )
             # Training script should fail
             result = subprocess.run(
-                ["python", "train_eeg_model.py"],
+                [sys.executable, "train_eeg_model.py"],
                 env=env,
                 capture_output=True,
                 text=True,
                 check=False,
                 timeout=DEFAULT_TIMEOUT,
-            )
+            )  # nosec B603
             assert result.returncode != 0
             assert (
                 "No such file" in result.stderr
@@ -260,21 +262,21 @@ def test_model_prediction_after_training():
         # 2. Run windowing and training scripts
         env = {**os.environ, "CONFIG_PATH": config_path}
         subprocess.run(
-            ["python", "window_eeg_data.py"],
+            [sys.executable, "window_eeg_data.py"],
             env=env,
             capture_output=True,
             text=True,
             check=True,
             timeout=DEFAULT_TIMEOUT,
-        )
+        )  # nosec B603
         subprocess.run(
-            ["python", "train_eeg_model.py"],
+            [sys.executable, "train_eeg_model.py"],
             env=env,
             capture_output=True,
             text=True,
             check=True,
             timeout=DEFAULT_TIMEOUT,
-        )
+        )  # nosec B603
         # 3. Load model and run prediction
         x = np.load(config["WINDOWED_NPY"])
         model = load_model(config["MODEL_EEGNET"])
@@ -316,13 +318,13 @@ def test_windowed_npy_content():
             json.dump(config, f)
         env = {**os.environ, "CONFIG_PATH": config_path}
         subprocess.run(
-            ["python", "window_eeg_data.py"],
+            [sys.executable, "window_eeg_data.py"],
             env=env,
             capture_output=True,
             text=True,
             check=True,
             timeout=DEFAULT_TIMEOUT,
-        )
+        )  # nosec B603
         x = np.load(config["WINDOWED_NPY"])
         y = np.load(config["WINDOWED_LABELS_NPY"])
         # Check shapes
@@ -364,13 +366,13 @@ def test_windowing_with_malformed_csv():
         env = {**os.environ, "CONFIG_PATH": config_path}
         # Run windowing script and expect failure
         result = subprocess.run(
-            ["python", "window_eeg_data.py"],
+            [sys.executable, "window_eeg_data.py"],
             env=env,
             capture_output=True,
             text=True,
             check=False,  # Explicitly set check to avoid error if omitted
             timeout=DEFAULT_TIMEOUT,
-        )
+        )  # nosec B603
         assert result.returncode != 0
         assert (
             "error" in result.stderr.lower()
@@ -412,13 +414,13 @@ def test_training_with_wrong_shape_npy():
         env = {**os.environ, "CONFIG_PATH": config_path}
         # Run training script and expect failure
         result = subprocess.run(
-            ["python", "train_eeg_model.py"],
+            [sys.executable, "train_eeg_model.py"],
             env=env,
             capture_output=True,
             text=True,
             check=False,
             timeout=DEFAULT_TIMEOUT,
-        )
+        )  # nosec B603
         assert result.returncode != 0
         assert (
             "error" in result.stderr.lower()
