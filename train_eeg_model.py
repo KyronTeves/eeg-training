@@ -28,7 +28,7 @@ from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet
-from utils import load_config, setup_logging, check_no_nan, check_labels_valid
+from utils import load_config, setup_logging, check_no_nan, check_labels_valid, extract_features
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -197,15 +197,20 @@ joblib.dump(le, config["LABEL_ENCODER"])
 joblib.dump(scaler, config["SCALER_CNN"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
-# Flatten windows for tree-based models
-X_flat = X_windows.reshape(X_windows.shape[0], -1)
+# --- Feature Extraction for Tree-based Models ---
+logging.info("Extracting features for tree-based models...")
+# Assuming a sampling rate of 250Hz, which is common for Cyton boards.
+# This should be added to config.json if it varies.
+SAMPLING_RATE = 250 
+X_features = np.array([extract_features(window, SAMPLING_RATE) for window in X_windows])
+logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
 # Train/test split for tree-based models
 X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
-    X_flat, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+    X_features, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
 )
 
-# Standardize features (optional for trees, but keep for consistency)
+# Standardize features
 scaler_tree = StandardScaler()
 X_train_scaled_tree = scaler_tree.fit_transform(X_train_tree)
 X_test_scaled_tree = scaler_tree.transform(X_test_tree)

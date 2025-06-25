@@ -21,7 +21,57 @@ import pandas as pd
 from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
+from scipy.signal import welch
 from sklearn.preprocessing import StandardScaler
+
+
+def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
+    """
+    Extract features from a single EEG window.
+
+    Args:
+        window (np.ndarray): EEG window of shape (window_size, n_channels).
+        fs (int): Sampling frequency.
+
+    Returns:
+        np.ndarray: 1D array of features.
+    """
+    features = []
+    n_channels = window.shape[1]
+
+    # Define frequency bands
+    bands = {
+        "delta": (1, 4),
+        "theta": (4, 8),
+        "alpha": (8, 13),
+        "beta": (13, 30),
+        "gamma": (30, 100),
+    }
+
+    for i in range(n_channels):
+        channel_data = window[:, i]
+
+        # --- Spectral Features (Band Power) ---
+        freqs, psd = welch(channel_data, fs=fs)
+
+        total_power = np.sum(psd)
+        if total_power == 0:
+            # Avoid division by zero if signal is flat
+            band_powers = [0.0] * len(bands)
+        else:
+            band_powers = [
+                np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
+                for fmin, fmax in bands.values()
+            ]
+
+        features.extend(band_powers)
+
+        # --- Statistical Features ---
+        features.append(np.mean(channel_data))
+        features.append(np.var(channel_data))
+        features.append(np.std(channel_data))
+
+    return np.array(features)
 
 
 def load_config(path: str = "config.json") -> dict:
