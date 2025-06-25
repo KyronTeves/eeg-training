@@ -41,10 +41,9 @@ prediction of EEG-based direction commands using LSL streaming and advanced neur
 ├── window_eeg_data.py      # Segment raw EEG CSV into overlapping windows
 ├── train_eeg_model.py      # Train EEGNet, ShallowConvNet, RF, XGBoost models
 ├── test_eeg_model.py       # Evaluate trained models and ensembles
-├── realtime_eeg_predict.py # Real-time prediction with LSL streaming
+├── realtime_eeg_predict.py # Real-time prediction with LSL streaming & optimized pipeline
 ├── calibrate_session.py    # Fine-tune models for individual sessions
 ├── lsl_stream_handler.py   # LSL streaming interface for OpenBCI GUI
-├── optimized_pipeline.py   # High-performance prediction pipeline
 ├── utils.py                # Config loading, windowing, logging, validation utilities
 ├── EEGModels.py            # Model architectures (EEGNet, ShallowConvNet, etc.)
 ├── config.json             # Centralized configuration for all scripts
