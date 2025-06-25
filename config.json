@@ -1,7 +1,15 @@
 {
+  "_comment": "=== EEG Direction Classification Configuration ===",
+  
+  "_lsl_config": "--- LSL Streaming Configuration ---",
   "LSL_STREAM_NAME": "OpenBCIGUI",
   "LSL_TIMEOUT": 10.0,
+  
+  "_hardware_config": "--- EEG Hardware Configuration ---",
   "SAMPLING_RATE": 250,
+  "N_CHANNELS": 16,
+  
+  "_data_collection_config": "--- Data Collection Configuration ---",
   "LABELS": ["forward", "backward", "left", "right", "neutral"],
   "SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
   "TRIAL_DURATION": 10,
@@ -9,27 +17,69 @@
   "HYBRID_TOTAL_DURATION": 10,
   "LONG_DURATION": 180,
   "TRIALS_PER_LABEL": 30,
-  "OUTPUT_CSV": "data/eeg_training_data.csv",
-  "N_CHANNELS": 16,
+  
+  "_data_processing_config": "--- Data Processing Configuration ---",
   "WINDOW_SIZE": 250,
   "STEP_SIZE": 125,
-  "WINDOWED_NPY": "data/eeg_windowed_X.npy",
-  "WINDOWED_LABELS_NPY": "data/eeg_windowed_y.npy",
+  "USE_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
+  "TEST_SESSION_TYPES": ["jolt", "hybrid", "long"],
+  
+  "_model_training_config": "--- Model Training Configuration ---",
+  "MODELS_TO_TRAIN": ["EEGNet", "ShallowConvNet"],
+  "EPOCHS": 100,
+  "BATCH_SIZE": 64,
+  "VALIDATION_SPLIT": 0.2,
+  "EARLY_STOPPING_PATIENCE": 10,
+  "EARLY_STOPPING_MONITOR": "val_loss",
+  "OPTIMIZER": "adam",
+  "LOSS_FUNCTION": "categorical_crossentropy",
+  
+  "_eegnet_hyperparameters": "--- EEGNet Hyperparameters ---",
+  "EEGNET_F1": 16,
+  "EEGNET_D": 2,
+  "EEGNET_F2": 32,
+  "EEGNET_KERN_LENGTH": 125,
+  "EEGNET_DROPOUT_RATE": 0.5,
+  "EEGNET_DROPOUT_TYPE": "Dropout",
+  "EEGNET_NORM_RATE": 0.25,
+  
+  "_session_calibration_config": "--- Session Calibration Configuration ---",
+  "CALIB_EPOCHS": 5,
+  "CALIB_BATCH_SIZE": 32,
+  "CALIB_X_NPY": "data/calib_X.npy",
+  "CALIB_Y_NPY": "data/calib_y.npy",
+  
+  "_realtime_prediction_config": "--- Real-time Prediction Configuration ---",
   "CONFIDENCE_THRESHOLD": 0.7,
   "PREDICTION_LATENCY_TARGET_MS": 50,
   "USE_OPTIMIZED_PIPELINE": true,
   "ENABLE_MODEL_QUANTIZATION": true,
   "BUFFER_SIZE_MULTIPLIER": 2,
+  
+  "_testing_config": "--- Testing Configuration ---",
+  "NUM_TEST_SAMPLES": 100,
+  
+  "_data_file_paths": "--- File Paths: Data Files ---",
+  "OUTPUT_CSV": "data/eeg_training_data_lsl.csv",
+  "WINDOWED_NPY": "data/eeg_windowed_X.npy",
+  "WINDOWED_LABELS_NPY": "data/eeg_windowed_y.npy",
+  
+  "_base_model_paths": "--- File Paths: Base Models ---",
   "MODEL_CNN": "models/eeg_direction_model.h5",
   "MODEL_SHALLOW": "models/eeg_shallow_model.h5",
   "MODEL_RF": "models/eeg_rf_model.pkl",
   "MODEL_XGB": "models/eeg_xgb_model.pkl",
-  "MODELS_TO_TRAIN": ["EEGNet", "ShallowConvNet"],
+  
+  "_session_model_paths": "--- File Paths: Session-Specific Models ---",
+  "MODEL_CNN_SESSION": "models/eeg_direction_model_session.h5",
+  "MODEL_RF_SESSION": "models/eeg_rf_model_session.pkl",
+  "MODEL_XGB_SESSION": "models/eeg_xgb_model_session.pkl",
+  
+  "_scaler_encoder_paths": "--- File Paths: Scalers and Encoders ---",
   "LABEL_ENCODER": "models/eeg_label_encoder.pkl",
   "SCALER_CNN": "models/eeg_scaler.pkl",
   "SCALER_TREE": "models/eeg_scaler_tree.pkl",
-  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy",
-  "TEST_SESSION_TYPES": ["jolt", "hybrid", "long"],
-  "USE_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
-  "NUM_TEST_SAMPLES": 100
+  "SCALER_CNN_SESSION": "models/eeg_scaler_session.pkl",
+  "SCALER_TREE_SESSION": "models/eeg_scaler_tree_session.pkl",
+  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy"
 }

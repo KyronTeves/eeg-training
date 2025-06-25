@@ -169,17 +169,19 @@ X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
 
 # Early stopping callback
 early_stopping = EarlyStopping(
-    monitor="val_loss", patience=10, restore_best_weights=True
+    monitor=config["EARLY_STOPPING_MONITOR"], 
+    patience=config["EARLY_STOPPING_PATIENCE"], 
+    restore_best_weights=True
 )
 
 # Build EEGNet model using official implementation
 # --- Hyperparameter Tuning for EEGNet ---
 # As per the EEGNet paper, kernLength should be about half the sampling rate.
-kernLength = SAMPLING_RATE // 2
+kernLength = config["EEGNET_KERN_LENGTH"]
 # Experimenting with more filters as per analysis
-F1 = 16
-D = 4
-F2 = F1 * D  # As recommended in EEGNet docs
+F1 = config["EEGNET_F1"]
+D = config["EEGNET_D"]
+F2 = config["EEGNET_F2"]
 
 logging.info(
     "Building EEGNet with tuned hyperparameters: kernLength=%d, F1=%d, D=%d, F2=%d",
@@ -204,6 +206,9 @@ for model_name in models_to_train:
             F1=F1,
             D=D,
             F2=F2,
+            dropoutRate=config["EEGNET_DROPOUT_RATE"],
+            dropoutType=config["EEGNET_DROPOUT_TYPE"],
+            norm_rate=config["EEGNET_NORM_RATE"],
         )
         model_path = config["MODEL_CNN"]
 
@@ -212,7 +217,7 @@ for model_name in models_to_train:
             nb_classes=y_cat.shape[1],
             Chans=N_CHANNELS,
             Samples=WINDOW_SIZE,
-            dropoutRate=0.5,
+            dropoutRate=config["EEGNET_DROPOUT_RATE"],
         )
         model_path = config.get("MODEL_SHALLOW", "models/eeg_shallow_model.h5")
 
@@ -222,14 +227,16 @@ for model_name in models_to_train:
 
     # Compile and train
     model.compile(
-        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+        optimizer=config["OPTIMIZER"], 
+        loss=config["LOSS_FUNCTION"], 
+        metrics=["accuracy"]
     )
     history = model.fit(
         X_train_eegnet,
         y_train_final,
-        epochs=100,
-        batch_size=64,
-        validation_split=0.2,
+        epochs=config["EPOCHS"],
+        batch_size=config["BATCH_SIZE"],
+        validation_split=config["VALIDATION_SPLIT"],
         class_weight=class_weight_dict,
         callbacks=[early_stopping],
         verbose=1,
