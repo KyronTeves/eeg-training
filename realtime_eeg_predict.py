@@ -69,11 +69,11 @@ except (OSError, ValueError, KeyError, BrainFlowError) as e:
 LABELS = config["LABELS"]
 CHANNELS = BoardShim.get_eeg_channels(BoardIds.CYTON_DAISY_BOARD.value)
 logging.info("Starting session calibration. Please follow the prompts.")
-X_calib, y_calib = collect_calibration_data(
+x_calib, y_calib = collect_calibration_data(
     board, CHANNELS, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=250
 )
 run_session_calibration(
-    X_calib,
+    x_calib,
     y_calib,
     base_model_path=config["MODEL_CNN"],
     base_scaler_path=config["SCALER_CNN"],

@@ -89,7 +89,7 @@ y_train_bal = y_train[downsampled_indices]
 
 
 # Data augmentation: add noisy/drifted/artifacted copies to balanced training set
-def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
+def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     """
     Augment EEG data by adding realistic noise patterns and artifacts.
 
@@ -112,16 +112,16 @@ def augment_eeg_data(X, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
         Augmentation helps prevent overfitting and improves generalization to new
         sessions/users by simulating realistic EEG signal variations.
     """
-    X_aug = X.copy()
+    x_aug = x.copy()
     # Add Gaussian noise
-    X_aug += np.random.normal(0, noise_std, X_aug.shape)
+    x_aug += np.random.normal(0, noise_std, x_aug.shape)
     # Add baseline drift (slow sine wave)
-    drift = np.sin(np.linspace(0, np.pi, X_aug.shape[1])) * drift_max
-    X_aug += drift[None, :, None]
+    drift = np.sin(np.linspace(0, np.pi, x_aug.shape[1])) * drift_max
+    x_aug += drift[None, :, None]
     # Randomly zero out some windows (simulate artifacts)
-    mask = np.random.rand(*X_aug.shape) < artifact_prob
-    X_aug[mask] = 0
-    return X_aug
+    mask = np.random.rand(*x_aug.shape) < artifact_prob
+    x_aug[mask] = 0
+    return x_aug
 
 
 X_train_aug = augment_eeg_data(X_train_bal)

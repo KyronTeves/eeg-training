@@ -42,9 +42,9 @@ def window_data(
         window_size: Number of samples per window
         step_size: Step size between windows
     Returns:
-        Tuple of (X_windows, y_windows)
+        Tuple of (x_windows, y_windows)
     """
-    X_windows = []
+    x_windows = []
     y_windows = []
     for start in range(0, len(data) - window_size + 1, step_size):
         window = data[start : start + window_size]
@@ -52,22 +52,22 @@ def window_data(
         # Use the most frequent label in the window as the label
         unique, counts = np.unique(window_labels, return_counts=True)
         window_label = unique[np.argmax(counts)]
-        X_windows.append(window)
+        x_windows.append(window)
         y_windows.append(window_label)
 
-    X_windows = np.array(X_windows)
+    x_windows = np.array(x_windows)
     y_windows = np.array(y_windows)
 
     # Data quality assessment
     logging.info(
         "Data quality: Range [%.3f, %.3f], Std: %.3f, NaN count: %d",
-        np.min(X_windows),
-        np.max(X_windows),
-        np.std(X_windows),
-        np.isnan(X_windows).sum(),
+        np.min(x_windows),
+        np.max(x_windows),
+        np.std(x_windows),
+        np.isnan(x_windows).sum(),
     )
 
-    return X_windows, y_windows
+    return x_windows, y_windows
 
 
 def collect_calibration_data(
@@ -75,9 +75,9 @@ def collect_calibration_data(
 ):
     """
     Collect labeled calibration data for each class from the user.
-    Returns X_calib (windows, window, channels), y_calib (windows,)
+    Returns x_calib (windows, window, channels), y_calib (windows,)
     """
-    calib_X = []
+    calib_x = []
     calib_y = []
     for label in labels:
         input(
@@ -91,14 +91,14 @@ def collect_calibration_data(
                 eeg_window = eeg[channels, -window_size:].T
                 data.append(eeg_window)
             time.sleep(window_size / sample_rate)
-        calib_X.extend(data)
+        calib_x.extend(data)
         calib_y.extend([label] * len(data))
         logging.info("Collected %d windows for label '%s'.", len(data), label)
-    return np.array(calib_X), np.array(calib_y)
+    return np.array(calib_x), np.array(calib_y)
 
 
 def run_session_calibration(
-    X_calib,
+    x_calib,
     y_calib,
     base_model_path,
     base_scaler_path,
@@ -116,12 +116,12 @@ def run_session_calibration(
     y_calib_encoded = le.transform(y_calib)
     y_calib_cat = to_categorical(y_calib_encoded)
     scaler = StandardScaler()
-    X_calib_flat = X_calib.reshape(-1, X_calib.shape[-1])
-    scaler.fit(X_calib_flat)
-    X_calib_scaled = scaler.transform(X_calib_flat).reshape(X_calib.shape)
+    x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
+    scaler.fit(x_calib_flat)
+    x_calib_scaled = scaler.transform(x_calib_flat).reshape(x_calib.shape)
     # Prepare for EEGNet: (batch, window, channels) -> (batch, channels, window, 1)
-    X_calib_eegnet = np.expand_dims(X_calib_scaled, -1)
-    X_calib_eegnet = np.transpose(X_calib_eegnet, (0, 2, 1, 3))
+    x_calib_eegnet = np.expand_dims(x_calib_scaled, -1)
+    x_calib_eegnet = np.transpose(x_calib_eegnet, (0, 2, 1, 3))
     model = load_model(base_model_path)
     # Recompile model with new optimizer to avoid Keras variable mismatch error
     model.compile(
@@ -130,7 +130,7 @@ def run_session_calibration(
         metrics=["accuracy"],
     )
     model.fit(
-        X_calib_eegnet, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
+        x_calib_eegnet, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
     )
     model.save(out_model_path)
     joblib.dump(scaler, out_scaler_path)
@@ -193,16 +193,16 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
         logging.info("Starting fresh log file with rotation enabled")
 
 
-def check_no_nan(X, name="data"):
+def check_no_nan(x, name="data"):
     """
     Check for NaN values in a numpy array and log/raise error if found.
     Args:
-        X: numpy array to check.
+        x: numpy array to check.
         name: Name of the data (for error messages).
     Raises:
-        ValueError: If any NaN values are found in X.
+        ValueError: If any NaN values are found in x.
     """
-    if np.isnan(X).any():
+    if np.isnan(x).any():
         logging.error("%s contains NaN values.", name)
         raise ValueError(f"{name} contains NaN values.")
 
