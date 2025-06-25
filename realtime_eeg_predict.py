@@ -201,7 +201,7 @@ class OptimizedPredictionPipeline:
     # Buffer management helpers
     def _get_current_window(self) -> np.ndarray:
         """Return the most recent window from the buffer."""
-        return np.array(list(self.buffer)[-self.window_size :]).reshape(
+        return np.array(list(self.buffer)[-self.window_size:]).reshape(
             (1, self.window_size, self.n_channels)
         )
 
@@ -478,7 +478,7 @@ def process_prediction(pipeline, prediction_count):
         status = "✓" if confidence > config["CONFIDENCE_THRESHOLD"] else "?"
 
         # Get individual model predictions for detailed output
-        window = np.array(list(pipeline.buffer)[-pipeline.window_size :])
+        window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
         window = window.reshape((1, pipeline.window_size, pipeline.n_channels))
 
         # Get EEGNet prediction

@@ -175,7 +175,7 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
                 Samples=_config["WINDOW_SIZE"],
                 dropoutRate=_config["EEGNET_DROPOUT_RATE"],
             )
-            model_path = _config.get("MODEL_SHALLOW", "models/eeg_shallow_model.h5")
+            model_path = _config["MODEL_SHALLOW"]
         else:
             logging.warning("Unknown model: %s. Skipping.", model_name)
             continue
@@ -242,6 +242,7 @@ def train_tree_models(_X_features, _y_encoded, _config, _le):
     joblib.dump(rf, _config["MODEL_RF"])
     joblib.dump(xgb, _config["MODEL_XGB"])
     joblib.dump(scaler_tree, _config["SCALER_TREE"])
+
 
 # Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 X_train_aug = augment_eeg_data(X_train_bal)
