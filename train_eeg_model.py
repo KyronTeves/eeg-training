@@ -201,7 +201,7 @@ np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 logging.info("Extracting features for tree-based models...")
 # Assuming a sampling rate of 250Hz, which is common for Cyton boards.
 # This should be added to config.json if it varies.
-SAMPLING_RATE = 250 
+SAMPLING_RATE = 250
 X_features = np.array([extract_features(window, SAMPLING_RATE) for window in X_windows])
 logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
