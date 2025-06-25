@@ -17,6 +17,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from keras.models import load_model  # type: ignore
+from sklearn.metrics import classification_report, confusion_matrix
 
 from utils import (
     load_config,
@@ -24,6 +25,7 @@ from utils import (
     setup_logging,
     check_no_nan,
     check_labels_valid,
+    extract_features,
 )
 
 setup_logging()  # Set up consistent logging to file and console
@@ -35,7 +37,7 @@ WINDOW_SIZE = config["WINDOW_SIZE"]
 STEP_SIZE = config["STEP_SIZE"]
 CSV_FILE = config["OUTPUT_CSV"]
 TEST_SESSION_TYPES = config["TEST_SESSION_TYPES"]
-NUM_TEST_SAMPLES = config["NUM_TEST_SAMPLES"]
+
 
 try:
     logging.info("Loading data from %s ...", CSV_FILE)
@@ -70,101 +72,93 @@ if X_windows.shape[0] != y_windows.shape[0]:
 
 logging.info("Test windows: %s", X_windows.shape)
 
+# --- Feature Extraction for Tree-based Models ---
+logging.info("Extracting features for tree-based models...")
+SAMPLING_RATE = 250  # TODO: Move to config.json
+X_features = np.array(
+    [extract_features(window, SAMPLING_RATE) for window in X_windows]
+)
+logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
+
+
 # Proceed with all windowed test data as originally intended
 try:
     le = joblib.load(config["LABEL_ENCODER"])
-    scaler = joblib.load(config["SCALER_CNN"])
-    model = load_model(config["MODEL_CNN"])
+    scaler_cnn = joblib.load(config["SCALER_CNN"])
+    scaler_tree = joblib.load(config["SCALER_TREE"])
+    model_cnn = load_model(config["MODEL_CNN"])
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
 except (ImportError, OSError, AttributeError) as e:
     logging.error("Failed to load models or encoders: %s", e)
     raise
 
+# --- Scaling ---
+# CNN
 X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
-X_windows_scaled = scaler.transform(X_windows_flat).reshape(X_windows.shape)
-X_windows_flat_scaled = X_windows_scaled.reshape(X_windows.shape[0], -1)
-
-# Prepare data for EEGNet: (batch, window, channels) -> (batch, channels, window, 1)
-X_windows_eegnet = np.expand_dims(X_windows_scaled, -1)
+X_windows_scaled_cnn = scaler_cnn.transform(X_windows_flat).reshape(X_windows.shape)
+X_windows_eegnet = np.expand_dims(X_windows_scaled_cnn, -1)
 X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
 
-num_samples = min(NUM_TEST_SAMPLES, X_windows.shape[0])
-indices = np.random.choice(X_windows.shape[0], num_samples, replace=False)
+# Tree-based
+X_features_scaled = scaler_tree.transform(X_features)
 
-CORRECT = 0
-ENSEMBLE_CORRECT = 0
-RULE_BASED_CORRECT = 0
-for idx in indices:
-    actual_label = y_windows[idx]
-    sample_eegnet = X_windows_eegnet[idx].reshape(1, N_CHANNELS, WINDOW_SIZE, 1)
-    pred_eegnet = model.predict(sample_eegnet)
-    pred_label_eegnet = le.inverse_transform([np.argmax(pred_eegnet)])[0]
-    # Random Forest
-    sample_rf = X_windows_flat_scaled[idx].reshape(1, -1)
-    pred_rf = rf.predict(sample_rf)
-    pred_label_rf = le.inverse_transform(pred_rf)[0]
-    # XGBoost
-    pred_xgb = xgb.predict(sample_rf)
-    pred_label_xgb = le.inverse_transform(pred_xgb)[0]
-    # Hard voting ensemble
-    votes = [pred_label_eegnet, pred_label_rf, pred_label_xgb]
+
+# --- Predictions ---
+logging.info("Generating predictions for all models...")
+pred_cnn_prob = model_cnn.predict(X_windows_eegnet)
+pred_cnn_labels = np.argmax(pred_cnn_prob, axis=1)
+
+pred_rf_labels = rf.predict(X_features_scaled)
+pred_xgb_labels = xgb.predict(X_features_scaled)
+
+y_true_labels = le.transform(y_windows.ravel())
+
+# --- Ensemble Prediction (Hard Voting) ---
+pred_ensemble_labels = []
+for i in range(len(y_true_labels)):
+    # Get votes from the string labels
+    vote_cnn = le.inverse_transform([pred_cnn_labels[i]])[0]
+    vote_rf = le.inverse_transform([pred_rf_labels[i]])[0]
+    vote_xgb = le.inverse_transform([pred_xgb_labels[i]])[0]
+
+    votes = [vote_cnn, vote_rf, vote_xgb]
     final_pred = Counter(votes).most_common(1)[0][0]
-    ensemble_match = final_pred == actual_label
-    if ensemble_match:
-        ENSEMBLE_CORRECT += 1
-    # Rule-based ensemble
-    if pred_label_eegnet in ["left", "right", "up", "down"]:
-        rule_pred = pred_label_eegnet
-    elif pred_label_rf == "neutral" or pred_label_xgb == "neutral":
-        rule_pred = "neutral"
-    else:
-        rule_pred = final_pred
-    rule_match = rule_pred == actual_label
-    if rule_match:
-        RULE_BASED_CORRECT += 1
-    # Individual EEGNet accuracy
-    match = pred_label_eegnet == actual_label
-    if match:
-        CORRECT += 1
+    pred_ensemble_labels.append(final_pred)
 
-    # Track model disagreements for debugging
-    if len({pred_label_eegnet, pred_label_rf, pred_label_xgb}) > 1:
-        logging.info(
-            "DISAGREEMENT: EEGNet=%s, RF=%s, XGB=%s (Actual=%s)",
-            pred_label_eegnet,
-            pred_label_rf,
-            pred_label_xgb,
-            actual_label,
-        )
+# Convert string labels back to numeric for classification_report
+pred_ensemble_numeric = le.transform(pred_ensemble_labels)
 
-    logging.info("Actual label:   %s", actual_label)
-    logging.info("EEGNet Predicted label: %s | Match: %s", pred_label_eegnet, match)
-    logging.info("Random Forest Predicted label: %s", pred_label_rf)
-    logging.info("XGBoost Predicted label: %s", pred_label_xgb)
-    logging.info(
-        "Ensemble (hard voting) label: %s | Match: %s", final_pred, ensemble_match
-    )
-    logging.info("Ensemble (rule-based) label: %s | Match: %s", rule_pred, rule_match)
-    logging.info("-")
+
+# --- Evaluation ---
+logging.info("--- EEGNet Evaluation ---")
+logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_cnn_labels))
 logging.info(
-    "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
-    num_samples,
-    CORRECT,
-    num_samples,
-    100 * CORRECT / num_samples,
+    "Classification Report:\n%s",
+    classification_report(y_true_labels, pred_cnn_labels, target_names=le.classes_),
+)
+
+logging.info("--- Random Forest Evaluation ---")
+logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_rf_labels))
+logging.info(
+    "Classification Report:\n%s",
+    classification_report(y_true_labels, pred_rf_labels, target_names=le.classes_),
+)
+
+logging.info("--- XGBoost Evaluation ---")
+logging.info("Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_xgb_labels))
+logging.info(
+    "Classification Report:\n%s",
+    classification_report(y_true_labels, pred_xgb_labels, target_names=le.classes_),
+)
+
+logging.info("--- Ensemble (Hard Voting) Evaluation ---")
+logging.info(
+    "Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_ensemble_numeric)
 )
 logging.info(
-    "Ensemble (hard voting) accuracy on %d test samples: %d/%d (%.2f%%)",
-    num_samples,
-    ENSEMBLE_CORRECT,
-    num_samples,
-    100 * ENSEMBLE_CORRECT / num_samples,
-)
-logging.info(
-    "Ensemble (rule-based) accuracy on %d test samples: %d/%d (%.2f%%)",
-    num_samples,
-    RULE_BASED_CORRECT,
-    num_samples,
-    100 * RULE_BASED_CORRECT / num_samples,
+    "Classification Report:\n%s",
+    classification_report(
+        y_true_labels, pred_ensemble_numeric, target_names=le.classes_
+    ),
 )
