@@ -88,9 +88,9 @@ logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 # Proceed with all windowed test data as originally intended
 try:
     le = joblib.load(config["LABEL_ENCODER"])
-    scaler_cnn = joblib.load(config["SCALER_CNN"])
+    scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
     scaler_tree = joblib.load(config["SCALER_TREE"])
-    model_cnn = load_model(config["MODEL_CNN"])
+    model_eegnet = load_model(config["MODEL_EEGNET"])
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
 except (ImportError, OSError, AttributeError) as e:
@@ -100,8 +100,8 @@ except (ImportError, OSError, AttributeError) as e:
 # --- Scaling ---
 # CNN
 X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
-X_windows_scaled_cnn = scaler_cnn.transform(X_windows_flat).reshape(X_windows.shape)
-X_windows_eegnet = np.expand_dims(X_windows_scaled_cnn, -1)
+X_windows_scaled_eegnet = scaler_eegnet.transform(X_windows_flat).reshape(X_windows.shape)
+X_windows_eegnet = np.expand_dims(X_windows_scaled_eegnet, -1)
 X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
 
 # Tree-based
@@ -110,8 +110,8 @@ X_features_scaled = scaler_tree.transform(X_features)
 
 # --- Predictions ---
 logging.info("Generating predictions for all models...")
-pred_cnn_prob = model_cnn.predict(X_windows_eegnet)
-pred_cnn_labels = np.argmax(pred_cnn_prob, axis=1)
+pred_eegnet_prob = model_eegnet.predict(X_windows_eegnet)
+pred_eegnet_labels = np.argmax(pred_eegnet_prob, axis=1)
 
 pred_rf_labels = rf.predict(X_features_scaled)
 pred_xgb_labels = xgb.predict(X_features_scaled)
@@ -122,7 +122,7 @@ y_true_labels = le.transform(y_windows.ravel())
 pred_ensemble_labels = []
 for i in range(len(y_true_labels)):
     # Get votes from the string labels
-    vote_cnn = le.inverse_transform([pred_cnn_labels[i]])[0]
+    vote_cnn = le.inverse_transform([pred_eegnet_labels[i]])[0]
     vote_rf = le.inverse_transform([pred_rf_labels[i]])[0]
     vote_xgb = le.inverse_transform([pred_xgb_labels[i]])[0]
 
@@ -136,7 +136,7 @@ pred_ensemble_numeric = le.transform(pred_ensemble_labels)
 
 # --- Detailed per-sample predictions ---
 y_true_str = y_windows.ravel()
-pred_cnn_str = le.inverse_transform(pred_cnn_labels)
+pred_eegnet_str = le.inverse_transform(pred_eegnet_labels)
 pred_rf_str = le.inverse_transform(pred_rf_labels)
 pred_xgb_str = le.inverse_transform(pred_xgb_labels)
 
@@ -151,7 +151,7 @@ if num_samples_to_log > 0:
         actual_label = y_true_str[i]
 
         # EEGNet
-        eegnet_pred = pred_cnn_str[i]
+        eegnet_pred = pred_eegnet_str[i]
         eegnet_match = actual_label == eegnet_pred
         if eegnet_match:
             EEGNET_MATCHES += 1
@@ -203,7 +203,7 @@ def evaluate_model(y_true, y_pred, label_encoder, model_name):
 
 
 # --- Evaluation ---
-evaluate_model(y_true_labels, pred_cnn_labels, le, "EEGNet")
+evaluate_model(y_true_labels, pred_eegnet_labels, le, "EEGNet")
 evaluate_model(y_true_labels, pred_rf_labels, le, "Random Forest")
 evaluate_model(y_true_labels, pred_xgb_labels, le, "XGBoost")
 evaluate_model(y_true_labels, pred_ensemble_numeric, le, "Ensemble (Hard Voting)")

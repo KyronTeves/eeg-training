@@ -65,21 +65,21 @@
   "WINDOWED_LABELS_NPY": "data/eeg_windowed_y.npy",
   
   "_base_model_paths": "--- File Paths: Base Models ---",
-  "MODEL_CNN": "models/eeg_direction_model.h5",
+  "MODEL_EEGNET": "models/eeg_direction_model.h5",
   "MODEL_SHALLOW": "models/eeg_shallow_model.h5",
   "MODEL_RF": "models/eeg_rf_model.pkl",
   "MODEL_XGB": "models/eeg_xgb_model.pkl",
   
   "_session_model_paths": "--- File Paths: Session-Specific Models ---",
-  "MODEL_CNN_SESSION": "models/eeg_direction_model_session.h5",
+  "MODEL_EEGNET_SESSION": "models/eeg_direction_model_session.h5",
   "MODEL_RF_SESSION": "models/eeg_rf_model_session.pkl",
   "MODEL_XGB_SESSION": "models/eeg_xgb_model_session.pkl",
   
   "_scaler_encoder_paths": "--- File Paths: Scalers and Encoders ---",
   "LABEL_ENCODER": "models/eeg_label_encoder.pkl",
-  "SCALER_CNN": "models/eeg_scaler.pkl",
+  "SCALER_EEGNET": "models/eeg_scaler.pkl",
   "SCALER_TREE": "models/eeg_scaler_tree.pkl",
-  "SCALER_CNN_SESSION": "models/eeg_scaler_session.pkl",
+  "SCALER_EEGNET_SESSION": "models/eeg_scaler_session.pkl",
   "SCALER_TREE_SESSION": "models/eeg_scaler_tree_session.pkl",
   "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy"
 }

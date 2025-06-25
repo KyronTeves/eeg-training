@@ -33,11 +33,11 @@ def load_artifacts(config: dict) -> tuple:
         x_calib = np.load(config["CALIB_X_NPY"])
         y_calib = np.load(config["CALIB_Y_NPY"])
         le = joblib.load(config["LABEL_ENCODER"])
-        model_cnn = load_model(config["MODEL_CNN"])
+        model_eegnet = load_model(config["MODEL_EEGNET"])
         model_rf = joblib.load(config["MODEL_RF"])
         model_xgb = joblib.load(config["MODEL_XGB"])
         logging.info("Artifacts loaded successfully.")
-        return x_calib, y_calib, le, model_cnn, model_rf, model_xgb
+        return x_calib, y_calib, le, model_eegnet, model_rf, model_xgb
     except FileNotFoundError as e:
         logging.error(
             "Failed to load artifact: %s. Ensure calibration data and base models exist.",
@@ -56,16 +56,16 @@ def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> 
     y_calib_encoded = le.transform(y_calib.ravel())
     y_calib_cat = to_categorical(y_calib_encoded)
 
-    scaler_cnn = StandardScaler()
+    scaler_eegnet = StandardScaler()
     x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
-    scaler_cnn.fit(x_calib_flat)
-    x_calib_scaled = scaler_cnn.transform(x_calib_flat).reshape(x_calib.shape)
+    scaler_eegnet.fit(x_calib_flat)
+    x_calib_scaled = scaler_eegnet.transform(x_calib_flat).reshape(x_calib.shape)
 
     x_calib_eegnet = np.expand_dims(x_calib_scaled, -1)
     x_calib_eegnet = np.transpose(x_calib_eegnet, (0, 2, 1, 3))
 
     logging.info("CNN data processed. Scaler fitted on %d samples.", len(x_calib_flat))
-    return x_calib_eegnet, y_calib_cat, scaler_cnn
+    return x_calib_eegnet, y_calib_cat, scaler_eegnet
 
 
 def fine_tune_cnn_model(model, x_data: np.ndarray, y_data: np.ndarray, config: dict):
@@ -118,13 +118,13 @@ def calibrate_tree_models(
 
 
 def save_session_artifacts(
-    model_cnn, model_rf, model_xgb, scaler_cnn, scaler_tree, config: dict
+    model_eegnet, model_rf, model_xgb, scaler_eegnet, scaler_tree, config: dict
 ):
     """Saves all fine-tuned models and session-specific scalers."""
     try:
         # CNN artifacts
-        joblib.dump(scaler_cnn, config["SCALER_CNN_SESSION"])
-        model_cnn.save(config["MODEL_CNN_SESSION"])
+        joblib.dump(scaler_eegnet, config["SCALER_EEGNET_SESSION"])
+        model_eegnet.save(config["MODEL_EEGNET_SESSION"])
         logging.info("Saved session CNN model and scaler.")
 
         # Tree-based artifacts
@@ -144,11 +144,11 @@ def main():
     config = load_config()
 
     try:
-        x_calib, y_calib, le, model_cnn, model_rf, model_xgb = load_artifacts(config)
+        x_calib, y_calib, le, model_eegnet, model_rf, model_xgb = load_artifacts(config)
 
         # Calibrate CNN
-        x_cnn, y_cnn, scaler_cnn = process_and_scale_cnn_data(x_calib, y_calib, le)
-        model_cnn_session = fine_tune_cnn_model(model_cnn, x_cnn, y_cnn, config)
+        x_eegnet, y_eegnet, scaler_eegnet = process_and_scale_cnn_data(x_calib, y_calib, le)
+        model_eegnet_session = fine_tune_cnn_model(model_eegnet, x_eegnet, y_eegnet, config)
 
         # Calibrate Tree-based Models
         model_rf_session, model_xgb_session, scaler_tree_session = (
@@ -156,10 +156,10 @@ def main():
         )
 
         save_session_artifacts(
-            model_cnn_session,
+            model_eegnet_session,
             model_rf_session,
             model_xgb_session,
-            scaler_cnn,
+            scaler_eegnet,
             scaler_tree_session,
             config,
         )

@@ -241,9 +241,9 @@ The system uses a centralized configuration file (`config.json`) to manage all p
 
 #### **File Paths:**
 - **Data Files**: `OUTPUT_CSV`, `WINDOWED_NPY`, `WINDOWED_LABELS_NPY`
-- **Base Models**: `MODEL_CNN`, `MODEL_SHALLOW`, `MODEL_RF`, `MODEL_XGB`
-- **Session Models**: `MODEL_CNN_SESSION`, `MODEL_RF_SESSION`, `MODEL_XGB_SESSION`
-- **Scalers & Encoders**: `SCALER_CNN`, `SCALER_TREE`, `LABEL_ENCODER`, etc.
+- **Base Models**: `MODEL_EEGNET`, `MODEL_SHALLOW`, `MODEL_RF`, `MODEL_XGB`
+- **Session Models**: `MODEL_EEGNET_SESSION`, `MODEL_RF_SESSION`, `MODEL_XGB_SESSION`
+- **Scalers & Encoders**: `SCALER_EEGNET`, `SCALER_TREE`, `LABEL_ENCODER`, etc.
 
 ### Configuration Example:
 ```json

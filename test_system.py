@@ -159,9 +159,9 @@ class TestIntegration:
                 "SESSION_TYPES": ["pure"],
                 "USE_SESSION_TYPES": ["pure"],
                 "LABELS": ["left", "right"],
-                "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+                "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
                 "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-                "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+                "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
                 "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
             }
             with open(config_path, "w", encoding="utf-8") as f:
@@ -186,9 +186,9 @@ class TestIntegration:
                 check=True,
                 timeout=DEFAULT_TIMEOUT,
             )
-            assert os.path.exists(config["MODEL_CNN"])
+            assert os.path.exists(config["MODEL_EEGNET"])
             assert os.path.exists(config["LABEL_ENCODER"])
-            assert os.path.exists(config["SCALER_CNN"])
+            assert os.path.exists(config["SCALER_EEGNET"])
 
     def test_error_handling_missing_config(self):
         """Test error handling for missing config file in windowing and training scripts."""
@@ -249,9 +249,9 @@ def test_model_prediction_after_training():
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
             "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
@@ -277,7 +277,7 @@ def test_model_prediction_after_training():
         )
         # 3. Load model and run prediction
         x = np.load(config["WINDOWED_NPY"])
-        model = load_model(config["MODEL_CNN"])
+        model = load_model(config["MODEL_EEGNET"])
         # Model expects (batch, channels, samples, 1) or similar
         if x.ndim == 3:
             x = x[..., np.newaxis]
@@ -306,9 +306,9 @@ def test_windowed_npy_content():
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
             "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
@@ -353,9 +353,9 @@ def test_windowing_with_malformed_csv():
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
             "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
@@ -393,9 +393,9 @@ def test_training_with_wrong_shape_npy():
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_CNN": os.path.join(tmpdir, "model.h5"),
+            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
             "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_CNN": os.path.join(tmpdir, "scaler.pkl"),
+            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")

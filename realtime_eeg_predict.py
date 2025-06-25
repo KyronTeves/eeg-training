@@ -97,7 +97,7 @@ class OptimizedPredictionPipeline:
         try:
             # CNN Models - now trained with correct window size (125)
             self.models["eegnet"] = {
-                "model": load_model(self.config["MODEL_CNN"]),
+                "model": load_model(self.config["MODEL_EEGNET"]),
                 "optimized": False,
             }
 
@@ -111,7 +111,7 @@ class OptimizedPredictionPipeline:
             self.models["xgb"] = joblib.load(self.config["MODEL_XGB"])
 
             # Scalers and encoders
-            self.scalers["cnn"] = joblib.load(self.config["SCALER_CNN"])
+            self.scalers["eegnet"] = joblib.load(self.config["SCALER_EEGNET"])
             self.scalers["tree"] = joblib.load(self.config["SCALER_TREE"])
             self.label_encoder = joblib.load(self.config["LABEL_ENCODER"])
 
@@ -235,7 +235,7 @@ class OptimizedPredictionPipeline:
 
             # Prepare input
             window_scaled = (
-                self.scalers["cnn"]
+                self.scalers["eegnet"]
                 .transform(window.reshape(-1, self.n_channels))
                 .reshape(window.shape)
             )
@@ -308,7 +308,7 @@ class OptimizedPredictionPipeline:
 
             # Prepare input (same format as EEGNet)
             window_scaled = (
-                self.scalers["cnn"]
+                self.scalers["eegnet"]
                 .transform(window.reshape(-1, self.n_channels))
                 .reshape(window.shape)
             )

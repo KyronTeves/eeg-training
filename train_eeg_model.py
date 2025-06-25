@@ -167,7 +167,7 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
                 dropoutType=_config["EEGNET_DROPOUT_TYPE"],
                 norm_rate=_config["EEGNET_NORM_RATE"],
             )
-            model_path = _config["MODEL_CNN"]
+            model_path = _config["MODEL_EEGNET"]
         elif model_name == "ShallowConvNet":
             model = ShallowConvNet(
                 nb_classes=_y_train.shape[1],
@@ -273,7 +273,7 @@ train_eegnet_model(X_train_final, y_train_final, X_test_scaled, y_test, config, 
 
 # Save shared components
 joblib.dump(le, config["LABEL_ENCODER"])
-joblib.dump(scaler, config["SCALER_CNN"])
+joblib.dump(scaler, config["SCALER_EEGNET"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
 # --- Feature Extraction for Tree-based Models ---
