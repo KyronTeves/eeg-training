@@ -32,25 +32,25 @@ DEFAULT_TIMEOUT = 30  # seconds
 
 def test_window_data_shape():
     """Test that window_data returns correct shapes."""
-    X = np.random.randn(1000, 16)
+    x = np.random.randn(1000, 16)
     y = np.random.choice(["left", "right", "neutral"], size=(1000, 1))
-    X_windows, y_windows = window_data(X, y, window_size=250, step_size=125)
-    assert X_windows.shape[1:] == (250, 16)
-    assert X_windows.shape[0] == y_windows.shape[0]
+    x_windows, y_windows = window_data(x, y, window_size=250, step_size=125)
+    assert x_windows.shape[1:] == (250, 16)
+    assert x_windows.shape[0] == y_windows.shape[0]
 
 
 def test_window_data_output():
     """Test window_data produces correct windowed output and label consistency."""
-    X = np.random.randn(500, 8)  # 500 samples, 8 channels
+    x = np.random.randn(500, 8)  # 500 samples, 8 channels
     y = np.random.choice(["left", "right"], size=(500, 1))
     window_size = 100
     step_size = 50
-    X_windows, y_windows = window_data(X, y, window_size, step_size)
+    x_windows, y_windows = window_data(x, y, window_size, step_size)
     # Check window shape
-    assert X_windows.shape[1:] == (window_size, 8)
+    assert x_windows.shape[1:] == (window_size, 8)
     # Check number of windows
     expected_windows = (500 - window_size) // step_size + 1
-    assert X_windows.shape[0] == expected_windows
+    assert x_windows.shape[0] == expected_windows
     assert y_windows.shape[0] == expected_windows
     # Check that each window label is one of the original labels
     for label in y_windows:
@@ -109,7 +109,7 @@ def test_check_labels_valid_invalid():
 
 def test_eegnet_train_save_load():
     """Test that EEGNet can be trained, saved, and loaded on dummy data."""
-    X = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
+    x = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
     y = np.zeros((20,))
     y[:10] = 1  # Two classes
     y_cat = np.zeros((20, 2))
@@ -118,7 +118,7 @@ def test_eegnet_train_save_load():
     model.compile(
         optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
     )
-    model.fit(X, y_cat, epochs=1, batch_size=4, verbose=0)
+    model.fit(x, y_cat, epochs=1, batch_size=4, verbose=0)
     with tempfile.TemporaryDirectory() as tmpdir:
         model_path = os.path.join(tmpdir, "test_eegnet_model.h5")
         model.save(model_path)
@@ -269,12 +269,12 @@ def test_model_prediction_after_training():
             timeout=DEFAULT_TIMEOUT,
         )
         # 3. Load model and run prediction
-        X = np.load(config["WINDOWED_NPY"])
+        x = np.load(config["WINDOWED_NPY"])
         model = load_model(config["MODEL_CNN"])
         # Model expects (batch, channels, samples, 1) or similar
-        if X.ndim == 3:
-            X = X[..., np.newaxis]
-        preds = model.predict(X[:5])
+        if x.ndim == 3:
+            x = x[..., np.newaxis]
+        preds = model.predict(x[:5])
         assert preds.shape[0] == 5
 
 

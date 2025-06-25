@@ -320,7 +320,7 @@ def main():
     # Connect to LSL stream
     if not lsl_handler.connect():
         logging.error(
-            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming enabled."
+            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming."
         )
         return
 
