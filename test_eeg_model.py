@@ -17,6 +17,7 @@ import joblib
 import numpy as np
 import pandas as pd
 from keras.models import load_model  # type: ignore
+
 from sklearn.metrics import classification_report, confusion_matrix
 from joblib import Parallel, delayed
 
@@ -28,6 +29,12 @@ from utils import (
     check_labels_valid,
     extract_features,
 )
+
+
+def square(x):
+    import tensorflow as tf
+
+    return tf.math.square(x)
 
 
 def ensemble_hard_voting(le, pred_eegnet_labels, pred_shallow_labels, pred_rf_labels, pred_xgb_labels, y_true_labels):
@@ -180,7 +187,7 @@ def main():
         model_eegnet = load_model(config["MODEL_EEGNET"])
         rf = joblib.load(config["MODEL_RF"])
         xgb = joblib.load(config["MODEL_XGB"])
-        model_shallow = load_model(config["MODEL_SHALLOW"])
+        model_shallow = load_model(config["MODEL_SHALLOW"], custom_objects={"square": square})
         scaler_shallow = joblib.load(config.get("SCALER_SHALLOW", config["SCALER_EEGNET"]))
     except (ImportError, OSError, AttributeError) as e:
         logging.error("Failed to load models or encoders: %s", e)

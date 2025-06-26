@@ -208,10 +208,18 @@ class TestIntegration:
             assert os.path.exists(config["SCALER_SHALLOW"])
             # Additional: Load ShallowConvNet model and run a prediction to ensure it is functional
             from keras.models import load_model
+
+            def square(x):
+                import tensorflow as tf
+
+                return tf.math.square(x)
+
             x = np.load(config["WINDOWED_NPY"])
             if x.ndim == 3:
                 x = x[..., np.newaxis]
-            shallow_model = load_model(config["MODEL_SHALLOW"])
+            shallow_model = load_model(
+                config["MODEL_SHALLOW"], custom_objects={"square": square}
+            )
             shallow_preds = shallow_model.predict(x[:5])
             assert shallow_preds.shape[0] == 5
 

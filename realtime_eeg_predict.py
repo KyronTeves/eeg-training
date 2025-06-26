@@ -34,6 +34,12 @@ from keras.models import load_model
 from lsl_stream_handler import LSLStreamHandler
 from utils import load_config, setup_logging, extract_features, collect_calibration_data, run_session_calibration
 
+
+def square(x):
+    import tensorflow as tf
+    return tf.math.square(x)
+
+
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
@@ -102,7 +108,7 @@ class OptimizedPredictionPipeline:
             }
 
             self.models["shallow"] = {
-                "model": load_model(self.config["MODEL_SHALLOW"]),
+                "model": load_model(self.config["MODEL_SHALLOW"], custom_objects={"square": square}),
                 "optimized": False,
             }
 
@@ -134,7 +140,10 @@ class OptimizedPredictionPipeline:
         """Optimize TensorFlow model for faster inference."""
         try:
             # Load original model
-            model = load_model(model_path)
+            if 'shallow' in model_path.lower():
+                model = load_model(model_path, custom_objects={"square": square})
+            else:
+                model = load_model(model_path)
 
             # Convert to TensorFlow Lite for faster inference
             converter = tf.lite.TFLiteConverter.from_keras_model(model)
@@ -159,7 +168,10 @@ class OptimizedPredictionPipeline:
             logging.warning(
                 "TensorFlow Lite optimization failed: %s. Using original model.", e
             )
-            return {"model": load_model(model_path), "optimized": False}
+            if 'shallow' in model_path.lower():
+                return {"model": load_model(model_path, custom_objects={"square": square}), "optimized": False}
+            else:
+                return {"model": load_model(model_path), "optimized": False}
 
     def _warmup_models(self):
         """Warm up models with dummy predictions to reduce first-call latency."""
@@ -632,7 +644,7 @@ def initialize_pipeline(
             }
             pipeline.scalers["eegnet"] = joblib.load(session_scaler_path_eegnet)
             pipeline.models["shallow"] = {
-                "model": load_model(session_model_path_shallow),
+                "model": load_model(session_model_path_shallow, custom_objects={"square": square}),
                 "optimized": False,
             }
             pipeline.scalers["shallow"] = joblib.load(session_scaler_path_shallow)
