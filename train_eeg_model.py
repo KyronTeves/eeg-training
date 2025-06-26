@@ -9,10 +9,10 @@ Output: Trained model files, encoders, scalers (for downstream evaluation and pr
 """
 
 import logging
+
 import joblib
 import numpy as np
 from joblib import Parallel, delayed
-
 from keras.callbacks import EarlyStopping
 from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
@@ -23,13 +23,8 @@ from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import (
-    load_config,
-    setup_logging,
-    check_no_nan,
-    check_labels_valid,
-    extract_features,
-)
+from utils import (check_labels_valid, check_no_nan, extract_features,
+                   load_config, setup_logging)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -125,7 +120,7 @@ def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     return x_aug
 
 
-def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
+def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
     """
     Train and evaluate EEGNet or ShallowConvNet model.
 
@@ -145,20 +140,20 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
     Process: Compiles, trains, and evaluates the model.
     Output: Trained model and test accuracy.
     """
-    X_train_eegnet = np.expand_dims(_X_train, -1)
-    X_test_eegnet = np.expand_dims(_X_test, -1)
-    X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
-    X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
+    x_train_eegnet = np.expand_dims(_x_train, -1)
+    x_test_eegnet = np.expand_dims(_x_test, -1)
+    x_train_eegnet = np.transpose(x_train_eegnet, (0, 2, 1, 3))
+    x_test_eegnet = np.transpose(x_test_eegnet, (0, 2, 1, 3))
 
     early_stopping = EarlyStopping(
         monitor=_config["EARLY_STOPPING_MONITOR"],
         patience=_config["EARLY_STOPPING_PATIENCE"],
         restore_best_weights=True,
     )
-    kernLength = _config["EEGNET_KERN_LENGTH"]
-    F1 = _config["EEGNET_F1"]
-    D = _config["EEGNET_D"]
-    F2 = _config["EEGNET_F2"]
+    kern_length = _config["EEGNET_KERN_LENGTH"]
+    f1 = _config["EEGNET_F1"]
+    d = _config["EEGNET_D"]
+    f2 = _config["EEGNET_F2"]
     models_to_train = _config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
     for model_name in models_to_train:
         logging.info("=== Training %s ===", model_name)
@@ -167,10 +162,10 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
                 nb_classes=_y_train.shape[1],
                 Chans=_config["N_CHANNELS"],
                 Samples=_config["WINDOW_SIZE"],
-                kernLength=kernLength,
-                F1=F1,
-                D=D,
-                F2=F2,
+                kernLength=kern_length,
+                F1=f1,
+                D=d,
+                F2=f2,
                 dropoutRate=_config["EEGNET_DROPOUT_RATE"],
                 dropoutType=_config["EEGNET_DROPOUT_TYPE"],
                 norm_rate=_config["EEGNET_NORM_RATE"],
@@ -193,7 +188,7 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
             metrics=["accuracy"],
         )
         model.fit(
-            X_train_eegnet,
+            x_train_eegnet,
             _y_train,
             epochs=_config["EPOCHS"],
             batch_size=_config["BATCH_SIZE"],
@@ -202,9 +197,9 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
             callbacks=[early_stopping],
             verbose=1,
         )
-        _, acc = model.evaluate(X_test_eegnet, _y_test)
+        _, acc = model.evaluate(x_test_eegnet, _y_test)
         logging.info("%s Test accuracy: %.3f", model_name, acc)
-        y_pred = model.predict(X_test_eegnet)
+        y_pred = model.predict(x_test_eegnet)
         y_pred_labels = np.argmax(y_pred, axis=1)
         y_true_labels = np.argmax(_y_test, axis=1)
         logging.info(
@@ -219,7 +214,7 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
         logging.info("%s saved to %s", model_name, model_path)
 
 
-def train_tree_models(_X_features, _y_encoded, _config, _le):
+def train_tree_models(_x_features, _y_encoded, _config, _le):
     """
     Train and evaluate Random Forest and XGBoost models.
 
@@ -237,15 +232,15 @@ def train_tree_models(_X_features, _y_encoded, _config, _le):
     Process: Trains and evaluates Random Forest and XGBoost models.
     Output: Trained models and their test accuracies.
     """
-    X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
-        _X_features, _y_encoded, test_size=0.2, random_state=42, stratify=_y_encoded
+    x_train_tree, x_test_tree, y_train_tree, y_test_tree = train_test_split(
+        _x_features, _y_encoded, test_size=0.2, random_state=42, stratify=_y_encoded
     )
     scaler_tree = StandardScaler()
-    X_train_scaled_tree = scaler_tree.fit_transform(X_train_tree)
-    X_test_scaled_tree = scaler_tree.transform(X_test_tree)
+    x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
+    x_test_scaled_tree = scaler_tree.transform(x_test_tree)
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
-    rf.fit(X_train_scaled_tree, y_train_tree)
-    rf_pred = rf.predict(X_test_scaled_tree)
+    rf.fit(x_train_scaled_tree, y_train_tree)
+    rf_pred = rf.predict(x_test_scaled_tree)
     logging.info("Random Forest Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logging.info(
@@ -255,8 +250,8 @@ def train_tree_models(_X_features, _y_encoded, _config, _le):
     xgb = XGBClassifier(
         n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
     )
-    xgb.fit(X_train_scaled_tree, y_train_tree)
-    xgb_pred = xgb.predict(X_test_scaled_tree)
+    xgb.fit(x_train_scaled_tree, y_train_tree)
+    xgb_pred = xgb.predict(x_test_scaled_tree)
     logging.info("XGBoost Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logging.info(

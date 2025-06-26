@@ -8,31 +8,31 @@ Process: Loads trained models, buffers EEG data, performs real-time ensemble pre
 Output: Real-time predictions and confidence scores (logged and optionally displayed)
 """
 
-import os
-
 import logging
+import os
 import threading
 import time
+import warnings
 from collections import deque
 from typing import Optional, Tuple
-import warnings
-import joblib
 
+import joblib
 import numpy as np
 import tensorflow as tf
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import load_config, setup_logging, extract_features, collect_calibration_data, run_session_calibration
+from utils import (collect_calibration_data, extract_features, load_config,
+                   run_session_calibration, setup_logging)
 
 
 def square(x):
-    import tensorflow as tf
+    """Return the element-wise square of the input tensor."""
     return tf.math.square(x)
 
 
 def log(x):
-    import tensorflow as tf
+    """Return the element-wise natural logarithm of the input tensor, clipped for stability."""
     return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
 
 
@@ -183,8 +183,8 @@ class OptimizedPredictionPipeline:
             )
             if 'shallow' in model_path.lower():
                 return {"model": load_model(model_path, custom_objects={"square": square}), "optimized": False}
-            else:
-                return {"model": load_model(model_path), "optimized": False}
+
+            return {"model": load_model(model_path), "optimized": False}
 
     def _warmup_models(self):
         """
@@ -533,7 +533,7 @@ class OptimizedPredictionPipeline:
         Output: None (side effect: thread started)
         """
 
-        def prediction_loop():
+        def _async_prediction_loop():
             while not self.stop_thread:
                 if self.is_ready_for_prediction():
                     result = self.predict_realtime()
@@ -543,7 +543,7 @@ class OptimizedPredictionPipeline:
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
 
-        self.prediction_thread = threading.Thread(target=prediction_loop, daemon=True)
+        self.prediction_thread = threading.Thread(target=_async_prediction_loop, daemon=True)
         self.prediction_thread.start()
         logging.info("Asynchronous prediction started.")
 
@@ -643,11 +643,11 @@ def add_samples_to_buffer(pipeline, window):
         pipeline.add_sample(sample)
 
 
-def session_calibration(lsl_handler, config):
+def session_calibration(lsl_handler, session_config):
     """
     Handle session calibration logic and return calibration status and model/scaler paths.
 
-    Input: lsl_handler (LSLStreamHandler), config (dict)
+    Input: lsl_handler (LSLStreamHandler), session_config (dict)
     Process: Prompts user, collects calibration data, runs calibration, saves session models/scalers
     Output: Tuple (
         use_session_model,
@@ -666,20 +666,25 @@ def session_calibration(lsl_handler, config):
     user_calib = input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
     if user_calib in ("", "y", "yes"):
         try:
-            LABELS = config["LABELS"]
-            N_CHANNELS = config["N_CHANNELS"]
-            WINDOW_SIZE = config["WINDOW_SIZE"]
-            EEGNET_DROPOUT = config.get("EEGNET_DROPOUT_RATE", 0.5)
+            labels = session_config["LABELS"]
+            n_channels = session_config["N_CHANNELS"]
+            window_size = session_config["WINDOW_SIZE"]
+            eegnet_dropout = session_config.get("EEGNET_DROPOUT_RATE", 0.5)
             logging.info("Starting session calibration. Please follow the prompts.")
-            channels = list(range(N_CHANNELS))
+            channels = list(range(n_channels))
             x_calib, y_calib = collect_calibration_data(
-                lsl_handler, channels, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=config["SAMPLING_RATE"]
+                lsl_handler,
+                channels,
+                window_size,
+                labels,
+                seconds_per_class=10,
+                sample_rate=session_config["SAMPLING_RATE"],
             )
             run_session_calibration(
                 x_calib,
                 y_calib,
-                base_model_path=config["MODEL_EEGNET"],
-                label_encoder_path=config["LABEL_ENCODER"],
+                base_model_path=session_config["MODEL_EEGNET"],
+                label_encoder_path=session_config["LABEL_ENCODER"],
                 out_model_path=session_model_path_eegnet,
                 out_scaler_path=session_scaler_path_eegnet,
                 epochs=3,
@@ -689,21 +694,21 @@ def session_calibration(lsl_handler, config):
             run_session_calibration(
                 x_calib,
                 y_calib,
-                base_model_path=config["MODEL_SHALLOW"],
-                label_encoder_path=config["LABEL_ENCODER"],
+                base_model_path=session_config["MODEL_SHALLOW"],
+                label_encoder_path=session_config["LABEL_ENCODER"],
                 out_model_path=session_model_path_shallow,
                 out_scaler_path=session_scaler_path_shallow,
                 epochs=3,
                 batch_size=16,
                 model_type="ShallowConvNet",
-                n_channels=N_CHANNELS,
-                window_size=WINDOW_SIZE,
-                dropout_rate=EEGNET_DROPOUT,
+                n_channels=n_channels,
+                window_size=window_size,
+                dropout_rate=eegnet_dropout,
             )
             logging.info("Session calibration complete. Using session-specific models and scalers.")
             use_session_model = True
-        except Exception as e:
-            logging.error(f"Session calibration failed: {e}. Proceeding with pre-trained models.")
+        except (FileNotFoundError, ValueError, RuntimeError) as e:
+            logging.error("Session calibration failed: %s. Proceeding with pre-trained models.", e)
             use_session_model = False
     else:
         logging.info("Skipping session calibration. Using pre-trained models.")
@@ -732,7 +737,7 @@ def select_prediction_mode():
 
 
 def initialize_pipeline(
-    config,
+    config_dict,
     use_session_model,
     session_model_path_eegnet,
     session_scaler_path_eegnet,
@@ -742,11 +747,11 @@ def initialize_pipeline(
     """
     Initialize the prediction pipeline with the correct models and scalers.
 
-    Input: config (dict), use_session_model (bool), session model/scaler paths
+    Input: config_dict (dict), use_session_model (bool), session model/scaler paths
     Process: Loads session-specific or pre-trained models/scalers as needed
     Output: Initialized OptimizedPredictionPipeline
     """
-    pipeline = OptimizedPredictionPipeline(config)
+    pipeline = OptimizedPredictionPipeline(config_dict)
     if use_session_model:
         try:
             pipeline.models["eegnet"] = {
@@ -762,9 +767,9 @@ def initialize_pipeline(
             logging.info(
                 "Loaded session-specific EEGNet and ShallowConvNet models and scalers."
             )
-        except Exception as e:
+        except (FileNotFoundError, ValueError) as e:
             logging.error(
-                f"Failed to load session-specific model/scaler: {e}. Using pre-trained."
+                "Failed to load session-specific model/scaler: %s. Using pre-trained.", e
             )
             pipeline.load_optimized_models()
     else:
@@ -780,7 +785,10 @@ def eegnet_only_prediction(pipeline, prediction_count):
     Process: Runs EEGNet prediction, logs result
     Output: Updated prediction_count
     """
-    result = pipeline.predict_eegnet(pipeline._get_current_window())
+    window = np.array(
+        list(pipeline.buffer)[-pipeline.window_size:]
+    ).reshape((1, pipeline.window_size, pipeline.n_channels))
+    result = pipeline.predict_eegnet(window)
     if result:
         probs, confidence = result
         pred_idx = np.argmax(probs)
@@ -792,18 +800,20 @@ def eegnet_only_prediction(pipeline, prediction_count):
     return prediction_count
 
 
-def prediction_loop(lsl_handler, pipeline, show_ensemble, config):
+def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
     """
     Main loop for real-time EEG prediction from LSL stream.
 
-    Input: lsl_handler (LSLStreamHandler), pipeline (OptimizedPredictionPipeline), show_ensemble (bool), config (dict)
+    Input:
+        lsl_handler (LSLStreamHandler), pipeline (OptimizedPredictionPipeline),
+        show_ensemble (bool), config_dict (dict)
     Process: Continuously collects windows, adds to buffer, runs predictions, logs results
     Output: None (side effect: predictions and logs)
     """
     prediction_count = 0
     try:
         while True:
-            window = lsl_handler.get_window(config["WINDOW_SIZE"], timeout=1.0)
+            window = lsl_handler.get_window(config_dict["WINDOW_SIZE"], timeout=1.0)
             if window is not None:
                 add_samples_to_buffer(pipeline, window)
                 if pipeline.is_ready_for_prediction():

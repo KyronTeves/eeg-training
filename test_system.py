@@ -8,20 +8,20 @@ Process: Tests data windowing, config loading, validation, model training, and i
 Output: Test results (pass/fail), error messages, and logs
 """
 
+import json
 import os
 import subprocess  # nosec B404: subprocess is used safely with explicit argument lists and no shell=True
 import sys
 import tempfile
-import json
 
 import numpy as np
 import pandas as pd
 import pytest
+import tensorflow as tf
 from keras.models import load_model
 
 from EEGModels import EEGNet, ShallowConvNet
 from utils import check_labels_valid, check_no_nan, load_config, window_data
-
 
 # Add a default timeout for all subprocess.run calls
 DEFAULT_TIMEOUT = 30  # seconds
@@ -82,6 +82,7 @@ def test_load_config_keys():
     ],
 )
 def test_check_no_nan_cases(arr, should_raise):
+    """Test check_no_nan with arrays that should or should not raise ValueError."""
     if callable(arr):
         arr = arr()
     if should_raise:
@@ -100,6 +101,7 @@ def test_check_no_nan_cases(arr, should_raise):
     ],
 )
 def test_check_labels_valid_cases(labels, should_raise):
+    """Test check_labels_valid with valid and invalid label arrays."""
     if should_raise:
         with pytest.raises(ValueError):
             check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
@@ -143,6 +145,8 @@ def test_model_train_save_load(model_class, model_name):
 # Integration & Pipeline Tests
 # ----------------------
 class TestIntegration:
+    """Integration and pipeline tests for the EEG training system."""
+
     def test_end_to_end_pipeline(self):
         """Black-box end-to-end test: CSV -> windowed .npy -> model file."""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -202,18 +206,20 @@ class TestIntegration:
             assert os.path.exists(config["SCALER_EEGNET"])
             assert os.path.exists(config["SCALER_SHALLOW"])
             # Additional: Load ShallowConvNet model and run a prediction to ensure it is functional
-            from keras.models import load_model
 
             def square(x):
-                import tensorflow as tf
-
+                """Return the element-wise square of the input tensor."""
                 return tf.math.square(x)
+
+            def log(x):
+                """Return the element-wise natural logarithm of the input tensor, clipped for stability."""
+                return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
 
             x = np.load(config["WINDOWED_NPY"])
             if x.ndim == 3:
                 x = x[..., np.newaxis]
             shallow_model = load_model(
-                config["MODEL_SHALLOW"], custom_objects={"square": square}
+                config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
             )
             shallow_preds = shallow_model.predict(x[:5])
             assert shallow_preds.shape[0] == 5

@@ -1,7 +1,8 @@
 """
 calibrate_session.py
 
-Fine-tune a pre-trained EEGNet model and create a session-specific scaler using a small labeled calibration dataset.
+Fine-tune a pre-trained EEGNet model and create a session-specific scaler
+    using a small labeled calibration dataset.
 
 Input: Calibration data (windowed, preprocessed, labeled)
 Process: Fits new scalers, fine-tunes models, saves session-specific artifacts.
@@ -14,12 +15,12 @@ import joblib
 import numpy as np
 import tensorflow as tf
 from joblib import Parallel, delayed
-
 from keras.models import load_model
 from keras.utils import to_categorical
 from sklearn.preprocessing import StandardScaler
 
-from utils import load_config, setup_logging, extract_features, check_no_nan, check_labels_valid
+from utils import (check_labels_valid, check_no_nan, extract_features,
+                   load_config, setup_logging)
 
 tf.config.run_functions_eagerly(True)  # Enable eager execution
 
@@ -117,7 +118,9 @@ def calibrate_tree_models(
     """
     logging.info("Calibrating tree-based models (RF and XGBoost)...")
     check_no_nan(x_calib, name="Calibration EEG data (tree)")
-    check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels (tree)")
+    check_labels_valid(
+        y_calib, valid_labels=le.classes_, name="Calibration labels (tree)"
+    )
 
     sampling_rate = config["SAMPLING_RATE"]
     x_features = np.array(
@@ -181,8 +184,12 @@ def main():
         x_calib, y_calib, le, model_eegnet, model_rf, model_xgb = load_artifacts(config)
 
         # Calibrate CNN
-        x_eegnet, y_eegnet, scaler_eegnet = process_and_scale_cnn_data(x_calib, y_calib, le)
-        model_eegnet_session = fine_tune_cnn_model(model_eegnet, x_eegnet, y_eegnet, config)
+        x_eegnet, y_eegnet, scaler_eegnet = process_and_scale_cnn_data(
+            x_calib, y_calib, le
+        )
+        model_eegnet_session = fine_tune_cnn_model(
+            model_eegnet, x_eegnet, y_eegnet, config
+        )
 
         # Calibrate Tree-based Models
         model_rf_session, model_xgb_session, scaler_tree_session = (

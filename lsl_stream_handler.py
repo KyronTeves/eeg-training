@@ -96,9 +96,9 @@ class LSLStreamHandler:
                 data = np.array(chunk)  # Shape: (samples, channels)
                 timestamps = np.array(timestamps)
                 return data, timestamps
-            else:
-                # Return empty arrays if no data available
-                return np.array([]).reshape(0, self.n_channels), np.array([])
+
+            # Return empty arrays if no data available
+            return np.array([]).reshape(0, self.n_channels), np.array([])
 
         except (RuntimeError, ValueError, ImportError) as e:
             logging.error("Error pulling data from LSL stream: %s", e)

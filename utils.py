@@ -24,6 +24,7 @@ from keras.optimizers import Adam
 from keras.utils import to_categorical
 from scipy.signal import welch
 from sklearn.preprocessing import StandardScaler
+
 from EEGModels import ShallowConvNet
 
 

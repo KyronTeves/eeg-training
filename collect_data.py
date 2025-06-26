@@ -16,7 +16,7 @@ from datetime import datetime
 import numpy as np
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import load_config, setup_logging, check_no_nan, check_labels_valid
+from utils import check_labels_valid, check_no_nan, load_config, setup_logging
 
 setup_logging()
 config = load_config()
@@ -135,7 +135,8 @@ def collect_trial_eeg_lsl(
     """
     Collect EEG data for a single trial using LSL streaming.
 
-    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str), trial_num (int), output_writer (csv.writer)
+    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str),
+        trial_num (int), output_writer (csv.writer)
     Process: Runs all phases for the trial, writes to CSV
     Output: (number of rows written, list of timestamps)
     """
@@ -164,7 +165,8 @@ def run_trials_for_label(lsl_handler, session_type, label, writer, total_rows):
     """
     Run all trials for a given label and update total_rows.
 
-    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str), writer (csv.writer), total_rows (int)
+    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str),
+        writer (csv.writer), total_rows (int)
     Process: Loops over trials, collects and writes data
     Output: Updated total_rows
     """
