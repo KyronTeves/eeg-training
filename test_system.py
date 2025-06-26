@@ -10,7 +10,7 @@ Output: Test results (pass/fail), error messages, and logs
 
 import json
 import os
-import subprocess  # nosec B404: subprocess is used safely with explicit argument lists and no shell=True
+import subprocess  # nosec B404
 import sys
 import tempfile
 
