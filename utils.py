@@ -23,7 +23,9 @@ from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 from scipy.signal import welch
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.ensemble import RandomForestClassifier
+from xgboost import XGBClassifier
 
 from EEGModels import ShallowConvNet
 
@@ -130,101 +132,6 @@ def window_data(
     return x_windows, y_windows
 
 
-def collect_calibration_data(
-    board, channels, window_size, labels, seconds_per_class=10, sample_rate=250
-):
-    """
-    Collect labeled calibration data for each class from the user via board interface.
-
-    Input: board (stream handler), channels (list), window_size (int), labels (list),
-        seconds_per_class (int), sample_rate (int)
-    Process: Prompts user, collects windows for each label
-    Output: (x_calib, y_calib) as np.ndarrays
-    """
-    calib_x = []
-    calib_y = []
-    for label in labels:
-        input(
-            f"Calibrating '{label}': Press Enter to record for {seconds_per_class} seconds..."
-        )
-        data = []
-        start_time = time.time()
-        while time.time() - start_time < seconds_per_class:
-            eeg = board.get_current_board_data(window_size)
-            if eeg.shape[1] >= window_size:
-                eeg_window = eeg[channels, -window_size:].T
-                data.append(eeg_window)
-            time.sleep(window_size / sample_rate)
-        calib_x.extend(data)
-        calib_y.extend([label] * len(data))
-        logging.info("Collected %d windows for label '%s'.", len(data), label)
-    return np.array(calib_x), np.array(calib_y)
-
-
-def run_session_calibration(
-    x_calib,
-    y_calib,
-    base_model_path,
-    label_encoder_path,
-    out_model_path,
-    out_scaler_path,
-    epochs=3,
-    batch_size=16,
-    model_type="EEGNet",
-    n_channels=None,
-    window_size=None,
-    dropout_rate=None,
-):
-    """
-    Fine-tune a model and scaler for the session using calibration data.
-
-    Input: Calibration data, model/scaler paths, model type, and training params
-    Process: Encodes labels, fits scaler, prepares data, fine-tunes model, saves artifacts
-    Output: Saves model and scaler to disk
-    """
-    le = joblib.load(label_encoder_path)
-    y_calib_encoded = le.transform(y_calib)
-    y_calib_cat = to_categorical(y_calib_encoded)
-    scaler = StandardScaler()
-    x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
-    scaler.fit(x_calib_flat)
-    x_calib_scaled = scaler.transform(x_calib_flat).reshape(x_calib.shape)
-    # Prepare for model: (batch, window, channels) -> (batch, channels, window, 1)
-    x_calib_model = np.expand_dims(x_calib_scaled, -1)
-    x_calib_model = np.transpose(x_calib_model, (0, 2, 1, 3))
-    if model_type == "EEGNet":
-        model = load_model(base_model_path)
-    elif model_type == "ShallowConvNet":
-        # Rebuild model from scratch to avoid optimizer issues
-        if n_channels is None or window_size is None or dropout_rate is None:
-            raise ValueError("n_channels, window_size, dropout_rate must be provided for ShallowConvNet calibration.")
-        model = ShallowConvNet(
-            nb_classes=y_calib_cat.shape[1],
-            Chans=n_channels,
-            Samples=window_size,
-            dropoutRate=dropout_rate,
-        )
-        model.load_weights(base_model_path)
-    else:
-        raise ValueError(f"Unknown model_type: {model_type}")
-    # Recompile model with new optimizer to avoid Keras variable mismatch error
-    model.compile(
-        optimizer=Adam(learning_rate=0.001),
-        loss="categorical_crossentropy",
-        metrics=["accuracy"],
-    )
-    model.fit(
-        x_calib_model, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
-    )
-    model.save(out_model_path)
-    joblib.dump(scaler, out_scaler_path)
-    logging.info(
-        f"Session calibration complete for {model_type}. Model saved to %s, scaler saved to %s.",
-        out_model_path,
-        out_scaler_path,
-    )
-
-
 def setup_logging(logfile: str = "eeg_training.log"):
     """
     Set up logging to both console and file with rotation.
@@ -310,3 +217,118 @@ def check_labels_valid(labels, valid_labels=None, name="labels"):
         if invalid:
             logging.error("%s contain invalid values: %s", name, invalid)
             raise ValueError(f"{name} contain invalid values: {invalid}")
+
+
+def calibrate_all_models_lsl(
+    lsl_stream_handler,
+    config_path="config.json",
+    seconds_per_class=None,
+    session_tag=None,
+    save_dir="models",
+    verbose=True,
+):
+    """
+    Unified, LSL-aware calibration for all models (EEGNet, ShallowConvNet, RF, XGBoost).
+    Uses config for parameters and saves session-specific models/scalers.
+    """
+
+    # --- Load config ---
+    config = load_config(config_path)
+    channels = config["eeg_channels"]
+    window_size = config["window_size"]
+    sample_rate = config["sample_rate"]
+    label_classes = config["label_classes"]
+    dropout_rate = config.get("shallowconvnet_dropout", 0.5)
+    if seconds_per_class is None:
+        seconds_per_class = config.get("calibration_seconds_per_class", 10)
+    if session_tag is None:
+        session_tag = time.strftime("%Y%m%d_%H%M%S")
+    os.makedirs(save_dir, exist_ok=True)
+
+    # --- Collect calibration data using LSL ---
+    def collect_lsl_calib_data():
+        calib_x, calib_y = [], []
+        for label in label_classes:
+            input(f"Calibrating '{label}': Press Enter to record for {seconds_per_class} seconds...")
+            data = []
+            start_time = time.time()
+            while time.time() - start_time < seconds_per_class:
+                eeg = lsl_stream_handler.get_current_board_data(window_size)
+                if eeg.shape[1] >= window_size:
+                    eeg_window = eeg[channels, -window_size:].T
+                    data.append(eeg_window)
+                time.sleep(window_size / sample_rate)
+            calib_x.extend(data)
+            calib_y.extend([label] * len(data))
+            logging.info("Collected %d windows for label '%s'.", len(data), label)
+        return np.array(calib_x), np.array(calib_y)
+
+    x_calib, y_calib = collect_lsl_calib_data()
+    check_no_nan(x_calib, name="calibration data")
+    check_labels_valid(y_calib, valid_labels=label_classes)
+
+    # --- Encode labels ---
+    le = LabelEncoder()
+    le.fit(label_classes)
+    y_calib_encoded = le.transform(y_calib)
+    joblib.dump(le, os.path.join(save_dir, f"eeg_label_encoder_session_{session_tag}.pkl"))
+    np.save(os.path.join(save_dir, f"eeg_label_classes_session_{session_tag}.npy"), label_classes)
+
+    # --- Prepare data for deep models ---
+    scaler = StandardScaler()
+    x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
+    scaler.fit(x_calib_flat)
+    x_calib_scaled = scaler.transform(x_calib_flat).reshape(x_calib.shape)
+    x_model = np.expand_dims(x_calib_scaled, -1)
+    x_model = np.transpose(x_model, (0, 2, 1, 3))
+    y_cat = to_categorical(y_calib_encoded)
+
+    # --- EEGNet ---
+    eegnet_path = config["eegnet_model_path"]
+    eegnet_out = os.path.join(save_dir, f"eeg_direction_model_session_{session_tag}.h5")
+    scaler_out = os.path.join(save_dir, f"eeg_scaler_session_{session_tag}.pkl")
+    model = load_model(eegnet_path)
+    model.compile(optimizer=Adam(learning_rate=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
+    model.fit(x_model, y_cat, epochs=3, batch_size=16, verbose=verbose)
+    model.save(eegnet_out)
+    joblib.dump(scaler, scaler_out)
+    logging.info("EEGNet session model saved to %s", eegnet_out)
+
+    # --- ShallowConvNet ---
+    shallow_path = config["shallowconvnet_model_path"]
+    shallow_out = os.path.join(save_dir, f"eeg_shallow_model_session_{session_tag}.h5")
+    scaler_shallow_out = os.path.join(save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl")
+    shallow = ShallowConvNet(
+        nb_classes=len(label_classes),
+        Chans=len(channels),
+        Samples=window_size,
+        dropoutRate=dropout_rate,
+    )
+    shallow.load_weights(shallow_path)
+    shallow.compile(optimizer=Adam(learning_rate=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
+    shallow.fit(x_model, y_cat, epochs=3, batch_size=16, verbose=verbose)
+    shallow.save(shallow_out)
+    joblib.dump(scaler, scaler_shallow_out)
+    logging.info("ShallowConvNet session model saved to %s", shallow_out)
+
+    # --- Prepare features for tree models ---
+    x_feat = np.array([extract_features(w, fs=sample_rate) for w in x_calib])
+    scaler_tree = StandardScaler()
+    x_feat_scaled = scaler_tree.fit_transform(x_feat)
+    joblib.dump(scaler_tree, os.path.join(save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"))
+
+    # --- Random Forest ---
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(x_feat_scaled, y_calib_encoded)
+    rf_out = os.path.join(save_dir, f"eeg_rf_model_session_{session_tag}.pkl")
+    joblib.dump(rf, rf_out)
+    logging.info("Random Forest session model saved to %s", rf_out)
+
+    # --- XGBoost ---
+    xgb = XGBClassifier(n_estimators=100, use_label_encoder=False, eval_metric="mlogloss")
+    xgb.fit(x_feat_scaled, y_calib_encoded)
+    xgb_out = os.path.join(save_dir, f"eeg_xgb_model_session_{session_tag}.pkl")
+    joblib.dump(xgb, xgb_out)
+    logging.info("XGBoost session model saved to %s", xgb_out)
+
+    print("Session calibration complete. All models saved.")

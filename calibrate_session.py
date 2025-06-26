@@ -33,7 +33,7 @@ def load_artifacts(config: dict) -> tuple:
 
     Input: config (dict)
     Process: Loads .npy, .pkl, and model files for calibration
-    Output: Tuple (x_calib, y_calib, le, model_eegnet, model_rf, model_xgb)
+    Output: Tuple (x_calib, y_calib, le, model_eegnet, model_shallow, model_rf, model_xgb)
     """
     logging.info("Loading calibration artifacts...")
     try:
@@ -41,10 +41,11 @@ def load_artifacts(config: dict) -> tuple:
         y_calib = np.load(config["CALIB_Y_NPY"])
         le = joblib.load(config["LABEL_ENCODER"])
         model_eegnet = load_model(config["MODEL_EEGNET"])
+        model_shallow = load_model(config["MODEL_SHALLOW"])
         model_rf = joblib.load(config["MODEL_RF"])
         model_xgb = joblib.load(config["MODEL_XGB"])
         logging.info("Artifacts loaded successfully.")
-        return x_calib, y_calib, le, model_eegnet, model_rf, model_xgb
+        return x_calib, y_calib, le, model_eegnet, model_shallow, model_rf, model_xgb
     except FileNotFoundError as e:
         logging.error(
             "Failed to load artifact: %s. Ensure calibration data and base models exist.",
@@ -78,6 +79,33 @@ def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> 
 
     logging.info("CNN data processed. Scaler fitted on %d samples.", len(x_calib_flat))
     return x_calib_eegnet, y_calib_cat, scaler_eegnet
+
+
+def process_and_scale_shallow_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> tuple:
+    """
+    Encode labels, fit scaler, and prepare data for ShallowConvNet calibration.
+
+    Input: x_calib (np.ndarray), y_calib (np.ndarray), le (LabelEncoder)
+    Process: Checks data, encodes labels, fits scaler, reshapes for ShallowConvNet
+    Output: (x_calib_shallow, y_calib_cat, scaler_shallow)
+    """
+    logging.info("Processing and scaling ShallowConvNet data...")
+    check_no_nan(x_calib, name="Calibration EEG data (shallow)")
+    check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels (shallow)")
+
+    y_calib_encoded = le.transform(y_calib.ravel())
+    y_calib_cat = to_categorical(y_calib_encoded)
+
+    scaler_shallow = StandardScaler()
+    x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
+    scaler_shallow.fit(x_calib_flat)
+    x_calib_scaled = scaler_shallow.transform(x_calib_flat).reshape(x_calib.shape)
+
+    x_calib_shallow = np.expand_dims(x_calib_scaled, -1)
+    x_calib_shallow = np.transpose(x_calib_shallow, (0, 2, 1, 3))
+
+    logging.info("ShallowConvNet data processed. Scaler fitted on %d samples.", len(x_calib_flat))
+    return x_calib_shallow, y_calib_cat, scaler_shallow
 
 
 def fine_tune_cnn_model(model, x_data: np.ndarray, y_data: np.ndarray, config: dict):
@@ -143,12 +171,12 @@ def calibrate_tree_models(
 
 
 def save_session_artifacts(
-    model_eegnet, model_rf, model_xgb, scaler_eegnet, scaler_tree, config: dict
+    model_eegnet, model_shallow, model_rf, model_xgb, scaler_eegnet, scaler_shallow, scaler_tree, config: dict
 ):
     """
     Save all fine-tuned models and session-specific scalers to disk.
 
-    Input: model_eegnet, model_rf, model_xgb, scaler_eegnet, scaler_tree, config (dict)
+    Input: model_eegnet, model_shallow, model_rf, model_xgb, scaler_eegnet, scaler_shallow, scaler_tree, config (dict)
     Process: Saves models and scalers to disk
     Output: None (side effect: files written)
     """
@@ -156,7 +184,12 @@ def save_session_artifacts(
         # CNN artifacts
         joblib.dump(scaler_eegnet, config["SCALER_EEGNET_SESSION"])
         model_eegnet.save(config["MODEL_EEGNET_SESSION"])
-        logging.info("Saved session CNN model and scaler.")
+        logging.info("Saved session EEGNet model and scaler.")
+
+        # ShallowConvNet artifacts
+        joblib.dump(scaler_shallow, config["SCALER_SHALLOW_SESSION"])
+        model_shallow.save(config["MODEL_SHALLOW_SESSION"])
+        logging.info("Saved session ShallowConvNet model and scaler.")
 
         # Tree-based artifacts
         joblib.dump(scaler_tree, config["SCALER_TREE_SESSION"])
@@ -181,14 +214,22 @@ def main():
     config = load_config()
 
     try:
-        x_calib, y_calib, le, model_eegnet, model_rf, model_xgb = load_artifacts(config)
+        x_calib, y_calib, le, model_eegnet, model_shallow, model_rf, model_xgb = load_artifacts(config)
 
-        # Calibrate CNN
+        # Calibrate EEGNet
         x_eegnet, y_eegnet, scaler_eegnet = process_and_scale_cnn_data(
             x_calib, y_calib, le
         )
         model_eegnet_session = fine_tune_cnn_model(
             model_eegnet, x_eegnet, y_eegnet, config
+        )
+
+        # Calibrate ShallowConvNet
+        x_shallow, y_shallow, scaler_shallow = process_and_scale_shallow_data(
+            x_calib, y_calib, le
+        )
+        model_shallow_session = fine_tune_cnn_model(
+            model_shallow, x_shallow, y_shallow, config
         )
 
         # Calibrate Tree-based Models
@@ -198,9 +239,11 @@ def main():
 
         save_session_artifacts(
             model_eegnet_session,
+            model_shallow_session,
             model_rf_session,
             model_xgb_session,
             scaler_eegnet,
+            scaler_shallow,
             scaler_tree_session,
             config,
         )

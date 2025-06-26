@@ -22,8 +22,12 @@ import tensorflow as tf
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import (collect_calibration_data, extract_features, load_config,
-                   run_session_calibration, setup_logging)
+from utils import (
+    calibrate_all_models_lsl,  # use the new unified calibration
+    extract_features,
+    load_config,
+    setup_logging,
+)
 
 
 def square(x):
@@ -643,12 +647,12 @@ def add_samples_to_buffer(pipeline, window):
         pipeline.add_sample(sample)
 
 
-def session_calibration(lsl_handler, session_config):
+def session_calibration(lsl_handler):
     """
     Handle session calibration logic and return calibration status and model/scaler paths.
 
-    Input: lsl_handler (LSLStreamHandler), session_config (dict)
-    Process: Prompts user, collects calibration data, runs calibration, saves session models/scalers
+    Input: lsl_handler (LSLStreamHandler)
+    Process: Prompts user, runs unified calibration, saves session models/scalers
     Output: Tuple (
         use_session_model,
         session_model_path_eegnet,
@@ -666,44 +670,12 @@ def session_calibration(lsl_handler, session_config):
     user_calib = input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
     if user_calib in ("", "y", "yes"):
         try:
-            labels = session_config["LABELS"]
-            n_channels = session_config["N_CHANNELS"]
-            window_size = session_config["WINDOW_SIZE"]
-            eegnet_dropout = session_config.get("EEGNET_DROPOUT_RATE", 0.5)
             logging.info("Starting session calibration. Please follow the prompts.")
-            channels = list(range(n_channels))
-            x_calib, y_calib = collect_calibration_data(
-                lsl_handler,
-                channels,
-                window_size,
-                labels,
-                seconds_per_class=10,
-                sample_rate=session_config["SAMPLING_RATE"],
-            )
-            run_session_calibration(
-                x_calib,
-                y_calib,
-                base_model_path=session_config["MODEL_EEGNET"],
-                label_encoder_path=session_config["LABEL_ENCODER"],
-                out_model_path=session_model_path_eegnet,
-                out_scaler_path=session_scaler_path_eegnet,
-                epochs=3,
-                batch_size=16,
-                model_type="EEGNet",
-            )
-            run_session_calibration(
-                x_calib,
-                y_calib,
-                base_model_path=session_config["MODEL_SHALLOW"],
-                label_encoder_path=session_config["LABEL_ENCODER"],
-                out_model_path=session_model_path_shallow,
-                out_scaler_path=session_scaler_path_shallow,
-                epochs=3,
-                batch_size=16,
-                model_type="ShallowConvNet",
-                n_channels=n_channels,
-                window_size=window_size,
-                dropout_rate=eegnet_dropout,
+            calibrate_all_models_lsl(
+                lsl_stream_handler=lsl_handler,
+                config_path="config.json",
+                save_dir="models",
+                verbose=True,
             )
             logging.info("Session calibration complete. Using session-specific models and scalers.")
             use_session_model = True
@@ -860,7 +832,7 @@ def main():
         session_scaler_path_eegnet,
         session_model_path_shallow,
         session_scaler_path_shallow,
-    ) = session_calibration(lsl_handler, config)
+    ) = session_calibration(lsl_handler)
     show_ensemble = select_prediction_mode()
     pipeline = initialize_pipeline(
         config,
