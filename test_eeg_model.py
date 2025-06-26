@@ -37,6 +37,12 @@ def square(x):
     return tf.math.square(x)
 
 
+def log(x):
+    import tensorflow as tf
+
+    return tf.math.log(tf.math.maximum(x, 1e-7))
+
+
 def ensemble_hard_voting(le, pred_eegnet_labels, pred_shallow_labels, pred_rf_labels, pred_xgb_labels, y_true_labels):
     """Perform hard voting ensemble and return predicted labels."""
     pred_ensemble_labels = []
@@ -187,7 +193,10 @@ def main():
         model_eegnet = load_model(config["MODEL_EEGNET"])
         rf = joblib.load(config["MODEL_RF"])
         xgb = joblib.load(config["MODEL_XGB"])
-        model_shallow = load_model(config["MODEL_SHALLOW"], custom_objects={"square": square})
+        model_shallow = load_model(
+            config["MODEL_SHALLOW"],
+            custom_objects={"square": square, "log": log}
+        )
         scaler_shallow = joblib.load(config.get("SCALER_SHALLOW", config["SCALER_EEGNET"]))
     except (ImportError, OSError, AttributeError) as e:
         logging.error("Failed to load models or encoders: %s", e)
