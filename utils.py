@@ -22,7 +22,6 @@ from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 from scipy.signal import welch
-from scipy.stats import mode
 from sklearn.preprocessing import StandardScaler
 from EEGModels import ShallowConvNet
 
@@ -100,14 +99,17 @@ def window_data(
     strides = (data.strides[0] * step_size, data.strides[0], data.strides[1])
     x_windows = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
 
-    # For labels, use the mode (most frequent) in each window
+    # For labels, use the majority label in each window
     label_windows = np.lib.stride_tricks.as_strided(
         labels,
         shape=(n_windows, window_size, 1),
         strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
     )
-    # Compute mode along window axis
-    y_windows = mode(label_windows, axis=1, keepdims=False)[0].reshape(-1)
+    # Compute majority label using np.unique
+    y_windows = np.array([
+        np.unique(window, return_counts=True)[0][np.argmax(np.unique(window, return_counts=True)[1])]
+        for window in label_windows.reshape(n_windows, -1)
+    ])
 
     # Data quality assessment
     logging.info(
