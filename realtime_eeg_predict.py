@@ -40,6 +40,11 @@ def square(x):
     return tf.math.square(x)
 
 
+def log(x):
+    import tensorflow as tf
+    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
+
+
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
 os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
@@ -108,7 +113,7 @@ class OptimizedPredictionPipeline:
             }
 
             self.models["shallow"] = {
-                "model": load_model(self.config["MODEL_SHALLOW"], custom_objects={"square": square}),
+                "model": load_model(self.config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}),
                 "optimized": False,
             }
 
@@ -644,7 +649,7 @@ def initialize_pipeline(
             }
             pipeline.scalers["eegnet"] = joblib.load(session_scaler_path_eegnet)
             pipeline.models["shallow"] = {
-                "model": load_model(session_model_path_shallow, custom_objects={"square": square}),
+                "model": load_model(session_model_path_shallow, custom_objects={"square": square, "log": log}),
                 "optimized": False,
             }
             pipeline.scalers["shallow"] = joblib.load(session_scaler_path_shallow)
