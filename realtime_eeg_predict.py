@@ -488,6 +488,11 @@ class OptimizedPredictionPipeline:
 
 def process_prediction(pipeline, prediction_count):
     """Process a single prediction and display results with detailed breakdown."""
+    def fmt_model(label, conf, disabled):
+        if disabled:
+            return "---(---)"
+        return f"{label:<3}({conf:.3f})"
+
     result = pipeline.predict_realtime()
     if result:
         predicted_label, confidence = result
@@ -498,51 +503,41 @@ def process_prediction(pipeline, prediction_count):
         window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
         window = window.reshape((1, pipeline.window_size, pipeline.n_channels))
 
-        # Get EEGNet prediction
+        # EEGNet
         eeg_probs, eeg_confidence = pipeline.predict_eegnet(window)
-        eeg_pred_idx = np.argmax(eeg_probs) if not np.all(eeg_probs == 0) else 0
-        eeg_label = (
-            pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0]
-            if not np.all(eeg_probs == 0)
-            else "error"
+        eeg_disabled = np.all(eeg_probs == 0)
+        eeg_pred_idx = np.argmax(eeg_probs) if not eeg_disabled else 0
+        eeg_label = pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0] if not eeg_disabled else "---"
+
+        # ShallowConvNet
+        shallow_probs, shallow_confidence = pipeline.predict_shallow(window)
+        shallow_disabled = np.all(shallow_probs == 0)
+        shallow_pred_idx = np.argmax(shallow_probs) if not shallow_disabled else 0
+        shallow_label = (
+            pipeline.label_encoder.inverse_transform([shallow_pred_idx])[0]
+            if not shallow_disabled else "---"
         )
 
-        # Get tree model predictions
+        # Tree models
         rf_probs, xgb_probs, _ = pipeline.predict_tree_models(window)
         rf_pred_idx = np.argmax(rf_probs)
         xgb_pred_idx = np.argmax(xgb_probs)
         rf_label = pipeline.label_encoder.inverse_transform([rf_pred_idx])[0]
         xgb_label = pipeline.label_encoder.inverse_transform([xgb_pred_idx])[0]
+        rf_conf = np.max(rf_probs)
+        xgb_conf = np.max(xgb_probs)
 
-        # Detailed logging every 10 predictions
-        if prediction_count % 10 == 0:
-            logging.info("-" * 50)
-            logging.info(
-                "EEGNet Predicted label: %s (conf: %.3f)", eeg_label, eeg_confidence
-            )
-            logging.info(
-                "Random Forest Predicted label: %s (conf: %.3f)",
-                rf_label,
-                np.max(rf_probs),
-            )
-            logging.info(
-                "XGBoost Predicted label: %s (conf: %.3f)", xgb_label, np.max(xgb_probs)
-            )
-            logging.info(
-                "Final Ensemble label: %s (conf: %.3f)", predicted_label, confidence
-            )
-            logging.info("-" * 50)
-
-        # Regular compact output
+        # Neat, aligned output
         logging.info(
-            "[%4d] %s %8s (conf: %.3f) [EEG:%s RF:%s XGB:%s]",
+            "[%-4d] %s %-8s (ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
             prediction_count,
             status,
             predicted_label.upper(),
             confidence,
-            eeg_label[:3],
-            rf_label[:3],
-            xgb_label[:3],
+            fmt_model(eeg_label, eeg_confidence, eeg_disabled),
+            fmt_model(shallow_label, shallow_confidence, shallow_disabled),
+            fmt_model(rf_label, rf_conf, False),
+            fmt_model(xgb_label, xgb_conf, False),
         )
 
         if prediction_count % 50 == 0:
