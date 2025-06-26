@@ -2,9 +2,10 @@
 utils.py
 
 Utility functions for the EEG training system.
-- Configuration loading
-- Data windowing
-- Calibration data collection and model fine-tuning
+
+Input: Various (EEG data, config files, etc.)
+Process: Configuration loading, data windowing, calibration data collection, logging setup, validation utilities.
+Output: Processed data, configuration dicts, logging setup, validation results.
 """
 
 import json
@@ -28,14 +29,11 @@ from EEGModels import ShallowConvNet
 
 def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
     """
-    Extract features from a single EEG window.
+    Extract features from a single EEG window for tree-based models.
 
-    Args:
-        window (np.ndarray): EEG window of shape (window_size, n_channels).
-        fs (int): Sampling frequency.
-
-    Returns:
-        np.ndarray: 1D array of features.
+    Input: window (np.ndarray) - shape (window_size, n_channels), fs (int) - sampling frequency
+    Process: Computes band powers and statistical features for each channel
+    Output: 1D np.ndarray of features (length: n_channels * 8)
     """
     features = []
     n_channels = window.shape[1]
@@ -78,7 +76,13 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
 
 
 def load_config(path: str = "config.json") -> dict:
-    """Load configuration from a JSON file."""
+    """
+    Load configuration from a JSON file.
+
+    Input: path (str) - path to config file
+    Process: Reads and parses JSON
+    Output: Config dictionary
+    """
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
@@ -87,8 +91,11 @@ def window_data(
     data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Vectorized segmentation of data and labels into overlapping windows.
-    Uses numpy stride tricks for efficient window creation.
+    Segment data and labels into overlapping windows using stride tricks.
+
+    Input: data (np.ndarray), labels (np.ndarray), window_size (int), step_size (int)
+    Process: Creates overlapping windows, computes majority label per window
+    Output: (x_windows, y_windows)
     """
     n_windows = (len(data) - window_size) // step_size + 1
     if n_windows <= 0:
@@ -126,8 +133,12 @@ def collect_calibration_data(
     board, channels, window_size, labels, seconds_per_class=10, sample_rate=250
 ):
     """
-    Collect labeled calibration data for each class from the user.
-    Returns x_calib (windows, window, channels), y_calib (windows,)
+    Collect labeled calibration data for each class from the user via board interface.
+
+    Input: board (stream handler), channels (list), window_size (int), labels (list),
+        seconds_per_class (int), sample_rate (int)
+    Process: Prompts user, collects windows for each label
+    Output: (x_calib, y_calib) as np.ndarrays
     """
     calib_x = []
     calib_y = []
@@ -164,8 +175,11 @@ def run_session_calibration(
     dropout_rate=None,
 ):
     """
-    Windows, preprocesses, and fine-tunes the model/scaler for the session.
-    Supports both EEGNet and ShallowConvNet.
+    Fine-tune a model and scaler for the session using calibration data.
+
+    Input: Calibration data, model/scaler paths, model type, and training params
+    Process: Encodes labels, fits scaler, prepares data, fine-tunes model, saves artifacts
+    Output: Saves model and scaler to disk
     """
     le = joblib.load(label_encoder_path)
     y_calib_encoded = le.transform(y_calib)
@@ -212,10 +226,11 @@ def run_session_calibration(
 
 def setup_logging(logfile: str = "eeg_training.log"):
     """
-    Set up logging to both console and file with automatic rotation.
-    Should be called at the start of each script to ensure consistent logging.
-    Args:
-        logfile: Path to the log file (default: 'eeg_training.log').
+    Set up logging to both console and file with rotation.
+
+    Input: logfile (str)
+    Process: Configures logging handlers and formatters
+    Output: None (side effect: logging configured)
     """
 
     # Create rotating file handler (10MB max, keep 5 backup files)
@@ -242,8 +257,11 @@ def setup_logging(logfile: str = "eeg_training.log"):
 
 def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
     """
-    Manual cleanup function for oversized log files.
-    Call this if log rotation wasn't previously enabled.
+    Archive and rotate log file if it exceeds max_size_mb.
+
+    Input: logfile (str), max_size_mb (int)
+    Process: Checks file size, renames if too large
+    Output: None (side effect: log file archived)
     """
 
     if not os.path.exists(logfile):
@@ -264,12 +282,11 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
 
 def check_no_nan(x, name="data"):
     """
-    Check for NaN values in a numpy array and log/raise error if found.
-    Args:
-        x: numpy array to check.
-        name: Name of the data (for error messages).
-    Raises:
-        ValueError: If any NaN values are found in x.
+    Check for NaN values in a numpy array and raise error if found.
+
+    Input: x (np.ndarray), name (str)
+    Process: Checks for NaN, logs and raises if found
+    Output: None (raises ValueError if NaN found)
     """
     if np.isnan(x).any():
         logging.error("%s contains NaN values.", name)
@@ -278,13 +295,11 @@ def check_no_nan(x, name="data"):
 
 def check_labels_valid(labels, valid_labels=None, name="labels"):
     """
-    Check for NaN values and, if valid_labels is provided, for invalid label values.
-    Args:
-        labels: Array of labels to check.
-        valid_labels: Optional set/list of valid label values.
-        name: Name of the label array (for error messages).
-    Raises:
-        ValueError: If any NaN or invalid label values are found.
+    Check for NaN and invalid label values in an array.
+
+    Input: labels (array-like), valid_labels (list/None), name (str)
+    Process: Checks for NaN and invalid values, logs and raises if found
+    Output: None (raises ValueError if invalid)
     """
     if pd.isnull(labels).any():
         logging.error("%s contain NaN values.", name)

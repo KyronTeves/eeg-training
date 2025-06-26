@@ -1,11 +1,11 @@
 """
-Fine-tune a pre-trained EEGNet model and create a session-specific scaler
-using a small labeled calibration dataset.
+calibrate_session.py
 
-- Loads calibration data (windowed, preprocessed, labeled)
-- Fits a new scaler on the calibration data
-- Fine-tunes the pre-trained model for a few epochs
-- Saves the session-specific model and scaler for real-time use
+Fine-tune a pre-trained EEGNet model and create a session-specific scaler using a small labeled calibration dataset.
+
+Input: Calibration data (windowed, preprocessed, labeled)
+Process: Fits new scalers, fine-tunes models, saves session-specific artifacts.
+Output: Session-specific model and scaler files for real-time use.
 """
 
 import logging
@@ -27,7 +27,13 @@ setup_logging()
 
 
 def load_artifacts(config: dict) -> tuple:
-    """Loads all necessary files for calibration."""
+    """
+    Load all necessary files for calibration (data, label encoder, models).
+
+    Input: config (dict)
+    Process: Loads .npy, .pkl, and model files for calibration
+    Output: Tuple (x_calib, y_calib, le, model_eegnet, model_rf, model_xgb)
+    """
     logging.info("Loading calibration artifacts...")
     try:
         x_calib = np.load(config["CALIB_X_NPY"])
@@ -47,8 +53,13 @@ def load_artifacts(config: dict) -> tuple:
 
 
 def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> tuple:
-    """Encodes labels, fits a new scaler, and prepares data for EEGNet."""
+    """
+    Encode labels, fit scaler, and prepare data for CNN calibration.
 
+    Input: x_calib (np.ndarray), y_calib (np.ndarray), le (LabelEncoder)
+    Process: Checks data, encodes labels, fits scaler, reshapes for CNN
+    Output: (x_calib_eegnet, y_calib_cat, scaler_eegnet)
+    """
     logging.info("Processing and scaling CNN data...")
     check_no_nan(x_calib, name="Calibration EEG data")
     check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels")
@@ -69,7 +80,13 @@ def process_and_scale_cnn_data(x_calib: np.ndarray, y_calib: np.ndarray, le) -> 
 
 
 def fine_tune_cnn_model(model, x_data: np.ndarray, y_data: np.ndarray, config: dict):
-    """Fine-tunes the CNN model on the calibration data."""
+    """
+    Fine-tune the CNN model on calibration data.
+
+    Input: model (Keras), x_data (np.ndarray), y_data (np.ndarray), config (dict)
+    Process: Compiles and fits model, returns fine-tuned model
+    Output: Fine-tuned model
+    """
     logging.info("Starting CNN fine-tuning for %d epochs...", config["CALIB_EPOCHS"])
 
     # Recompile the model to ensure optimizer compatibility
@@ -91,8 +108,13 @@ def fine_tune_cnn_model(model, x_data: np.ndarray, y_data: np.ndarray, config: d
 def calibrate_tree_models(
     x_calib: np.ndarray, y_calib: np.ndarray, le, model_rf, model_xgb, config: dict
 ) -> tuple:
-    """Extracts features, scales, and retrains tree-based models."""
+    """
+    Extract features, scale, and retrain tree-based models (RF, XGBoost).
 
+    Input: x_calib (np.ndarray), y_calib (np.ndarray), le (LabelEncoder), model_rf, model_xgb, config (dict)
+    Process: Extracts features, encodes labels, fits scaler, retrains models
+    Output: (model_rf, model_xgb, scaler_tree)
+    """
     logging.info("Calibrating tree-based models (RF and XGBoost)...")
     check_no_nan(x_calib, name="Calibration EEG data (tree)")
     check_labels_valid(y_calib, valid_labels=le.classes_, name="Calibration labels (tree)")
@@ -120,7 +142,13 @@ def calibrate_tree_models(
 def save_session_artifacts(
     model_eegnet, model_rf, model_xgb, scaler_eegnet, scaler_tree, config: dict
 ):
-    """Saves all fine-tuned models and session-specific scalers."""
+    """
+    Save all fine-tuned models and session-specific scalers to disk.
+
+    Input: model_eegnet, model_rf, model_xgb, scaler_eegnet, scaler_tree, config (dict)
+    Process: Saves models and scalers to disk
+    Output: None (side effect: files written)
+    """
     try:
         # CNN artifacts
         joblib.dump(scaler_eegnet, config["SCALER_EEGNET_SESSION"])
@@ -139,7 +167,13 @@ def save_session_artifacts(
 
 
 def main():
-    """Main function to run the calibration process."""
+    """
+    Main entry point for session calibration process.
+
+    Input: None (uses config)
+    Process: Loads artifacts, calibrates CNN and tree models, saves session artifacts
+    Output: None (side effect: files written)
+    """
     logging.info("--- Starting Session Calibration ---")
     config = load_config()
 

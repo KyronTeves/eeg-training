@@ -1,8 +1,11 @@
 """
+lsl_stream_handler.py
+
 LSL Stream Handler for receiving pre-filtered EEG data from OpenBCI GUI.
 
-This provides LSL streaming support, allowing use of OpenBCI GUI's
-superior filtering and monitoring capabilities.
+Input: LSL stream from OpenBCI GUI
+Process: Connects to LSL, receives and buffers EEG data, provides windowed access
+Output: EEG data windows for downstream processing
 """
 
 import logging
@@ -21,20 +24,18 @@ class LSLStreamHandler:
     """
     Handles LSL stream connection and data collection from OpenBCI GUI.
 
-    Benefits of LSL streaming:
-    - Pre-filtered data (TimeSeriesFilt from OpenBCI GUI)
-    - Better signal quality monitoring
-    - Standard neuroscience streaming protocol
-    - GUI-based filter configuration
+    Input: LSL stream name (str), timeout (float)
+    Process: Connects to LSL, receives and buffers EEG data, provides windowed access
+    Output: Methods for chunk/window retrieval, connection management
     """
 
     def __init__(self, stream_name: str = "OpenBCIGUI", timeout: float = 10.0):
         """
         Initialize LSL stream handler.
 
-        Args:
-            stream_name: Name of the LSL stream to connect to
-            timeout: Maximum time to wait for stream connection
+        Input: stream_name (str), timeout (float)
+        Process: Sets up handler attributes
+        Output: LSLStreamHandler instance
         """
         self.stream_name = stream_name
         self.timeout = timeout
@@ -46,8 +47,9 @@ class LSLStreamHandler:
         """
         Connect to the LSL stream from OpenBCI GUI.
 
-        Returns:
-            bool: True if connection successful, False otherwise
+        Input: None (uses self.stream_name, self.timeout)
+        Process: Resolves and connects to LSL stream
+        Output: True if successful, False otherwise
         """
         try:
             logging.info("Looking for LSL stream: %s", self.stream_name)
@@ -79,11 +81,9 @@ class LSLStreamHandler:
         """
         Get a chunk of data from the LSL stream.
 
-        Args:
-            max_samples: Maximum number of samples to retrieve
-
-        Returns:
-            Tuple of (data, timestamps) where data is shape (samples, channels)
+        Input: max_samples (int)
+        Process: Pulls chunk from LSL inlet
+        Output: (data, timestamps) arrays
         """
         if self.inlet is None:
             raise RuntimeError("LSL stream not connected. Call connect() first.")
@@ -110,12 +110,9 @@ class LSLStreamHandler:
         """
         Collect exactly window_size samples from the stream.
 
-        Args:
-            window_size: Number of samples to collect
-            timeout: Maximum time to wait for complete window
-
-        Returns:
-            Array of shape (window_size, channels) or None if timeout
+        Input: window_size (int), timeout (float)
+        Process: Collects samples until window_size or timeout
+        Output: np.ndarray (window_size, channels) or None
         """
         if self.inlet is None:
             raise RuntimeError("LSL stream not connected. Call connect() first.")
@@ -141,7 +138,13 @@ class LSLStreamHandler:
         return np.array(collected_data[:window_size])
 
     def disconnect(self):
-        """Disconnect from the LSL stream."""
+        """
+        Disconnect from the LSL stream.
+
+        Input: None
+        Process: Closes inlet and cleans up
+        Output: None
+        """
         if self.inlet:
             self.inlet.close_stream()
             self.inlet = None

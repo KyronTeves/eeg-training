@@ -1,18 +1,11 @@
 """
+collect_data.py
+
 Collect EEG data from LSL stream (OpenBCI GUI), label it, and save to CSV for model training.
 
-This script collects pre-filtered data from OpenBCI GUI via LSL streaming,
-ensuring optimal compatibility with the real-time prediction pipeline.
-
-Setup Instructions:
-1. Start OpenBCI GUI
-2. Connect to your board and verify signal quality
-3. Configure filters (recommended: 1-50 Hz bandpass, 50/60 Hz notch)
-4. Start LSL streaming in OpenBCI GUI
-5. Run this script
-
 Input: LSL stream from OpenBCI GUI (pre-filtered)
-Output: Labeled CSV file for model training
+Process: Collects, labels, and validates EEG data, writes to CSV.
+Output: Labeled CSV file for model training.
 """
 
 import csv
@@ -43,14 +36,11 @@ SAMPLING_RATE = config["SAMPLING_RATE"]
 
 def get_session_phases(session_type: str, label: str) -> list[tuple[int, str]]:
     """
-    Get the phases for a given session type.
+    Get the list of (duration, label) phases for a given session type.
 
-    Args:
-        session_type: The type of session.
-        label: The label for the trial.
-
-    Returns:
-        A list of tuples, where each tuple contains the duration and label for a phase.
+    Input: session_type (str), label (str)
+    Process: Looks up phase structure for session type
+    Output: List of (duration, label) tuples
     """
     return {
         "pure": [(TRIAL_DURATION, label)],
@@ -65,7 +55,11 @@ def collect_phase_data(
     lsl_handler: LSLStreamHandler, phase_duration: int, phase_label: str
 ) -> tuple[list, list]:
     """
-    Collects EEG data and timestamps for a single phase.
+    Collect EEG data and timestamps for a single phase.
+
+    Input: lsl_handler (LSLStreamHandler), phase_duration (int), phase_label (str)
+    Process: Collects data from LSL for phase duration
+    Output: (phase_data, phase_timestamps)
     """
     logging.info("Phase: Think '%s' for %d seconds.", phase_label, phase_duration)
     start_time = time.time()
@@ -92,8 +86,12 @@ def write_phase_to_csv(
     timestamps: list,
 ):
     """
-    Writes phase data to CSV and updates rows and timestamps lists.
-    Performs data validation using utils.py before writing.
+    Write phase EEG data and metadata to CSV, updating row/timestamp lists.
+
+    Input: phase_data (list), phase_timestamps (list), session_type (str), trial_num (int),
+        phase_label (str), label (str), output_writer (csv.writer), rows (list), timestamps (list)
+    Process: Validates and writes each sample to CSV
+    Output: None (side effect: CSV written, lists updated)
     """
 
     if phase_data:
@@ -137,15 +135,9 @@ def collect_trial_eeg_lsl(
     """
     Collect EEG data for a single trial using LSL streaming.
 
-    Args:
-        lsl_handler: LSL stream handler instance.
-        session_type: Type of session (e.g., 'pure', 'jolt').
-        label: Label for the trial (e.g., 'left', 'right').
-        trial_num: Trial number.
-        output_writer: CSV writer object.
-
-    Returns:
-        Tuple of (number of rows written, list of timestamps).
+    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str), trial_num (int), output_writer (csv.writer)
+    Process: Runs all phases for the trial, writes to CSV
+    Output: (number of rows written, list of timestamps)
     """
     rows = []
     timestamps = []
@@ -169,7 +161,13 @@ def collect_trial_eeg_lsl(
 
 
 def run_trials_for_label(lsl_handler, session_type, label, writer, total_rows):
-    """Run all trials for a given label and update total_rows."""
+    """
+    Run all trials for a given label and update total_rows.
+
+    Input: lsl_handler (LSLStreamHandler), session_type (str), label (str), writer (csv.writer), total_rows (int)
+    Process: Loops over trials, collects and writes data
+    Output: Updated total_rows
+    """
     for trial in range(TRIALS_PER_LABEL):
         logging.info("\nTrial %d/%d for '%s'", trial + 1, TRIALS_PER_LABEL, label)
 
@@ -198,7 +196,13 @@ def run_trials_for_label(lsl_handler, session_type, label, writer, total_rows):
 
 
 def main():
-    """Main data collection function using LSL streaming."""
+    """
+    Main entry point for collecting EEG data from LSL and saving to CSV.
+
+    Input: None (uses config and user input)
+    Process: Connects to LSL, collects data for all labels/trials, writes CSV
+    Output: None (side effect: CSV written)
+    """
 
     # Initialize LSL handler
     lsl_handler = LSLStreamHandler(

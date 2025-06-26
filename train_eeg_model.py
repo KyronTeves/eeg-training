@@ -1,17 +1,11 @@
 """
-Train EEGNet (deep learning), Random Forest, and XGBoost models on windowed EEG data.
+train_eeg_model.py
 
-- Loads windowed EEG data and labels
-- Encodes and balances classes
-- Applies data augmentation
-- Trains:
-    - EEGNet (Keras deep learning model)
-    - Random Forest (scikit-learn)
-    - XGBoost (xgboost)
-- Saves trained models, encoders, and scalers for downstream evaluation and prediction
+Train EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
 
 Input: Windowed EEG data (.npy), windowed labels (.npy)
-Output: Trained model files, encoders, scalers
+Process: Loads data, encodes and balances classes, applies augmentation, trains models, saves artifacts.
+Output: Trained model files, encoders, scalers (for downstream evaluation and prediction)
 """
 
 import logging
@@ -105,41 +99,52 @@ y_train_bal = y_train[downsampled_indices]
 
 def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     """
-    Augment EEG data by adding realistic noise patterns and artifacts.
-
-    This function applies multiple augmentation techniques to simulate real-world
-    EEG signal variations and improve model robustness:
-    1. Gaussian noise addition to simulate electrical interference
-    2. Baseline drift simulation using sine waves (common in EEG)
-    3. Random artifacts by zeroing values (simulates movement artifacts)
+    Augment EEG data with noise, drift, and simulated artifacts.
 
     Args:
-        X (np.ndarray): Input EEG data of shape (samples, time_points, channels).
-        noise_std (float): Standard deviation of Gaussian noise. Default: 0.01.
-        drift_max (float): Maximum amplitude of baseline drift. Default: 0.05.
-        artifact_prob (float): Probability of introducing artifacts (0-1). Default: 0.05.
+        x (np.ndarray): Input EEG data, shape (n_windows, window_size, n_channels).
+        noise_std (float): Standard deviation of Gaussian noise.
+        drift_max (float): Maximum amplitude of baseline drift.
+        artifact_prob (float): Probability of zeroing out a window.
 
     Returns:
-        np.ndarray: Augmented EEG data with same shape as input.
+        np.ndarray: Augmented EEG data.
 
-    Note:
-        Augmentation helps prevent overfitting and improves generalization to new
-        sessions/users by simulating realistic EEG signal variations.
+    Input: Raw EEG window data.
+    Process: Adds Gaussian noise, baseline drift, and randomly zeroes out windows.
+    Output: Augmented EEG data array.
     """
-    x_aug = x.copy()
     # Add Gaussian noise
-    x_aug += np.random.normal(0, noise_std, x_aug.shape)
+    x_aug = x + np.random.randn(*x.shape) * noise_std
     # Add baseline drift (slow sine wave)
-    drift = np.sin(np.linspace(0, np.pi, x_aug.shape[1])) * drift_max
+    drift = drift_max * np.sin(np.linspace(0, np.pi, x.shape[1]))
     x_aug += drift[None, :, None]
     # Randomly zero out some windows (simulate artifacts)
-    mask = np.random.rand(*x_aug.shape) < artifact_prob
+    mask = np.random.rand(x.shape[0]) < artifact_prob
     x_aug[mask] = 0
     return x_aug
 
 
 def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
-    """Train and evaluate EEGNet or ShallowConvNet."""
+    """
+    Train and evaluate EEGNet or ShallowConvNet model.
+
+    Args:
+        _X_train (np.ndarray): Training data, shape (n_samples, window, channels, 1).
+        _y_train (np.ndarray): Training labels (one-hot or encoded).
+        _X_test (np.ndarray): Test data, shape (n_samples, window, channels, 1).
+        _y_test (np.ndarray): Test labels (one-hot or encoded).
+        _config (dict): Configuration dictionary.
+        _le (LabelEncoder): Label encoder.
+
+    Returns:
+        model: Trained Keras model.
+        float: Test accuracy.
+
+    Input: Preprocessed and windowed EEG data and labels.
+    Process: Compiles, trains, and evaluates the model.
+    Output: Trained model and test accuracy.
+    """
     X_train_eegnet = np.expand_dims(_X_train, -1)
     X_test_eegnet = np.expand_dims(_X_test, -1)
     X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
@@ -215,7 +220,23 @@ def train_eegnet_model(_X_train, _y_train, _X_test, _y_test, _config, _le):
 
 
 def train_tree_models(_X_features, _y_encoded, _config, _le):
-    """Train and evaluate Random Forest and XGBoost models."""
+    """
+    Train and evaluate Random Forest and XGBoost models.
+
+    Args:
+        _X_features (np.ndarray): Feature matrix for tree models.
+        _y_encoded (np.ndarray): Encoded labels.
+        _config (dict): Configuration dictionary.
+        _le (LabelEncoder): Label encoder.
+
+    Returns:
+        tuple: (RandomForestClassifier, XGBClassifier, float, float)
+            Trained RF and XGB models, RF accuracy, XGB accuracy.
+
+    Input: Feature matrix and encoded labels.
+    Process: Trains and evaluates Random Forest and XGBoost models.
+    Output: Trained models and their test accuracies.
+    """
     X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
         _X_features, _y_encoded, test_size=0.2, random_state=42, stratify=_y_encoded
     )
