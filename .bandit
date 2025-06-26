@@ -1,6 +1,7 @@
 [bandit]
-# Exclude B101 (assert) for all test files
-skips: B101
+# Exclude B101 for all files matching test_*.py
+skips = B101
 
-glob: test_*.py
-dirs: .
+[files]
+# Only apply the skip to test files
+include = test_*.py
