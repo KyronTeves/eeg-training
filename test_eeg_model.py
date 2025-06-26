@@ -93,6 +93,9 @@ try:
     model_eegnet = load_model(config["MODEL_EEGNET"])
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
+    # Load ShallowConvNet model and scaler if available
+    model_shallow = load_model(config["MODEL_SHALLOW"])
+    scaler_shallow = joblib.load(config.get("SCALER_SHALLOW", config["SCALER_EEGNET"]))
 except (ImportError, OSError, AttributeError) as e:
     logging.error("Failed to load models or encoders: %s", e)
     raise
@@ -103,7 +106,10 @@ X_windows_flat = X_windows.reshape(-1, N_CHANNELS)
 X_windows_scaled_eegnet = scaler_eegnet.transform(X_windows_flat).reshape(X_windows.shape)
 X_windows_eegnet = np.expand_dims(X_windows_scaled_eegnet, -1)
 X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
-
+# ShallowConvNet
+X_windows_scaled_shallow = scaler_shallow.transform(X_windows_flat).reshape(X_windows.shape)
+X_windows_shallow = np.expand_dims(X_windows_scaled_shallow, -1)
+X_windows_shallow = np.transpose(X_windows_shallow, (0, 2, 1, 3))
 # Tree-based
 X_features_scaled = scaler_tree.transform(X_features)
 
@@ -112,21 +118,22 @@ X_features_scaled = scaler_tree.transform(X_features)
 logging.info("Generating predictions for all models...")
 pred_eegnet_prob = model_eegnet.predict(X_windows_eegnet)
 pred_eegnet_labels = np.argmax(pred_eegnet_prob, axis=1)
-
+pred_shallow_prob = model_shallow.predict(X_windows_shallow)
+pred_shallow_labels = np.argmax(pred_shallow_prob, axis=1)
 pred_rf_labels = rf.predict(X_features_scaled)
 pred_xgb_labels = xgb.predict(X_features_scaled)
-
 y_true_labels = le.transform(y_windows.ravel())
 
 # --- Ensemble Prediction (Hard Voting) ---
 pred_ensemble_labels = []
 for i in range(len(y_true_labels)):
     # Get votes from the string labels
-    vote_cnn = le.inverse_transform([pred_eegnet_labels[i]])[0]
+    vote_eegnet = le.inverse_transform([pred_eegnet_labels[i]])[0]
+    vote_shallow = le.inverse_transform([pred_shallow_labels[i]])[0]
     vote_rf = le.inverse_transform([pred_rf_labels[i]])[0]
     vote_xgb = le.inverse_transform([pred_xgb_labels[i]])[0]
 
-    votes = [vote_cnn, vote_rf, vote_xgb]
+    votes = [vote_eegnet, vote_shallow, vote_rf, vote_xgb]
     final_pred = Counter(votes).most_common(1)[0][0]
     pred_ensemble_labels.append(final_pred)
 
@@ -137,6 +144,7 @@ pred_ensemble_numeric = le.transform(pred_ensemble_labels)
 # --- Detailed per-sample predictions ---
 y_true_str = y_windows.ravel()
 pred_eegnet_str = le.inverse_transform(pred_eegnet_labels)
+pred_shallow_str = le.inverse_transform(pred_shallow_labels)
 pred_rf_str = le.inverse_transform(pred_rf_labels)
 pred_xgb_str = le.inverse_transform(pred_xgb_labels)
 
@@ -144,6 +152,7 @@ pred_xgb_str = le.inverse_transform(pred_xgb_labels)
 num_samples_to_log = min(100, len(y_true_labels))
 if num_samples_to_log > 0:
     EEGNET_MATCHES = 0
+    SHALLOW_MATCHES = 0
     ENSEMBLE_MATCHES = 0
 
     logging.info("--- Individual Sample Predictions ---")
@@ -156,6 +165,12 @@ if num_samples_to_log > 0:
         if eegnet_match:
             EEGNET_MATCHES += 1
 
+        # ShallowConvNet
+        shallow_pred = pred_shallow_str[i]
+        shallow_match = actual_label == shallow_pred
+        if shallow_match:
+            SHALLOW_MATCHES += 1
+
         # Ensemble
         ensemble_pred = pred_ensemble_labels[i]
         ensemble_match = actual_label == ensemble_pred
@@ -165,6 +180,7 @@ if num_samples_to_log > 0:
         logging.info("-")
         logging.info("Actual label:   %s", actual_label)
         logging.info("EEGNet Predicted label: %s | Match: %s", eegnet_pred, eegnet_match)
+        logging.info("ShallowConvNet Predicted label: %s | Match: %s", shallow_pred, shallow_match)
         logging.info("Random Forest Predicted label: %s", pred_rf_str[i])
         logging.info("XGBoost Predicted label: %s", pred_xgb_str[i])
         logging.info(
@@ -175,6 +191,7 @@ if num_samples_to_log > 0:
         logging.info("-")
 
     eegnet_accuracy = EEGNET_MATCHES / num_samples_to_log
+    shallow_accuracy = SHALLOW_MATCHES / num_samples_to_log
     ensemble_accuracy = ENSEMBLE_MATCHES / num_samples_to_log
     logging.info(
         "EEGNet accuracy on %d test samples: %d/%d (%.2f%%)",
@@ -182,6 +199,13 @@ if num_samples_to_log > 0:
         EEGNET_MATCHES,
         num_samples_to_log,
         eegnet_accuracy * 100,
+    )
+    logging.info(
+        "ShallowConvNet accuracy on %d test samples: %d/%d (%.2f%%)",
+        num_samples_to_log,
+        SHALLOW_MATCHES,
+        num_samples_to_log,
+        shallow_accuracy * 100,
     )
     logging.info(
         "Ensemble accuracy on %d test samples: %d/%d (%.2f%%)",
@@ -204,6 +228,7 @@ def evaluate_model(y_true, y_pred, label_encoder, model_name):
 
 # --- Evaluation ---
 evaluate_model(y_true_labels, pred_eegnet_labels, le, "EEGNet")
+evaluate_model(y_true_labels, pred_shallow_labels, le, "ShallowConvNet")
 evaluate_model(y_true_labels, pred_rf_labels, le, "Random Forest")
 evaluate_model(y_true_labels, pred_xgb_labels, le, "XGBoost")
 evaluate_model(y_true_labels, pred_ensemble_numeric, le, "Ensemble (Hard Voting)")

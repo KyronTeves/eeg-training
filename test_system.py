@@ -24,7 +24,7 @@ import pandas as pd
 import pytest
 from keras.models import load_model
 
-from EEGModels import EEGNet
+from EEGModels import EEGNet, ShallowConvNet
 from utils import check_labels_valid, check_no_nan, load_config, window_data
 
 
@@ -78,59 +78,70 @@ def test_load_config_keys():
 # ----------------------
 # Data Validation Tests
 # ----------------------
-class TestDataValidation:
-    def test_check_no_nan_pass(self):
-        """check_no_nan should not raise for clean data."""
-        arr = np.zeros((10, 10))
-        check_no_nan(arr)
 
-    def test_check_no_nan_fail(self):
-        """check_no_nan should raise ValueError for NaN data."""
-        arr = np.zeros((5, 5))
-        arr[0, 0] = np.nan
+@pytest.mark.parametrize(
+    "arr,should_raise",
+    [
+        (np.zeros((10, 10)), False),
+        (lambda: (a := np.zeros((5, 5)), a.__setitem__((0, 0), np.nan), a)[-1], True),
+    ],
+)
+def test_check_no_nan_cases(arr, should_raise):
+    if callable(arr):
+        arr = arr()
+    if should_raise:
         with pytest.raises(ValueError):
             check_no_nan(arr)
+    else:
+        check_no_nan(arr)
 
-    def test_check_labels_valid_pass(self):
-        """check_labels_valid should not raise for valid labels."""
-        labels = np.array(["left", "right", "neutral"])
+
+@pytest.mark.parametrize(
+    "labels,should_raise",
+    [
+        (np.array(["left", "right", "neutral"]), False),
+        (np.array(["left", np.nan, "right"], dtype=object), True),
+        (np.array(["left", "up", "right"]), True),
+    ],
+)
+def test_check_labels_valid_cases(labels, should_raise):
+    if should_raise:
+        with pytest.raises(ValueError):
+            check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
+    else:
         check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
-
-    def test_check_labels_valid_nan(self):
-        """check_labels_valid should raise ValueError for NaN labels."""
-        labels = np.array(["left", np.nan, "right"], dtype=object)
-        with pytest.raises(ValueError):
-            check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
-
-    def test_check_labels_valid_invalid(self):
-        """check_labels_valid should raise ValueError for invalid labels."""
-        labels = np.array(["left", "up", "right"])
-        with pytest.raises(ValueError):
-            check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
 
 
 # ----------------------
 # Model Training & IO Tests
 # ----------------------
-class TestModelTraining:
-    def test_eegnet_train_save_load(self):
-        """Test that EEGNet can be trained, saved, and loaded on dummy data."""
-        x = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
-        y = np.zeros((20,))
-        y[:10] = 1  # Two classes
-        y_cat = np.zeros((20, 2))
-        y_cat[np.arange(20), y.astype(int)] = 1
-        model = EEGNet(nb_classes=2, Chans=16, Samples=250)
-        model.compile(
-            optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
-        )
-        model.fit(x, y_cat, epochs=1, batch_size=4, verbose=0)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            model_path = os.path.join(tmpdir, "test_eegnet_model.h5")
-            model.save(model_path)
-            assert os.path.exists(model_path)
-            loaded = load_model(model_path)
-            assert loaded is not None
+
+
+@pytest.mark.parametrize(
+    "model_class, model_name",
+    [
+        (EEGNet, "eegnet"),
+        (ShallowConvNet, "shallow"),
+    ],
+)
+def test_model_train_save_load(model_class, model_name):
+    """Test that EEGNet and ShallowConvNet can be trained, saved, and loaded on dummy data."""
+    x = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
+    y = np.zeros((20,))
+    y[:10] = 1  # Two classes
+    y_cat = np.zeros((20, 2))
+    y_cat[np.arange(20), y.astype(int)] = 1
+    model = model_class(nb_classes=2, Chans=16, Samples=250)
+    model.compile(
+        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+    )
+    model.fit(x, y_cat, epochs=1, batch_size=4, verbose=0)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_path = os.path.join(tmpdir, f"test_{model_name}_model.h5")
+        model.save(model_path)
+        assert os.path.exists(model_path)
+        loaded = load_model(model_path)
+        assert loaded is not None
 
 
 # ----------------------
@@ -162,8 +173,10 @@ class TestIntegration:
                 "USE_SESSION_TYPES": ["pure"],
                 "LABELS": ["left", "right"],
                 "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
+                "MODEL_SHALLOW": os.path.join(tmpdir, "shallow.h5"),
                 "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
                 "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
+                "SCALER_SHALLOW": os.path.join(tmpdir, "scaler_shallow.pkl"),
                 "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
             }
             with open(config_path, "w", encoding="utf-8") as f:
@@ -189,8 +202,18 @@ class TestIntegration:
                 timeout=DEFAULT_TIMEOUT,
             )  # nosec B603
             assert os.path.exists(config["MODEL_EEGNET"])
+            assert os.path.exists(config["MODEL_SHALLOW"])
             assert os.path.exists(config["LABEL_ENCODER"])
             assert os.path.exists(config["SCALER_EEGNET"])
+            assert os.path.exists(config["SCALER_SHALLOW"])
+            # Additional: Load ShallowConvNet model and run a prediction to ensure it is functional
+            from keras.models import load_model
+            x = np.load(config["WINDOWED_NPY"])
+            if x.ndim == 3:
+                x = x[..., np.newaxis]
+            shallow_model = load_model(config["MODEL_SHALLOW"])
+            shallow_preds = shallow_model.predict(x[:5])
+            assert shallow_preds.shape[0] == 5
 
     def test_error_handling_missing_config(self):
         """Test error handling for missing config file in windowing and training scripts."""
@@ -290,9 +313,9 @@ def test_model_prediction_after_training():
 def test_windowed_npy_content():
     """Test that windowed .npy files have correct shapes and label values after windowing."""
     with tempfile.TemporaryDirectory() as tmpdir:
-        n_samples, n_channels = 120, 3
-        data = np.random.randn(n_samples, n_channels)
-        labels = np.random.choice(["left", "right"], size=n_samples)
+        _, n_channels = 120, 3
+        data = np.random.randn(120, n_channels)
+        labels = np.random.choice(["left", "right"], size=120)
         df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
         df["session_type"] = "pure"
         df["label"] = labels

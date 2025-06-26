@@ -32,7 +32,7 @@ import tensorflow as tf
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import load_config, setup_logging, extract_features
+from utils import load_config, setup_logging, extract_features, collect_calibration_data, run_session_calibration
 
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -544,62 +544,187 @@ def add_samples_to_buffer(pipeline, window):
         pipeline.add_sample(sample)
 
 
-def main():
-    """Main real-time prediction function using LSL streaming."""
+def session_calibration(lsl_handler, config):
+    """Handle session calibration logic and return calibration status and model/scaler paths."""
+    session_model_path_eegnet = "models/eeg_direction_model_session.h5"
+    session_scaler_path_eegnet = "models/eeg_scaler_session.pkl"
+    session_model_path_shallow = "models/eeg_shallow_model_session.h5"
+    session_scaler_path_shallow = "models/eeg_scaler_shallow_session.pkl"
+    use_session_model = False
 
-    logging.info("Starting LSL-based real-time EEG prediction...")
-
-    # Initialize LSL stream handler
-    lsl_handler = LSLStreamHandler(
-        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"]
+    user_calib = input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
+    if user_calib in ("", "y", "yes"):
+        try:
+            LABELS = config["LABELS"]
+            N_CHANNELS = config["N_CHANNELS"]
+            WINDOW_SIZE = config["WINDOW_SIZE"]
+            EEGNET_DROPOUT = config.get("EEGNET_DROPOUT_RATE", 0.5)
+            logging.info("Starting session calibration. Please follow the prompts.")
+            channels = list(range(N_CHANNELS))
+            x_calib, y_calib = collect_calibration_data(
+                lsl_handler, channels, WINDOW_SIZE, LABELS, seconds_per_class=10, sample_rate=config["SAMPLING_RATE"]
+            )
+            run_session_calibration(
+                x_calib,
+                y_calib,
+                base_model_path=config["MODEL_EEGNET"],
+                label_encoder_path=config["LABEL_ENCODER"],
+                out_model_path=session_model_path_eegnet,
+                out_scaler_path=session_scaler_path_eegnet,
+                epochs=3,
+                batch_size=16,
+                model_type="EEGNet",
+            )
+            run_session_calibration(
+                x_calib,
+                y_calib,
+                base_model_path=config["MODEL_SHALLOW"],
+                label_encoder_path=config["LABEL_ENCODER"],
+                out_model_path=session_model_path_shallow,
+                out_scaler_path=session_scaler_path_shallow,
+                epochs=3,
+                batch_size=16,
+                model_type="ShallowConvNet",
+                n_channels=N_CHANNELS,
+                window_size=WINDOW_SIZE,
+                dropout_rate=EEGNET_DROPOUT,
+            )
+            logging.info("Session calibration complete. Using session-specific models and scalers.")
+            use_session_model = True
+        except Exception as e:
+            logging.error(f"Session calibration failed: {e}. Proceeding with pre-trained models.")
+            use_session_model = False
+    else:
+        logging.info("Skipping session calibration. Using pre-trained models.")
+    return (
+        use_session_model,
+        session_model_path_eegnet,
+        session_scaler_path_eegnet,
+        session_model_path_shallow,
+        session_scaler_path_shallow,
     )
 
-    # Connect to LSL stream
-    if not lsl_handler.connect():
-        logging.error(
-            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming."
-        )
-        return
 
-    # Note: Sampling rate verification would go here if LSLStreamHandler supported get_stream_info()
-    # For now, users should manually verify sampling rates match between OpenBCI GUI and config.json
+def select_prediction_mode():
+    """Prompt user to select prediction display mode."""
+    print("\nChoose prediction display mode:")
+    print("1. EEGNet only")
+    print("2. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
+    mode = input("Enter 1 or 2: ").strip()
+    return mode == "2"
 
-    # Initialize optimized prediction pipeline
+
+def initialize_pipeline(
+    config,
+    use_session_model,
+    session_model_path_eegnet,
+    session_scaler_path_eegnet,
+    session_model_path_shallow,
+    session_scaler_path_shallow,
+):
+    """Initialize the prediction pipeline with appropriate models and scalers."""
     pipeline = OptimizedPredictionPipeline(config)
-    pipeline.load_optimized_models()
+    if use_session_model:
+        try:
+            pipeline.models["eegnet"] = {
+                "model": load_model(session_model_path_eegnet),
+                "optimized": False,
+            }
+            pipeline.scalers["eegnet"] = joblib.load(session_scaler_path_eegnet)
+            pipeline.models["shallow"] = {
+                "model": load_model(session_model_path_shallow),
+                "optimized": False,
+            }
+            pipeline.scalers["shallow"] = joblib.load(session_scaler_path_shallow)
+            logging.info(
+                "Loaded session-specific EEGNet and ShallowConvNet models and scalers."
+            )
+        except Exception as e:
+            logging.error(
+                f"Failed to load session-specific model/scaler: {e}. Using pre-trained."
+            )
+            pipeline.load_optimized_models()
+    else:
+        pipeline.load_optimized_models()
+    return pipeline
 
-    logging.info("=== REAL-TIME PREDICTION STARTED ===")
-    logging.info(
-        "⚠️  EEGNet model disabled due to shape mismatch (expects 250 samples, got 125)"
-    )
-    logging.info("📊 Using Random Forest + XGBoost ensemble for predictions")
-    logging.info("🔄 To use EEGNet: retrain models with 'python train_eeg_model.py'")
-    logging.info("Think of different directions to control the system.")
-    logging.info("Press Ctrl+C to stop.")
 
+def eegnet_only_prediction(pipeline, prediction_count):
+    """Handle EEGNet-only prediction and logging."""
+    result = pipeline.predict_eegnet(pipeline._get_current_window())
+    if result:
+        probs, confidence = result
+        pred_idx = np.argmax(probs)
+        pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
+        prediction_count += 1
+        logging.info(
+            "[%4d] %8s (conf: %.3f) [EEGNet only]", prediction_count, pred_label.upper(), confidence
+        )
+    return prediction_count
+
+
+def prediction_loop(lsl_handler, pipeline, show_ensemble, config):
+    """Main prediction loop for real-time EEG prediction."""
     prediction_count = 0
-
     try:
         while True:
             window = lsl_handler.get_window(config["WINDOW_SIZE"], timeout=1.0)
             if window is not None:
                 add_samples_to_buffer(pipeline, window)
                 if pipeline.is_ready_for_prediction():
-                    prediction_count = process_prediction(pipeline, prediction_count)
-            time.sleep(0.001)  # Small delay to prevent busy waiting
-
+                    if show_ensemble:
+                        prediction_count = process_prediction(pipeline, prediction_count)
+                    else:
+                        prediction_count = eegnet_only_prediction(pipeline, prediction_count)
+            time.sleep(0.001)
     except KeyboardInterrupt:
         logging.info("Stopping real-time prediction...")
     finally:
         lsl_handler.disconnect()
         pipeline.stop_async_prediction()
-
-        # Final performance report
         stats = pipeline.get_performance_stats()
         logging.info("=== FINAL PERFORMANCE REPORT ===")
         logging.info("Average latency: %.1fms", stats["avg_latency_ms"])
         logging.info("Average FPS: %.1f", stats["fps"])
         logging.info("Total predictions: %d", prediction_count)
+
+
+def main():
+    """Main real-time prediction function using LSL streaming and optional session calibration."""
+    logging.info("Starting LSL-based real-time EEG prediction...")
+
+    lsl_handler = LSLStreamHandler(
+        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"]
+    )
+
+    if not lsl_handler.connect():
+        logging.error(
+            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming."
+        )
+        return
+
+    (
+        use_session_model,
+        session_model_path_eegnet,
+        session_scaler_path_eegnet,
+        session_model_path_shallow,
+        session_scaler_path_shallow,
+    ) = session_calibration(lsl_handler, config)
+    show_ensemble = select_prediction_mode()
+    pipeline = initialize_pipeline(
+        config,
+        use_session_model,
+        session_model_path_eegnet,
+        session_scaler_path_eegnet,
+        session_model_path_shallow,
+        session_scaler_path_shallow,
+    )
+
+    logging.info("=== REAL-TIME PREDICTION STARTED ===")
+    logging.info("Think of different directions to control the system.")
+    logging.info("Press Ctrl+C to stop.")
+
+    prediction_loop(lsl_handler, pipeline, show_ensemble, config)
 
 
 def test_models_without_lsl():

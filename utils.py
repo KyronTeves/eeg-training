@@ -24,6 +24,7 @@ from keras.utils import to_categorical
 from scipy.signal import welch
 from scipy.stats import mode
 from sklearn.preprocessing import StandardScaler
+from EEGModels import ShallowConvNet
 
 
 def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
@@ -150,17 +151,20 @@ def run_session_calibration(
     x_calib,
     y_calib,
     base_model_path,
-    base_scaler_path,
     label_encoder_path,
     out_model_path,
     out_scaler_path,
     epochs=3,
     batch_size=16,
+    model_type="EEGNet",
+    n_channels=None,
+    window_size=None,
+    dropout_rate=None,
 ):
     """
     Windows, preprocesses, and fine-tunes the model/scaler for the session.
+    Supports both EEGNet and ShallowConvNet.
     """
-    _ = base_scaler_path  # Dummy assignment to suppress unused argument warning
     le = joblib.load(label_encoder_path)
     y_calib_encoded = le.transform(y_calib)
     y_calib_cat = to_categorical(y_calib_encoded)
@@ -168,10 +172,24 @@ def run_session_calibration(
     x_calib_flat = x_calib.reshape(-1, x_calib.shape[-1])
     scaler.fit(x_calib_flat)
     x_calib_scaled = scaler.transform(x_calib_flat).reshape(x_calib.shape)
-    # Prepare for EEGNet: (batch, window, channels) -> (batch, channels, window, 1)
-    x_calib_eegnet = np.expand_dims(x_calib_scaled, -1)
-    x_calib_eegnet = np.transpose(x_calib_eegnet, (0, 2, 1, 3))
-    model = load_model(base_model_path)
+    # Prepare for model: (batch, window, channels) -> (batch, channels, window, 1)
+    x_calib_model = np.expand_dims(x_calib_scaled, -1)
+    x_calib_model = np.transpose(x_calib_model, (0, 2, 1, 3))
+    if model_type == "EEGNet":
+        model = load_model(base_model_path)
+    elif model_type == "ShallowConvNet":
+        # Rebuild model from scratch to avoid optimizer issues
+        if n_channels is None or window_size is None or dropout_rate is None:
+            raise ValueError("n_channels, window_size, dropout_rate must be provided for ShallowConvNet calibration.")
+        model = ShallowConvNet(
+            nb_classes=y_calib_cat.shape[1],
+            Chans=n_channels,
+            Samples=window_size,
+            dropoutRate=dropout_rate,
+        )
+        model.load_weights(base_model_path)
+    else:
+        raise ValueError(f"Unknown model_type: {model_type}")
     # Recompile model with new optimizer to avoid Keras variable mismatch error
     model.compile(
         optimizer=Adam(learning_rate=0.001),
@@ -179,12 +197,12 @@ def run_session_calibration(
         metrics=["accuracy"],
     )
     model.fit(
-        x_calib_eegnet, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
+        x_calib_model, y_calib_cat, epochs=epochs, batch_size=batch_size, verbose=1
     )
     model.save(out_model_path)
     joblib.dump(scaler, out_scaler_path)
     logging.info(
-        "Session calibration complete. Model saved to %s, scaler saved to %s.",
+        f"Session calibration complete for {model_type}. Model saved to %s, scaler saved to %s.",
         out_model_path,
         out_scaler_path,
     )
