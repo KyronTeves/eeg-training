@@ -310,107 +310,71 @@ def main():
     """
     setup_logging()  # Set up consistent logging to file and console
     config = load_config()
-
     n_channels = config["N_CHANNELS"]
     window_size = config["WINDOW_SIZE"]
     step_size = config["STEP_SIZE"]
     csv_file = config["OUTPUT_CSV"]
     test_session_types = config["TEST_SESSION_TYPES"]
     sampling_rate = config["SAMPLING_RATE"]
-
     try:
         logging.info("Loading data from %s ...", csv_file)
         df = pd.read_csv(csv_file)
-        # Print class distribution for the full dataset (all session types)
         print_class_distribution(df, "label", name="Full Dataset (all session types)")
         test_df = df[df["session_type"].isin(test_session_types)]
         logging.info("Test samples: %d", len(test_df))
-        # Print class distribution for the test set
         print_class_distribution(
             test_df, "label", name="Test Set (filtered session types)"
         )
     except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
         logging.error("Failed to load or filter test data: %s", e)
         raise
-
     eeg_cols = [col for col in test_df.columns if col.startswith("ch_")]
     x = test_df[eeg_cols].values
     labels = test_df["label"].values
-
     check_no_nan(x, name="EEG data")
     check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
-
+    if x.shape[1] != n_channels:
+        raise ValueError(
+            f"Expected {n_channels} channels, but found {x.shape[1]} in the data."
+        )
     x = x.reshape(-1, n_channels)
     labels = labels.reshape(-1, 1)
     x_windows, y_windows = window_data(x, labels, window_size, step_size)
-
-    if x_windows.shape[1:] != (window_size, n_channels):
-        logging.error("Windowed data shape mismatch.")
-        raise ValueError("Windowed data shape mismatch.")
-    if x_windows.shape[0] != y_windows.shape[0]:
-        logging.error("Number of windows and labels do not match.")
-        raise ValueError("Number of windows and labels do not match.")
-
-    logging.info("Test windows: %s", x_windows.shape)
-
-    logging.info("Extracting features for tree-based models...")
+    le = joblib.load(config["LABEL_ENCODER"])
+    scaler = joblib.load(config["SCALER_EEGNET"])
+    x_windows_scaled = scaler.transform(x_windows.reshape(-1, n_channels)).reshape(x_windows.shape)
+    y_windows = le.transform(y_windows.ravel())
+    # Feature extraction for tree models
     x_features = np.array(
-        Parallel(n_jobs=-1, prefer="threads")(
-            delayed(extract_features)(window, sampling_rate) for window in x_windows
-        )
+        [extract_features(window, sampling_rate) for window in x_windows]
     )
-    logging.info("Feature extraction complete. Feature shape: %s", x_features.shape)
-
-    # Visualize feature space separability
-    try:
-        le = joblib.load(config["LABEL_ENCODER"])
-        y_labels_int = le.transform(y_windows.ravel())
-        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=2)
-        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=3)
-        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=2)
-        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=3)
-        plot_feature_distributions(x_features, y_labels_int, le)
-    except (ValueError, RuntimeError, KeyError, OSError) as e:
-        logging.warning("Feature visualization failed: %s", e)
-
-    try:
-        scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
-        scaler_tree = joblib.load(config["SCALER_TREE"])
-        model_eegnet = load_model(config["MODEL_EEGNET"])
-        rf = joblib.load(config["MODEL_RF"])
-        xgb = joblib.load(config["MODEL_XGB"])
-        model_shallow = load_model(
-            config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
-        )
-        scaler_shallow = joblib.load(
-            config.get("SCALER_SHALLOW", config["SCALER_EEGNET"])
-        )
-    except (ImportError, OSError, AttributeError) as e:
-        logging.error("Failed to load models or encoders: %s", e)
-        raise
-
-    x_windows_flat = x_windows.reshape(-1, n_channels)
-    x_windows_scaled_eegnet = scaler_eegnet.transform(x_windows_flat).reshape(
-        x_windows.shape
-    )
-    x_windows_eegnet = np.expand_dims(x_windows_scaled_eegnet, -1)
-    x_windows_eegnet = np.transpose(x_windows_eegnet, (0, 2, 1, 3))
-    x_windows_scaled_shallow = scaler_shallow.transform(x_windows_flat).reshape(
-        x_windows.shape
-    )
-    x_windows_shallow = np.expand_dims(x_windows_scaled_shallow, -1)
-    x_windows_shallow = np.transpose(x_windows_shallow, (0, 2, 1, 3))
+    scaler_tree = joblib.load(config["SCALER_TREE"])
     x_features_scaled = scaler_tree.transform(x_features)
-
-    logging.info("Generating predictions for all models...")
-    pred_eegnet_prob = model_eegnet.predict(x_windows_eegnet)
-    pred_eegnet_labels = np.argmax(pred_eegnet_prob, axis=1)
-    pred_shallow_prob = model_shallow.predict(x_windows_shallow)
-    pred_shallow_labels = np.argmax(pred_shallow_prob, axis=1)
+    # Load models
+    eegnet = load_model(config["MODEL_EEGNET"])
+    shallow = load_model(config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log})
+    rf = joblib.load(config["MODEL_RF"])
+    xgb = joblib.load(config["MODEL_XGB"])
+    # Predict
+    pred_eegnet_labels = np.argmax(
+        eegnet.predict(
+            np.expand_dims(
+                np.transpose(x_windows_scaled, (0, 2, 1)), -1
+            )
+        ),
+        axis=1,
+    )
+    pred_shallow_labels = np.argmax(
+        shallow.predict(
+            np.expand_dims(
+                np.transpose(x_windows_scaled, (0, 2, 1)), -1
+            )
+        ),
+        axis=1,
+    )
     pred_rf_labels = rf.predict(x_features_scaled)
     pred_xgb_labels = xgb.predict(x_features_scaled)
-    y_true_labels = le.transform(y_windows.ravel())
-
+    y_true_labels = y_windows
     pred_ensemble_labels = ensemble_hard_voting(
         le,
         pred_eegnet_labels,
@@ -420,13 +384,11 @@ def main():
         y_true_labels,
     )
     pred_ensemble_numeric = le.transform(pred_ensemble_labels)
-
-    y_true_str = y_windows.ravel()
+    y_true_str = le.inverse_transform(y_true_labels)
     pred_eegnet_str = le.inverse_transform(pred_eegnet_labels)
     pred_shallow_str = le.inverse_transform(pred_shallow_labels)
     pred_rf_str = le.inverse_transform(pred_rf_labels)
     pred_xgb_str = le.inverse_transform(pred_xgb_labels)
-
     num_samples_to_log = min(100, len(y_true_labels))
     if num_samples_to_log > 0:
         log_sample_predictions(
@@ -438,7 +400,6 @@ def main():
             pred_ensemble_labels,
             num_samples_to_log,
         )
-
     evaluate_model(y_true_labels, pred_eegnet_labels, le, "EEGNet")
     evaluate_model(y_true_labels, pred_shallow_labels, le, "ShallowConvNet")
     evaluate_model(y_true_labels, pred_rf_labels, le, "Random Forest")

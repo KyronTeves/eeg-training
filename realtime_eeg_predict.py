@@ -49,10 +49,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="scipy")
 warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
 
 
-setup_logging()
-config = load_config()
-
-
 class OptimizedPredictionPipeline:
     """
     High-performance real-time EEG prediction pipeline.
@@ -77,7 +73,7 @@ class OptimizedPredictionPipeline:
         self.confidence_threshold = config_dict.get("CONFIDENCE_THRESHOLD", 0.7)
 
         # Use buffer size multiplier from config
-        buffer_multiplier = config.get("BUFFER_SIZE_MULTIPLIER", 2)
+        buffer_multiplier = self.config.get("BUFFER_SIZE_MULTIPLIER", 2)
         self.buffer = deque(maxlen=self.window_size * buffer_multiplier)
 
         # Models and preprocessors
@@ -594,7 +590,7 @@ def process_prediction(pipeline, prediction_count):
     if result:
         predicted_label, confidence = result
         prediction_count += 1
-        status = "✓" if confidence > config["CONFIDENCE_THRESHOLD"] else "?"
+        status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
 
         # Get individual model predictions for detailed output
         window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
@@ -841,25 +837,17 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
 
 
 def main():
-    """
-    Main entry point for real-time EEG prediction using LSL streaming and optional session calibration.
-
-    Input: None (uses config and user input)
-    Process: Connects to LSL, handles calibration, initializes pipeline, runs prediction loop
-    Output: None (side effect: predictions and logs)
-    """
+    setup_logging()
+    config = load_config()
     logging.info("Starting LSL-based real-time EEG prediction...")
-
     lsl_handler = LSLStreamHandler(
         stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"]
     )
-
     if not lsl_handler.connect():
         logging.error(
             "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming."
         )
         return
-
     (
         use_session_model,
         session_model_path_eegnet,
@@ -876,37 +864,22 @@ def main():
         session_model_path_shallow,
         session_scaler_path_shallow,
     )
-
     logging.info("=== REAL-TIME PREDICTION STARTED ===")
     logging.info("Think of different directions to control the system.")
     logging.info("Press Ctrl+C to stop.")
-
     prediction_loop(lsl_handler, pipeline, show_ensemble, config)
 
 
 def test_models_without_lsl():
-    """
-    Test model loading and prediction logic without requiring LSL stream (for development).
-
-    Input: None (uses config)
-    Process: Loads models, runs dummy prediction, logs results
-    Output: True if successful, False otherwise
-    """
+    setup_logging()
+    config = load_config()
     logging.info("Testing model loading and prediction (no LSL required)...")
-
     try:
-        # Initialize pipeline
         pipeline = OptimizedPredictionPipeline(config)
         pipeline.load_optimized_models()
-
-        # Create fake EEG data
         fake_window = np.random.randn(config["WINDOW_SIZE"], config["N_CHANNELS"]) * 0.1
-
-        # Add samples to buffer
         for sample in fake_window:
             pipeline.add_sample(sample)
-
-        # Test prediction
         if pipeline.is_ready_for_prediction():
             result = pipeline.predict_realtime()
             if result:
@@ -916,14 +889,10 @@ def test_models_without_lsl():
                 )
             else:
                 logging.info("✅ Models loaded successfully but no prediction made")
-
-        # Test performance stats
         stats = pipeline.get_performance_stats()
         logging.info("✅ Performance stats: %s", stats)
-
         logging.info("✅ All models loaded and tested successfully!")
         return True
-
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         logging.error("❌ Model test failed: %s", e)
         return False
@@ -931,8 +900,6 @@ def test_models_without_lsl():
 
 if __name__ == "__main__":
     import sys
-
-    # Check for test mode
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         test_models_without_lsl()
     else:

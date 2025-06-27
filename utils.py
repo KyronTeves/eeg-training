@@ -78,14 +78,15 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
     return np.array(features)
 
 
-def load_config(path: str = "config.json") -> dict:
+def load_config(path: str = None) -> dict:
     """
-    Load configuration from a JSON file.
-
+    Load configuration from a JSON file. If path is None, use the CONFIG_PATH environment variable or default to 'config.json'.
     Input: path (str) - path to config file
     Process: Reads and parses JSON
     Output: Config dictionary
     """
+    if path is None:
+        path = os.environ.get("CONFIG_PATH", "config.json")
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 

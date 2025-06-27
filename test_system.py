@@ -217,16 +217,6 @@ class TestIntegration:
             assert os.path.exists(config["LABEL_ENCODER"])
             assert os.path.exists(config["SCALER_EEGNET"])
             assert os.path.exists(config["SCALER_SHALLOW"])
-            # Additional: Load ShallowConvNet model and run a prediction to ensure it is functional
-
-            def square(x):
-                """Return the element-wise square of the input tensor."""
-                return tf.math.square(x)
-
-            def log(x):
-                """Return the element-wise natural logarithm of the input tensor, clipped for stability."""
-                return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
-
             x = np.load(config["WINDOWED_NPY"])
             if x.ndim == 3:
                 x = x[..., np.newaxis]
