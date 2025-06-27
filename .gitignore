@@ -26,3 +26,6 @@ __pycache__/
 
 # VS Code settings
 .vscode/
+
+# Ignore all PNG files in the plots directory
+plots/*.png

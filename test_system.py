@@ -138,7 +138,18 @@ def test_model_train_save_load(model_class, model_name):
         model_path = os.path.join(tmpdir, f"test_{model_name}_model.h5")
         model.save(model_path)
         assert os.path.exists(model_path)
-        loaded = load_model(model_path)
+        if model_name == "shallow":
+            # Provide custom objects for ShallowConvNet
+            def square(x):
+                """Return the element-wise square of the input tensor."""
+                return tf.math.square(x)
+
+            def log(x):
+                return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
+
+            loaded = load_model(model_path, custom_objects={"square": square, "log": log})
+        else:
+            loaded = load_model(model_path)
         assert loaded is not None
 
 
@@ -265,6 +276,14 @@ class TestIntegration:
             )
 
 
+def square(x):
+    return tf.math.square(x)
+
+
+def log(x):
+    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
+
+
 def test_model_prediction_after_training():
     """Test that a trained model can be loaded and used for prediction."""
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -315,7 +334,12 @@ def test_model_prediction_after_training():
         )  # nosec B603
         # 3. Load model and run prediction
         x = np.load(config["WINDOWED_NPY"])
-        model = load_model(config["MODEL_EEGNET"])
+
+        try:
+            model = load_model(config["MODEL_EEGNET"], custom_objects={"square": square, "log": log})
+        except TypeError:
+            # If EEGNet does not use custom objects, fallback
+            model = load_model(config["MODEL_EEGNET"])
         # Model expects (batch, channels, samples, 1) or similar
         if x.ndim == 3:
             x = x[..., np.newaxis]

@@ -8,15 +8,20 @@ Process: Loads test data and models, applies windowing and scaling, computes pre
 Output: Evaluation metrics, predictions, and logs.
 """
 
+import os
 import logging
 from collections import Counter
 
 import joblib
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 import tensorflow as tf
 from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
 
 from utils import (
@@ -177,6 +182,124 @@ def evaluate_model(y_true, y_pred, label_encoder, model_name):
     )
 
 
+def print_class_distribution(df, label_col, label_encoder=None, name="Dataset"):
+    """Print the class distribution for a DataFrame column."""
+
+    counts = Counter(df[label_col])
+    if label_encoder is not None:
+        # If labels are encoded, decode them for readability
+        classes = label_encoder.classes_
+        counts = {
+            classes[int(k)] if str(k).isdigit() else k: v for k, v in counts.items()
+        }
+    logging.info("--- Class distribution for %s ---", name)
+    for label, count in counts.items():
+        logging.info("%s: %d", label, count)
+    logging.info("")
+
+
+def plot_tsne_features(
+    x_features,
+    y_labels,
+    label_encoder,
+    method="tsne",
+    perplexity=30,
+    n_components=2,
+    random_state=42,
+    save_dir="plots",
+):
+    """Plot t-SNE or PCA of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
+
+    os.makedirs(save_dir, exist_ok=True)
+    if method == "tsne":
+        reducer = TSNE(
+            n_components=n_components, perplexity=perplexity, random_state=random_state
+        )
+        title = f"t-SNE ({n_components}D) of EEG Features"
+        fname = f"{save_dir}/tsne_{n_components}d.png"
+    else:
+        reducer = PCA(n_components=n_components, random_state=random_state)
+        title = f"PCA ({n_components}D) of EEG Features"
+        fname = f"{save_dir}/pca_{n_components}d.png"
+    x_reduced = reducer.fit_transform(x_features)
+    labels_str = (
+        label_encoder.inverse_transform(y_labels)
+        if hasattr(label_encoder, "inverse_transform")
+        else y_labels
+    )
+    if n_components == 2:
+        plt.figure(figsize=(8, 6))
+        for label in np.unique(labels_str):
+            idx = labels_str == label
+            plt.scatter(x_reduced[idx, 0], x_reduced[idx, 1], label=label, alpha=0.6, s=20)
+        plt.legend()
+        plt.title(title)
+        plt.xlabel("Component 1")
+        plt.ylabel("Component 2")
+        plt.tight_layout()
+        plt.savefig(fname)
+        plt.close()
+        logging.info("Saved %s to %s", title, fname)
+    elif n_components == 3:
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot(111, projection="3d")
+        for label in np.unique(labels_str):
+            idx = labels_str == label
+            ax.scatter(
+                x_reduced[idx, 0],
+                x_reduced[idx, 1],
+                x_reduced[idx, 2],
+                label=label,
+                alpha=0.6,
+                s=20,
+            )
+        ax.set_title(title)
+        ax.set_xlabel("Component 1")
+        ax.set_ylabel("Component 2")
+        ax.set_zlabel("Component 3")
+        ax.legend()
+        plt.tight_layout()
+        plt.savefig(fname)
+        plt.show()  # Show interactive 3D plot
+        plt.close()
+        logging.info("Saved %s to %s and displayed interactively.", title, fname)
+    else:
+        logging.warning("n_components=%d not supported for plotting.", n_components)
+
+
+def plot_feature_distributions(
+    x_features, y_labels, label_encoder, feature_indices=None, max_features=5, save_dir="plots"
+):
+    """Plot histograms for selected features across classes and save to file."""
+    os.makedirs(save_dir, exist_ok=True)
+    labels_str = (
+        label_encoder.inverse_transform(y_labels)
+        if hasattr(label_encoder, "inverse_transform")
+        else y_labels
+    )
+    n_features = x_features.shape[1]
+    if feature_indices is None:
+        # Pick up to max_features evenly spaced features
+        feature_indices = np.linspace(
+            0, n_features - 1, min(max_features, n_features), dtype=int
+        )
+    for idx in feature_indices:
+        plt.figure(figsize=(7, 4))
+        for label in np.unique(labels_str):
+            sns.kdeplot(
+                x_features[labels_str == label, idx], label=label, fill=True, alpha=0.3
+            )
+        plt.title(f"Feature {idx} distribution by class")
+        plt.xlabel(f"Feature {idx}")
+        plt.ylabel("Density")
+        plt.legend()
+        plt.tight_layout()
+        fname = f"{save_dir}/feature_{idx}_distribution.png"
+        plt.savefig(fname)
+        plt.close()
+        logging.info("Saved feature distribution plot to %s", fname)
+
+
 def main():
     """Main evaluation pipeline for EEG models on held-out test data windows.
 
@@ -196,8 +319,14 @@ def main():
     try:
         logging.info("Loading data from %s ...", csv_file)
         df = pd.read_csv(csv_file)
+        # Print class distribution for the full dataset (all session types)
+        print_class_distribution(df, "label", name="Full Dataset (all session types)")
         test_df = df[df["session_type"].isin(test_session_types)]
         logging.info("Test samples: %d", len(test_df))
+        # Print class distribution for the test set
+        print_class_distribution(
+            test_df, "label", name="Test Set (filtered session types)"
+        )
     except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
         logging.error("Failed to load or filter test data: %s", e)
         raise
@@ -230,8 +359,19 @@ def main():
     )
     logging.info("Feature extraction complete. Feature shape: %s", x_features.shape)
 
+    # Visualize feature space separability
     try:
         le = joblib.load(config["LABEL_ENCODER"])
+        y_labels_int = le.transform(y_windows.ravel())
+        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=2)
+        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=3)
+        plot_tsne_features(x_features, y_labels_int, le, method="pca", n_components=2)
+        plot_tsne_features(x_features, y_labels_int, le, method="pca", n_components=3)
+        plot_feature_distributions(x_features, y_labels_int, le)
+    except Exception as e:
+        logging.warning(f"Feature visualization failed: {e}")
+
+    try:
         scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
         scaler_tree = joblib.load(config["SCALER_TREE"])
         model_eegnet = load_model(config["MODEL_EEGNET"])
