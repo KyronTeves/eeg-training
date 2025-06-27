@@ -1,23 +1,18 @@
 """
-Train EEGNet (deep learning), Random Forest, and XGBoost models on windowed EEG data.
+train_eeg_model.py
 
-- Loads windowed EEG data and labels
-- Encodes and balances classes
-- Applies data augmentation
-- Trains:
-    - EEGNet (Keras deep learning model)
-    - Random Forest (scikit-learn)
-    - XGBoost (xgboost)
-- Saves trained models, encoders, and scalers for downstream evaluation and prediction
+Train EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
 
 Input: Windowed EEG data (.npy), windowed labels (.npy)
-Output: Trained model files, encoders, scalers
+Process: Loads data, encodes and balances classes, applies augmentation, trains models, saves artifacts.
+Output: Trained model files, encoders, scalers (for downstream evaluation and prediction)
 """
 
 import logging
+
 import joblib
 import numpy as np
-
+from joblib import Parallel, delayed
 from keras.callbacks import EarlyStopping
 from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
@@ -27,8 +22,14 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
-from EEGModels import EEGNet
-from utils import load_config, setup_logging, check_no_nan, check_labels_valid
+from EEGModels import EEGNet, ShallowConvNet
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    extract_features,
+    load_config,
+    setup_logging,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -36,6 +37,7 @@ config = load_config()
 
 N_CHANNELS = config["N_CHANNELS"]
 WINDOW_SIZE = config["WINDOW_SIZE"]
+SAMPLING_RATE = config["SAMPLING_RATE"]
 
 try:
     X_windows = np.load(config["WINDOWED_NPY"])
@@ -46,14 +48,21 @@ try:
         y_windows.shape,
     )
 except FileNotFoundError:
-    logging.error("Windowed data file not found.")
+    logging.error(
+        "Windowed data file not found. Please ensure window_eeg_data.py has been run "
+        "and the config paths are correct."
+    )
     raise
 except (OSError, ValueError, KeyError) as e:
     logging.error("Failed to load windowed data: %s", e)
     raise
 
-check_no_nan(X_windows, name="Windowed EEG data")  # Validate no NaNs in windowed EEG data
+# All validation and windowing is handled by utility functions in utils.py
+check_no_nan(
+    X_windows, name="Windowed EEG data"
+)  # Validate no NaNs in windowed EEG data
 check_labels_valid(y_windows, name="Windowed labels")  # Validate windowed labels
+# (Reminder: Any future validation/windowing logic should use utils.py)
 
 # Encode labels
 le = LabelEncoder()
@@ -88,49 +97,188 @@ X_train_bal = X_train_scaled[downsampled_indices]
 y_train_bal = y_train[downsampled_indices]
 
 
-# Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     """
-    Augment EEG data by adding realistic noise patterns and artifacts.
-
-    This function applies multiple augmentation techniques to simulate real-world
-    EEG signal variations and improve model robustness:
-    1. Gaussian noise addition to simulate electrical interference
-    2. Baseline drift simulation using sine waves (common in EEG)
-    3. Random artifacts by zeroing values (simulates movement artifacts)
+    Augment EEG data with noise, drift, and simulated artifacts.
 
     Args:
-        X (np.ndarray): Input EEG data of shape (samples, time_points, channels).
-        noise_std (float): Standard deviation of Gaussian noise. Default: 0.01.
-        drift_max (float): Maximum amplitude of baseline drift. Default: 0.05.
-        artifact_prob (float): Probability of introducing artifacts (0-1). Default: 0.05.
+        x (np.ndarray): Input EEG data, shape (n_windows, window_size, n_channels).
+        noise_std (float): Standard deviation of Gaussian noise.
+        drift_max (float): Maximum amplitude of baseline drift.
+        artifact_prob (float): Probability of zeroing out a window.
 
     Returns:
-        np.ndarray: Augmented EEG data with same shape as input.
+        np.ndarray: Augmented EEG data.
 
-    Note:
-        Augmentation helps prevent overfitting and improves generalization to new
-        sessions/users by simulating realistic EEG signal variations.
+    Input: Raw EEG window data.
+    Process: Adds Gaussian noise, baseline drift, and randomly zeroes out windows.
+    Output: Augmented EEG data array.
     """
-    x_aug = x.copy()
     # Add Gaussian noise
-    x_aug += np.random.normal(0, noise_std, x_aug.shape)
+    x_aug = x + np.random.randn(*x.shape) * noise_std
     # Add baseline drift (slow sine wave)
-    drift = np.sin(np.linspace(0, np.pi, x_aug.shape[1])) * drift_max
+    drift = drift_max * np.sin(np.linspace(0, np.pi, x.shape[1]))
     x_aug += drift[None, :, None]
     # Randomly zero out some windows (simulate artifacts)
-    mask = np.random.rand(*x_aug.shape) < artifact_prob
+    mask = np.random.rand(x.shape[0]) < artifact_prob
     x_aug[mask] = 0
     return x_aug
 
 
+def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
+    """
+    Train and evaluate EEGNet or ShallowConvNet model.
+
+    Args:
+        _X_train (np.ndarray): Training data, shape (n_samples, window, channels, 1).
+        _y_train (np.ndarray): Training labels (one-hot or encoded).
+        _X_test (np.ndarray): Test data, shape (n_samples, window, channels, 1).
+        _y_test (np.ndarray): Test labels (one-hot or encoded).
+        _config (dict): Configuration dictionary.
+        _le (LabelEncoder): Label encoder.
+
+    Returns:
+        model: Trained Keras model.
+        float: Test accuracy.
+
+    Input: Preprocessed and windowed EEG data and labels.
+    Process: Compiles, trains, and evaluates the model.
+    Output: Trained model and test accuracy.
+    """
+    x_train_eegnet = np.expand_dims(_x_train, -1)
+    x_test_eegnet = np.expand_dims(_x_test, -1)
+    x_train_eegnet = np.transpose(x_train_eegnet, (0, 2, 1, 3))
+    x_test_eegnet = np.transpose(x_test_eegnet, (0, 2, 1, 3))
+
+    early_stopping = EarlyStopping(
+        monitor=_config["EARLY_STOPPING_MONITOR"],
+        patience=_config["EARLY_STOPPING_PATIENCE"],
+        restore_best_weights=True,
+    )
+    kern_length = _config["EEGNET_KERN_LENGTH"]
+    f1 = _config["EEGNET_F1"]
+    d = _config["EEGNET_D"]
+    f2 = _config["EEGNET_F2"]
+    models_to_train = _config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
+    for model_name in models_to_train:
+        logging.info("=== Training %s ===", model_name)
+        if model_name == "EEGNet":
+            model = EEGNet(
+                nb_classes=_y_train.shape[1],
+                Chans=_config["N_CHANNELS"],
+                Samples=_config["WINDOW_SIZE"],
+                kernLength=kern_length,
+                F1=f1,
+                D=d,
+                F2=f2,
+                dropoutRate=_config["EEGNET_DROPOUT_RATE"],
+                dropoutType=_config["EEGNET_DROPOUT_TYPE"],
+                norm_rate=_config["EEGNET_NORM_RATE"],
+            )
+            model_path = _config["MODEL_EEGNET"]
+        elif model_name == "ShallowConvNet":
+            model = ShallowConvNet(
+                nb_classes=_y_train.shape[1],
+                Chans=_config["N_CHANNELS"],
+                Samples=_config["WINDOW_SIZE"],
+                dropoutRate=_config["EEGNET_DROPOUT_RATE"],
+            )
+            model_path = _config["MODEL_SHALLOW"]
+        else:
+            logging.warning("Unknown model: %s. Skipping.", model_name)
+            continue
+        model.compile(
+            optimizer=_config["OPTIMIZER"],
+            loss=_config["LOSS_FUNCTION"],
+            metrics=["accuracy"],
+        )
+        model.fit(
+            x_train_eegnet,
+            _y_train,
+            epochs=_config["EPOCHS"],
+            batch_size=_config["BATCH_SIZE"],
+            validation_split=_config["VALIDATION_SPLIT"],
+            class_weight=None,  # Set externally if needed
+            callbacks=[early_stopping],
+            verbose=1,
+        )
+        _, acc = model.evaluate(x_test_eegnet, _y_test)
+        logging.info("%s Test accuracy: %.3f", model_name, acc)
+        y_pred = model.predict(x_test_eegnet)
+        y_pred_labels = np.argmax(y_pred, axis=1)
+        y_true_labels = np.argmax(_y_test, axis=1)
+        logging.info(
+            f"{model_name} Confusion Matrix:\n%s",
+            confusion_matrix(y_true_labels, y_pred_labels),
+        )
+        logging.info(
+            f"{model_name} Classification Report:\n%s",
+            classification_report(
+                y_true_labels, y_pred_labels, target_names=_le.classes_
+            ),
+        )
+        model.save(model_path)
+        logging.info("%s saved to %s", model_name, model_path)
+
+
+def train_tree_models(_x_features, _y_encoded, _config, _le):
+    """
+    Train and evaluate Random Forest and XGBoost models.
+
+    Args:
+        _X_features (np.ndarray): Feature matrix for tree models.
+        _y_encoded (np.ndarray): Encoded labels.
+        _config (dict): Configuration dictionary.
+        _le (LabelEncoder): Label encoder.
+
+    Returns:
+        tuple: (RandomForestClassifier, XGBClassifier, float, float)
+            Trained RF and XGB models, RF accuracy, XGB accuracy.
+
+    Input: Feature matrix and encoded labels.
+    Process: Trains and evaluates Random Forest and XGBoost models.
+    Output: Trained models and their test accuracies.
+    """
+    x_train_tree, x_test_tree, y_train_tree, y_test_tree = train_test_split(
+        _x_features, _y_encoded, test_size=0.2, random_state=42, stratify=_y_encoded
+    )
+    scaler_tree = StandardScaler()
+    x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
+    x_test_scaled_tree = scaler_tree.transform(x_test_tree)
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(x_train_scaled_tree, y_train_tree)
+    rf_pred = rf.predict(x_test_scaled_tree)
+    logging.info("Random Forest Results:")
+    logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
+    logging.info(
+        "Classification Report:\n%s",
+        classification_report(y_test_tree, rf_pred, target_names=_le.classes_),
+    )
+    xgb = XGBClassifier(
+        n_estimators=100,
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric="mlogloss",
+    )
+    xgb.fit(x_train_scaled_tree, y_train_tree)
+    xgb_pred = xgb.predict(x_test_scaled_tree)
+    logging.info("XGBoost Results:")
+    logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
+    logging.info(
+        "Classification Report:\n%s",
+        classification_report(y_test_tree, xgb_pred, target_names=_le.classes_),
+    )
+    joblib.dump(rf, _config["MODEL_RF"])
+    joblib.dump(xgb, _config["MODEL_XGB"])
+    joblib.dump(scaler_tree, _config["SCALER_TREE"])
+
+
+# Data augmentation: add noisy/drifted/artifacted copies to balanced training set
 X_train_aug = augment_eeg_data(X_train_bal)
 y_train_aug = y_train_bal.copy()
-# Concatenate original and augmented data
 X_train_final = np.concatenate([X_train_bal, X_train_aug], axis=0)
 y_train_final = np.concatenate([y_train_bal, y_train_aug], axis=0)
 
-# Compute class weights for the (now balanced) training set
 labels_train = np.argmax(y_train_final, axis=1)
 class_weights = compute_class_weight(
     "balanced", classes=np.unique(labels_train), y=labels_train
@@ -141,101 +289,32 @@ logging.info(
     "Class distribution after downsampling and augmentation: %s",
     np.bincount(labels_train),
 )
-
-# Training context information for debugging
-logging.info("Training context: %d total samples, %d classes",
-            len(X_train_final), len(np.unique(y_train_final)))
+logging.info(
+    "Training context: %d total samples, %d classes",
+    len(X_train_final),
+    len(np.unique(y_train_final)),
+)
 unique_labels, label_counts = np.unique(y_train_final, return_counts=True)
 class_dist = dict(zip(unique_labels, label_counts))
 logging.info("Detailed class distribution: %s", class_dist)
 
-# Prepare for EEGNet
-X_train_eegnet = np.expand_dims(X_train_final, -1)
-X_test_eegnet = np.expand_dims(X_test_scaled, -1)
-X_train_eegnet = np.transpose(X_train_eegnet, (0, 2, 1, 3))
-X_test_eegnet = np.transpose(X_test_eegnet, (0, 2, 1, 3))
+# Train deep learning models
+train_eegnet_model(X_train_final, y_train_final, X_test_scaled, y_test, config, le)
 
-# Early stopping callback
-early_stopping = EarlyStopping(
-    monitor='val_loss',
-    patience=10,
-    restore_best_weights=True
-)
-
-# Build EEGNet model using official implementation
-model = EEGNet(nb_classes=y_cat.shape[1], Chans=N_CHANNELS, Samples=WINDOW_SIZE)
-model.compile(optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"])
-model.fit(
-    X_train_eegnet,
-    y_train_final,
-    epochs=100,
-    batch_size=64,
-    validation_split=0.2,
-    class_weight=class_weight_dict,
-    callbacks=[early_stopping]
-)
-
-# Evaluate EEGNet
-_, acc = model.evaluate(X_test_eegnet, y_test)
-logging.info("EEGNet Test accuracy: %.3f", acc)
-
-# Print confusion matrix and classification report
-y_pred = model.predict(X_test_eegnet)
-y_pred_labels = np.argmax(y_pred, axis=1)
-y_true_labels = np.argmax(y_test, axis=1)
-logging.info(
-    "EEGNet Confusion Matrix:\n%s", confusion_matrix(y_true_labels, y_pred_labels)
-)
-logging.info(
-    "EEGNet Classification Report:\n%s",
-    classification_report(y_true_labels, y_pred_labels, target_names=le.classes_),
-)
-
-# Save EEGNet model and label encoder
-model.save(config["MODEL_CNN"])
+# Save shared components
 joblib.dump(le, config["LABEL_ENCODER"])
-joblib.dump(scaler, config["SCALER_CNN"])
+joblib.dump(scaler, config["SCALER_EEGNET"])
 np.save(config["LABEL_CLASSES_NPY"], le.classes_)
 
-# Flatten windows for tree-based models
-X_flat = X_windows.reshape(X_windows.shape[0], -1)
-
-# Train/test split for tree-based models
-X_train_tree, X_test_tree, y_train_tree, y_test_tree = train_test_split(
-    X_flat, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
+# --- Feature Extraction for Tree-based Models ---
+logging.info("Extracting features for tree-based models...")
+# Parallel feature extraction for speed
+X_features = np.array(
+    Parallel(n_jobs=-1, prefer="threads")(
+        delayed(extract_features)(window, SAMPLING_RATE) for window in X_windows
+    )
 )
+logging.info("Feature extraction complete. Feature shape: %s", X_features.shape)
 
-# Standardize features (optional for trees, but keep for consistency)
-scaler_tree = StandardScaler()
-X_train_scaled_tree = scaler_tree.fit_transform(X_train_tree)
-X_test_scaled_tree = scaler_tree.transform(X_test_tree)
-
-# Random Forest
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-rf.fit(X_train_scaled_tree, y_train_tree)
-rf_pred = rf.predict(X_test_scaled_tree)
-logging.info("Random Forest Results:")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_test_tree, rf_pred, target_names=le.classes_),
-)
-
-# XGBoost
-xgb = XGBClassifier(
-    n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
-)
-xgb.fit(X_train_scaled_tree, y_train_tree)
-xgb_pred = xgb.predict(X_test_scaled_tree)
-logging.info("XGBoost Results:")
-logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
-logging.info(
-    "Classification Report:\n%s",
-    classification_report(y_test_tree, xgb_pred, target_names=le.classes_),
-)
-
-# Save tree-based models
-joblib.dump(rf, config["MODEL_RF"])
-joblib.dump(xgb, config["MODEL_XGB"])
-joblib.dump(le, config["LABEL_ENCODER"])
-joblib.dump(scaler_tree, config["SCALER_TREE"])
+# Train tree-based models
+train_tree_models(X_features, y_encoded, config, le)
