@@ -20,9 +20,9 @@ import seaborn as sns
 import tensorflow as tf
 from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
-from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
+from umap import UMAP
 
 from utils import (
     check_labels_valid,
@@ -208,7 +208,7 @@ def plot_tsne_features(
     random_state=42,
     save_dir="plots",
 ):
-    """Plot t-SNE or PCA of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
+    """Plot t-SNE or UMAP of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
 
     os.makedirs(save_dir, exist_ok=True)
     if method == "tsne":
@@ -217,10 +217,12 @@ def plot_tsne_features(
         )
         title = f"t-SNE ({n_components}D) of EEG Features"
         fname = f"{save_dir}/tsne_{n_components}d.png"
+    elif method == "umap":
+        reducer = UMAP(n_components=n_components, random_state=random_state)
+        title = f"UMAP ({n_components}D) of EEG Features"
+        fname = f"{save_dir}/umap_{n_components}d.png"
     else:
-        reducer = PCA(n_components=n_components, random_state=random_state)
-        title = f"PCA ({n_components}D) of EEG Features"
-        fname = f"{save_dir}/pca_{n_components}d.png"
+        raise ValueError(f"Unknown method: {method}")
     x_reduced = reducer.fit_transform(x_features)
     labels_str = (
         label_encoder.inverse_transform(y_labels)
@@ -365,11 +367,11 @@ def main():
         y_labels_int = le.transform(y_windows.ravel())
         plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=2)
         plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=3)
-        plot_tsne_features(x_features, y_labels_int, le, method="pca", n_components=2)
-        plot_tsne_features(x_features, y_labels_int, le, method="pca", n_components=3)
+        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=2)
+        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=3)
         plot_feature_distributions(x_features, y_labels_int, le)
-    except Exception as e:
-        logging.warning(f"Feature visualization failed: {e}")
+    except (ValueError, RuntimeError, KeyError, OSError) as e:
+        logging.warning("Feature visualization failed: %s", e)
 
     try:
         scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
