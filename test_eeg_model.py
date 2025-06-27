@@ -19,8 +19,14 @@ from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
 from sklearn.metrics import classification_report, confusion_matrix
 
-from utils import (check_labels_valid, check_no_nan, extract_features,
-                   load_config, setup_logging, window_data)
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    extract_features,
+    load_config,
+    setup_logging,
+    window_data,
+)
 
 
 def square(x):

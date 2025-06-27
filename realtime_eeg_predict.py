@@ -119,7 +119,10 @@ class OptimizedPredictionPipeline:
             }
 
             self.models["shallow"] = {
-                "model": load_model(self.config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}),
+                "model": load_model(
+                    self.config["MODEL_SHALLOW"],
+                    custom_objects={"square": square, "log": log},
+                ),
                 "optimized": False,
             }
 
@@ -157,7 +160,7 @@ class OptimizedPredictionPipeline:
         """
         try:
             # Load original model
-            if 'shallow' in model_path.lower():
+            if "shallow" in model_path.lower():
                 model = load_model(model_path, custom_objects={"square": square})
             else:
                 model = load_model(model_path)
@@ -185,8 +188,11 @@ class OptimizedPredictionPipeline:
             logging.warning(
                 "TensorFlow Lite optimization failed: %s. Using original model.", e
             )
-            if 'shallow' in model_path.lower():
-                return {"model": load_model(model_path, custom_objects={"square": square}), "optimized": False}
+            if "shallow" in model_path.lower():
+                return {
+                    "model": load_model(model_path, custom_objects={"square": square}),
+                    "optimized": False,
+                }
 
             return {"model": load_model(model_path), "optimized": False}
 
@@ -254,7 +260,7 @@ class OptimizedPredictionPipeline:
         Process: Slices buffer to window size
         Output: np.ndarray of shape (1, window_size, n_channels)
         """
-        return np.array(list(self.buffer)[-self.window_size:]).reshape(
+        return np.array(list(self.buffer)[-self.window_size :]).reshape(
             (1, self.window_size, self.n_channels)
         )
 
@@ -547,7 +553,9 @@ class OptimizedPredictionPipeline:
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
 
-        self.prediction_thread = threading.Thread(target=_async_prediction_loop, daemon=True)
+        self.prediction_thread = threading.Thread(
+            target=_async_prediction_loop, daemon=True
+        )
         self.prediction_thread.start()
         logging.info("Asynchronous prediction started.")
 
@@ -573,6 +581,7 @@ def process_prediction(pipeline, prediction_count):
     Process: Runs ensemble prediction, logs results, prints model-wise breakdown
     Output: Updated prediction_count
     """
+
     def fmt_model(label, conf, disabled):
         if disabled:
             return "---(---)"
@@ -585,14 +594,18 @@ def process_prediction(pipeline, prediction_count):
         status = "✓" if confidence > config["CONFIDENCE_THRESHOLD"] else "?"
 
         # Get individual model predictions for detailed output
-        window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
+        window = np.array(list(pipeline.buffer)[-pipeline.window_size :])
         window = window.reshape((1, pipeline.window_size, pipeline.n_channels))
 
         # EEGNet
         eeg_probs, eeg_confidence = pipeline.predict_eegnet(window)
         eeg_disabled = np.all(eeg_probs == 0)
         eeg_pred_idx = np.argmax(eeg_probs) if not eeg_disabled else 0
-        eeg_label = pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0] if not eeg_disabled else "---"
+        eeg_label = (
+            pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0]
+            if not eeg_disabled
+            else "---"
+        )
 
         # ShallowConvNet
         shallow_probs, shallow_confidence = pipeline.predict_shallow(window)
@@ -600,7 +613,8 @@ def process_prediction(pipeline, prediction_count):
         shallow_pred_idx = np.argmax(shallow_probs) if not shallow_disabled else 0
         shallow_label = (
             pipeline.label_encoder.inverse_transform([shallow_pred_idx])[0]
-            if not shallow_disabled else "---"
+            if not shallow_disabled
+            else "---"
         )
 
         # Tree models
@@ -667,7 +681,9 @@ def session_calibration(lsl_handler):
     session_scaler_path_shallow = "models/eeg_scaler_shallow_session.pkl"
     use_session_model = False
 
-    user_calib = input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
+    user_calib = (
+        input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
+    )
     if user_calib in ("", "y", "yes"):
         try:
             logging.info("Starting session calibration. Please follow the prompts.")
@@ -677,10 +693,14 @@ def session_calibration(lsl_handler):
                 save_dir="models",
                 verbose=True,
             )
-            logging.info("Session calibration complete. Using session-specific models and scalers.")
+            logging.info(
+                "Session calibration complete. Using session-specific models and scalers."
+            )
             use_session_model = True
         except (FileNotFoundError, ValueError, RuntimeError) as e:
-            logging.error("Session calibration failed: %s. Proceeding with pre-trained models.", e)
+            logging.error(
+                "Session calibration failed: %s. Proceeding with pre-trained models.", e
+            )
             use_session_model = False
     else:
         logging.info("Skipping session calibration. Using pre-trained models.")
@@ -732,7 +752,10 @@ def initialize_pipeline(
             }
             pipeline.scalers["eegnet"] = joblib.load(session_scaler_path_eegnet)
             pipeline.models["shallow"] = {
-                "model": load_model(session_model_path_shallow, custom_objects={"square": square, "log": log}),
+                "model": load_model(
+                    session_model_path_shallow,
+                    custom_objects={"square": square, "log": log},
+                ),
                 "optimized": False,
             }
             pipeline.scalers["shallow"] = joblib.load(session_scaler_path_shallow)
@@ -741,7 +764,8 @@ def initialize_pipeline(
             )
         except (FileNotFoundError, ValueError) as e:
             logging.error(
-                "Failed to load session-specific model/scaler: %s. Using pre-trained.", e
+                "Failed to load session-specific model/scaler: %s. Using pre-trained.",
+                e,
             )
             pipeline.load_optimized_models()
     else:
@@ -757,9 +781,9 @@ def eegnet_only_prediction(pipeline, prediction_count):
     Process: Runs EEGNet prediction, logs result
     Output: Updated prediction_count
     """
-    window = np.array(
-        list(pipeline.buffer)[-pipeline.window_size:]
-    ).reshape((1, pipeline.window_size, pipeline.n_channels))
+    window = np.array(list(pipeline.buffer)[-pipeline.window_size :]).reshape(
+        (1, pipeline.window_size, pipeline.n_channels)
+    )
     result = pipeline.predict_eegnet(window)
     if result:
         probs, confidence = result
@@ -767,7 +791,10 @@ def eegnet_only_prediction(pipeline, prediction_count):
         pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
         prediction_count += 1
         logging.info(
-            "[%4d] %8s (conf: %.3f) [EEGNet only]", prediction_count, pred_label.upper(), confidence
+            "[%4d] %8s (conf: %.3f) [EEGNet only]",
+            prediction_count,
+            pred_label.upper(),
+            confidence,
         )
     return prediction_count
 
@@ -790,9 +817,13 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
                 add_samples_to_buffer(pipeline, window)
                 if pipeline.is_ready_for_prediction():
                     if show_ensemble:
-                        prediction_count = process_prediction(pipeline, prediction_count)
+                        prediction_count = process_prediction(
+                            pipeline, prediction_count
+                        )
                     else:
-                        prediction_count = eegnet_only_prediction(pipeline, prediction_count)
+                        prediction_count = eegnet_only_prediction(
+                            pipeline, prediction_count
+                        )
             time.sleep(0.001)
     except KeyboardInterrupt:
         logging.info("Stopping real-time prediction...")

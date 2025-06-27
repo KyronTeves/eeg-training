@@ -124,7 +124,8 @@ class LSLStreamHandler:
             if time.time() - start_time > timeout:
                 logging.warning(
                     "Timeout collecting window. Got %d/%d samples",
-                    len(collected_data), window_size
+                    len(collected_data),
+                    window_size,
                 )
                 return None
 

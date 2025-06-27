@@ -74,6 +74,7 @@ def test_load_config_keys():
 # Data Validation Tests
 # ----------------------
 
+
 @pytest.mark.parametrize(
     "arr,should_raise",
     [
@@ -228,7 +229,10 @@ class TestIntegration:
         """Test error handling for missing config file in windowing and training scripts."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # No config file created
-            env = {**os.environ, "CONFIG_PATH": os.path.join(tmpdir, "missing_config.json")}
+            env = {
+                **os.environ,
+                "CONFIG_PATH": os.path.join(tmpdir, "missing_config.json"),
+            }
             # Windowing script should fail
             result = subprocess.run(
                 [sys.executable, "window_eeg_data.py"],

@@ -23,8 +23,13 @@ from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import (check_labels_valid, check_no_nan, extract_features,
-                   load_config, setup_logging)
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    extract_features,
+    load_config,
+    setup_logging,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 
@@ -208,7 +213,9 @@ def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
         )
         logging.info(
             f"{model_name} Classification Report:\n%s",
-            classification_report(y_true_labels, y_pred_labels, target_names=_le.classes_),
+            classification_report(
+                y_true_labels, y_pred_labels, target_names=_le.classes_
+            ),
         )
         model.save(model_path)
         logging.info("%s saved to %s", model_name, model_path)
@@ -248,7 +255,10 @@ def train_tree_models(_x_features, _y_encoded, _config, _le):
         classification_report(y_test_tree, rf_pred, target_names=_le.classes_),
     )
     xgb = XGBClassifier(
-        n_estimators=100, random_state=42, use_label_encoder=False, eval_metric="mlogloss"
+        n_estimators=100,
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric="mlogloss",
     )
     xgb.fit(x_train_scaled_tree, y_train_tree)
     xgb_pred = xgb.predict(x_test_scaled_tree)
