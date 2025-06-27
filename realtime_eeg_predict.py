@@ -260,7 +260,7 @@ class OptimizedPredictionPipeline:
         Process: Slices buffer to window size
         Output: np.ndarray of shape (1, window_size, n_channels)
         """
-        return np.array(list(self.buffer)[-self.window_size :]).reshape(
+        return np.array(list(self.buffer)[-self.window_size:]).reshape(
             (1, self.window_size, self.n_channels)
         )
 
@@ -545,11 +545,14 @@ class OptimizedPredictionPipeline:
 
         def _async_prediction_loop():
             while not self.stop_thread:
-                if self.is_ready_for_prediction():
-                    result = self.predict_realtime()
-                    if result and callback:
-                        callback(result)
-                    self.prediction_ready.set()
+                try:
+                    if self.is_ready_for_prediction():
+                        result = self.predict_realtime()
+                        if result and callback:
+                            callback(result)
+                        self.prediction_ready.set()
+                except RuntimeError as e:
+                    logging.error("Unexpected runtime error in prediction loop: %s", e, exc_info=True)
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
 
@@ -594,7 +597,7 @@ def process_prediction(pipeline, prediction_count):
         status = "✓" if confidence > config["CONFIDENCE_THRESHOLD"] else "?"
 
         # Get individual model predictions for detailed output
-        window = np.array(list(pipeline.buffer)[-pipeline.window_size :])
+        window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
         window = window.reshape((1, pipeline.window_size, pipeline.n_channels))
 
         # EEGNet
@@ -781,7 +784,7 @@ def eegnet_only_prediction(pipeline, prediction_count):
     Process: Runs EEGNet prediction, logs result
     Output: Updated prediction_count
     """
-    window = np.array(list(pipeline.buffer)[-pipeline.window_size :]).reshape(
+    window = np.array(list(pipeline.buffer)[-pipeline.window_size:]).reshape(
         (1, pipeline.window_size, pipeline.n_channels)
     )
     result = pipeline.predict_eegnet(window)
