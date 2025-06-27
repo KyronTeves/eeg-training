@@ -17,11 +17,11 @@ import tempfile
 import numpy as np
 import pandas as pd
 import pytest
-import tensorflow as tf
 from keras.models import load_model
 
 from EEGModels import EEGNet, ShallowConvNet
 from utils import check_labels_valid, check_no_nan, load_config, window_data
+from utils import CUSTOM_OBJECTS
 
 # Add a default timeout for all subprocess.run calls
 DEFAULT_TIMEOUT = 30  # seconds
@@ -140,14 +140,7 @@ def test_model_train_save_load(model_class, model_name):
         assert os.path.exists(model_path)
         if model_name == "shallow":
             # Provide custom objects for ShallowConvNet
-            def square(x):
-                """Return the element-wise square of the input tensor."""
-                return tf.math.square(x)
-
-            def log(x):
-                return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
-
-            loaded = load_model(model_path, custom_objects={"square": square, "log": log})
+            loaded = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
         else:
             loaded = load_model(model_path)
         assert loaded is not None
@@ -221,7 +214,7 @@ class TestIntegration:
             if x.ndim == 3:
                 x = x[..., np.newaxis]
             shallow_model = load_model(
-                config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
+                config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS
             )
             shallow_preds = shallow_model.predict(x[:5])
             assert shallow_preds.shape[0] == 5
@@ -264,14 +257,6 @@ class TestIntegration:
                 or "not found" in result.stderr
                 or "FileNotFoundError" in result.stderr
             )
-
-
-def square(x):
-    return tf.math.square(x)
-
-
-def log(x):
-    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
 
 
 def test_model_prediction_after_training():
@@ -324,9 +309,8 @@ def test_model_prediction_after_training():
         )  # nosec B603
         # 3. Load model and run prediction
         x = np.load(config["WINDOWED_NPY"])
-
         try:
-            model = load_model(config["MODEL_EEGNET"], custom_objects={"square": square, "log": log})
+            model = load_model(config["MODEL_EEGNET"], custom_objects=CUSTOM_OBJECTS)
         except TypeError:
             # If EEGNet does not use custom objects, fallback
             model = load_model(config["MODEL_EEGNET"])

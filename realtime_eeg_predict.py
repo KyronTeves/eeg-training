@@ -23,21 +23,12 @@ from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
 from utils import (
+    CUSTOM_OBJECTS,
     calibrate_all_models_lsl,  # use the new unified calibration
     extract_features,
     load_config,
     setup_logging,
 )
-
-
-def square(x):
-    """Return the element-wise square of the input tensor."""
-    return tf.math.square(x)
-
-
-def log(x):
-    """Return the element-wise natural logarithm of the input tensor, clipped for stability."""
-    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
 
 
 # Suppress TensorFlow warnings and info messages
@@ -116,8 +107,7 @@ class OptimizedPredictionPipeline:
 
             self.models["shallow"] = {
                 "model": load_model(
-                    self.config["MODEL_SHALLOW"],
-                    custom_objects={"square": square, "log": log},
+                    self.config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS
                 ),
                 "optimized": False,
             }
@@ -157,7 +147,7 @@ class OptimizedPredictionPipeline:
         try:
             # Load original model
             if "shallow" in model_path.lower():
-                model = load_model(model_path, custom_objects={"square": square})
+                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
             else:
                 model = load_model(model_path)
 
@@ -186,7 +176,7 @@ class OptimizedPredictionPipeline:
             )
             if "shallow" in model_path.lower():
                 return {
-                    "model": load_model(model_path, custom_objects={"square": square}),
+                    "model": load_model(model_path, custom_objects=CUSTOM_OBJECTS),
                     "optimized": False,
                 }
 
@@ -752,8 +742,7 @@ def initialize_pipeline(
             pipeline.scalers["eegnet"] = joblib.load(session_scaler_path_eegnet)
             pipeline.models["shallow"] = {
                 "model": load_model(
-                    session_model_path_shallow,
-                    custom_objects={"square": square, "log": log},
+                    session_model_path_shallow, custom_objects=CUSTOM_OBJECTS
                 ),
                 "optimized": False,
             }
@@ -837,6 +826,12 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
 
 
 def main():
+    """
+    Main entry point for real-time EEG prediction using LSL streaming.
+
+    Initializes logging, loads configuration, connects to LSL stream, handles session calibration,
+    selects prediction mode, initializes the prediction pipeline, and starts the prediction loop.
+    """
     setup_logging()
     config = load_config()
     logging.info("Starting LSL-based real-time EEG prediction...")
@@ -871,6 +866,11 @@ def main():
 
 
 def test_models_without_lsl():
+    """
+    Test model loading and prediction functionality without requiring an LSL stream.
+
+    Loads models, performs a fake prediction, and logs the results for verification.
+    """
     setup_logging()
     config = load_config()
     logging.info("Testing model loading and prediction (no LSL required)...")

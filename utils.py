@@ -26,6 +26,7 @@ from scipy.signal import welch
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
+import tensorflow as tf
 
 from EEGModels import ShallowConvNet
 
@@ -438,3 +439,27 @@ def calibrate_all_models_lsl(
     calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_dir)
 
     print("Session calibration complete. All models saved.")
+
+
+def square(x):
+    """
+    Compute the element-wise square of a tensor using TensorFlow.
+
+    Input: x (Tensor) - input tensor
+    Output: Tensor with each element squared
+    """
+    return tf.math.square(x)
+
+
+def log(x):
+    """
+    Compute the element-wise natural logarithm of a tensor using TensorFlow,
+    with values clipped to avoid log(0).
+
+    Input: x (Tensor) - input tensor
+    Output: Tensor with the natural logarithm applied element-wise
+    """
+    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
+
+
+CUSTOM_OBJECTS = {"square": square, "log": log}

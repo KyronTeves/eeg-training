@@ -17,13 +17,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import tensorflow as tf
 from keras.models import load_model  # type: ignore
 from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
 from umap import UMAP
 
 from utils import (
+    CUSTOM_OBJECTS,
     check_labels_valid,
     check_no_nan,
     extract_features,
@@ -31,16 +31,6 @@ from utils import (
     setup_logging,
     window_data,
 )
-
-
-def square(x):
-    """Return the element-wise square of the input tensor."""
-    return tf.math.square(x)
-
-
-def log(x):
-    """Return the element-wise natural logarithm of the input tensor, with a lower bound for stability."""
-    return tf.math.log(tf.math.maximum(x, 1e-7))
 
 
 def ensemble_hard_voting(
@@ -351,7 +341,7 @@ def main():
     x_features_scaled = scaler_tree.transform(x_features)
     # Load models
     eegnet = load_model(config["MODEL_EEGNET"])
-    shallow = load_model(config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log})
+    shallow = load_model(config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS)
     rf = joblib.load(config["MODEL_RF"])
     xgb = joblib.load(config["MODEL_XGB"])
     # Predict
