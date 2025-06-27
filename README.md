@@ -9,6 +9,7 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 ---
 
 ## Features
+
 - **LSL Streaming**: Collect EEG data from OpenBCI GUI (pre-filtered)
 - **Multiple Models**: EEGNet, ShallowConvNet, Random Forest, XGBoost
 - **Optimized Pipeline**: Modular, configuration-driven, and supports session calibration
@@ -18,7 +19,8 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 - **Session Calibration**: Optional per-user fine-tuning
 
 ## Project Structure
-```
+
+```plaintext
 .
 ├── collect_data.py         # Collect EEG data via LSL streaming from OpenBCI GUI
 ├── window_eeg_data.py      # Segment raw EEG CSV into overlapping windows
@@ -40,37 +42,47 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 ## Setup & Quickstart
 
 ### Prerequisites
+
 - Python 3.8+
 - OpenBCI Cyton board (or compatible EEG device)
 - OpenBCI GUI (for LSL streaming)
 
 ### Installation
+
 1. Clone the repository:
+
    ```sh
    git clone https://github.com/KyronTeves/eeg-training.git
    cd eeg-training
    ```
+
 2. Create and activate a virtual environment:
+
    ```sh
    python -m venv venv
    venv\Scripts\activate  # On Windows
    # or
    source venv/bin/activate  # On macOS/Linux
    ```
+
 3. Install dependencies:
+
    ```sh
    pip install -r requirements.txt
    ```
 
 ### LSL Streaming Setup
+
 - Start OpenBCI GUI and connect to your board
 - Configure filters (e.g., 1-50 Hz bandpass, 50/60 Hz notch)
 - Enable LSL streaming in the GUI (stream name: "OpenBCIGUI")
 
 ### Configure System
+
 - Edit `config.json` to match your hardware and preferences
 
 ### Run Pipeline
+
 ```sh
 python collect_data.py          # Collect data
 python window_eeg_data.py       # Segment and window data
@@ -95,30 +107,37 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 - Real-time prediction and ensemble logic are experimental
 
 ## Real-time Output Example
-```
+
+```plaintext
 [  42] ✓ LEFT     (ens:0.569) | EEG:lef(0.443) SH:lef(0.512) RF:lef(0.510) XGB:lef(0.766)
 ```
+
 - `✓` = High confidence prediction
 - `?` = Low confidence (neutral or uncertain)
 - Model confidences shown for each model
 
 ## Troubleshooting
+
 - Ensure OpenBCI GUI is running and LSL streaming is enabled
 - Check that `pylsl` is installed and stream name matches config
 - For model errors, retrain using `train_eeg_model.py` and check data quality
 - For performance issues, adjust window size, batch size, or confidence threshold in config
 
 ## Contributing
+
 Pull requests are welcome. For major changes, please open an issue first to discuss.
+
 - Follow PEP8 and Pylint guidelines
 - Add or update docstrings for new functions
 - Add tests for new utilities in `test_system.py`
 - Update README for new features or changes
 
 ## License
+
 See LICENSE.TXT for details. Portions of this project are released under Creative Commons Zero 1.0 (CC0) and Apache 2.0, as described in `EEGModels.py`.
 
 ## References
+
 - [EEGNet: A Compact Convolutional Neural Network for EEG-based Brain–Computer Interfaces](https://doi.org/10.1088/1741-2552/aace8c)
 - [Deep Learning with Convolutional Neural Networks for EEG Decoding and Visualization](https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.23730)
 - [Lab Streaming Layer (LSL)](https://labstreaminglayer.readthedocs.io/)
