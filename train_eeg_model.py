@@ -27,6 +27,7 @@ from utils import (
     check_no_nan,
     extract_features,
     load_config,
+    log_function_call,
     setup_logging,
 )
 
@@ -59,6 +60,7 @@ def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
     return x_aug
 
 
+@log_function_call
 def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
     """
     Train and evaluate EEGNet or ShallowConvNet model.
@@ -155,6 +157,7 @@ def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
         logging.info("%s saved to %s", model_name, model_path)
 
 
+@log_function_call
 def train_tree_models(_x_features, _y_encoded, _config, _le):
     """
     Train and evaluate Random Forest and XGBoost models.
@@ -207,6 +210,7 @@ def train_tree_models(_x_features, _y_encoded, _config, _le):
     joblib.dump(scaler_tree, _config["SCALER_TREE"])
 
 
+@log_function_call
 def main():
     """
     Main function to orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models

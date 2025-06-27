@@ -19,11 +19,13 @@ from utils import (
     load_config,
     setup_logging,
     window_data,
+    log_function_call,  # Import the decorator
 )
 
 setup_logging()  # Set up consistent logging to file and console
 
 
+@log_function_call
 def load_and_filter_data(config: dict) -> pd.DataFrame:
     """
     Load EEG data from CSV and filter by session types if specified in config.
@@ -63,6 +65,7 @@ def load_and_filter_data(config: dict) -> pd.DataFrame:
     return raw_data
 
 
+@log_function_call
 def process_and_window_data(
     df: pd.DataFrame, config: dict
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -92,6 +95,7 @@ def process_and_window_data(
     return window_data(x, labels, config["WINDOW_SIZE"], config["STEP_SIZE"])
 
 
+@log_function_call
 def save_windowed_data(
     x_windows: np.ndarray, y_windows: np.ndarray, config: dict
 ) -> None:
@@ -115,6 +119,7 @@ def save_windowed_data(
         raise
 
 
+@log_function_call
 def main():
     """
     Main entry point for windowing EEG data for model training.

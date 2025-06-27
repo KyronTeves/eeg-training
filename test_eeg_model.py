@@ -30,6 +30,7 @@ from utils import (
     load_config,
     setup_logging,
     window_data,
+    log_function_call,
 )
 
 
@@ -66,6 +67,7 @@ def ensemble_hard_voting(
     return pred_ensemble_labels
 
 
+@log_function_call
 def log_sample_predictions(
     y_true_str,
     pred_eegnet_str,
@@ -154,6 +156,7 @@ def log_sample_predictions(
     )
 
 
+@log_function_call
 def evaluate_model(y_true, y_pred, label_encoder, model_name):
     """Log confusion matrix and classification report for a model.
 
@@ -298,6 +301,7 @@ def plot_feature_distributions(
         logging.info("Saved feature distribution plot to %s", fname)
 
 
+@log_function_call
 def main():
     """Main evaluation pipeline for EEG models on held-out test data windows.
 

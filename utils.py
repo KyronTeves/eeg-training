@@ -139,14 +139,34 @@ def window_data(
     return x_windows, y_windows
 
 
-def setup_logging(logfile: str = "eeg_training.log"):
+def log_function_call(func):
+    """
+    Decorator to log entry and exit of a function.
+    """
+
+    import functools
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        logging.info("Entering %s", func.__name__)
+        result = func(*args, **kwargs)
+        logging.info("Exiting %s", func.__name__)
+        return result
+
+    return wrapper
+
+
+def setup_logging(logfile: str = "eeg_training.log", default_level: str = None):
     """
     Set up logging to both console and file with rotation.
-
-    Input: logfile (str)
+    Log level can be set via LOG_LEVEL env var or argument.
+    Input: logfile (str), default_level (str)
     Process: Configures logging handlers and formatters
     Output: None (side effect: logging configured)
     """
+    # Determine log level
+    level_str = os.environ.get("LOG_LEVEL", default_level or "INFO")
+    level = getattr(logging, level_str.upper(), logging.INFO)
 
     # Create rotating file handler (10MB max, keep 5 backup files)
     file_handler = RotatingFileHandler(
@@ -165,7 +185,7 @@ def setup_logging(logfile: str = "eeg_training.log"):
     console_handler.setFormatter(formatter)
 
     # Configure root logger
-    logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
+    logging.basicConfig(level=level, handlers=[console_handler, file_handler])
 
 
 def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
