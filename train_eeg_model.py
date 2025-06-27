@@ -28,6 +28,7 @@ from utils import (
     extract_features,
     load_config,
     log_function_call,
+    handle_errors,
     setup_logging,
 )
 
@@ -210,6 +211,7 @@ def train_tree_models(_x_features, _y_encoded, _config, _le):
     joblib.dump(scaler_tree, _config["SCALER_TREE"])
 
 
+@handle_errors
 @log_function_call
 def main():
     """

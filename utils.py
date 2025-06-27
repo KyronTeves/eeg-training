@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+import functools
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from typing import Tuple
@@ -143,8 +144,6 @@ def log_function_call(func):
     """
     Decorator to log entry and exit of a function.
     """
-
-    import functools
 
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
@@ -483,3 +482,45 @@ def log(x):
 
 
 CUSTOM_OBJECTS = {"square": square, "log": log}
+
+
+class EEGSystemError(Exception):
+    """
+    Base exception for EEG system errors.
+    """
+
+
+class DataLoadError(EEGSystemError):
+    """
+    Raised when data loading fails.
+    """
+
+
+class ModelLoadError(EEGSystemError):
+    """
+    Raised when model loading fails.
+    """
+
+
+class ConfigError(EEGSystemError):
+    """
+    Raised when configuration is invalid or missing.
+    """
+
+
+def handle_errors(main_func):
+    """
+    Decorator to catch and log uncaught exceptions in script entry points.
+    """
+
+    @functools.wraps(main_func)
+    def wrapper(*args, **kwargs):
+        try:
+            return main_func(*args, **kwargs)
+        except EEGSystemError as e:
+            logging.error("EEGSystemError: %s", e)
+            raise
+        except Exception as e:
+            logging.exception("Unhandled exception: %s", e)
+            raise
+    return wrapper

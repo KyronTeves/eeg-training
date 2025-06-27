@@ -19,7 +19,8 @@ from utils import (
     load_config,
     setup_logging,
     window_data,
-    log_function_call,  # Import the decorator
+    log_function_call,
+    handle_errors,  # Import error handler
 )
 
 setup_logging()  # Set up consistent logging to file and console
@@ -119,6 +120,7 @@ def save_windowed_data(
         raise
 
 
+@handle_errors
 @log_function_call
 def main():
     """

@@ -31,6 +31,7 @@ from utils import (
     setup_logging,
     window_data,
     log_function_call,
+    handle_errors,
 )
 
 
@@ -301,6 +302,7 @@ def plot_feature_distributions(
         logging.info("Saved feature distribution plot to %s", fname)
 
 
+@handle_errors
 @log_function_call
 def main():
     """Main evaluation pipeline for EEG models on held-out test data windows.
