@@ -19,6 +19,7 @@ from typing import Tuple
 import joblib
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
@@ -26,7 +27,6 @@ from scipy.signal import welch
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
-import tensorflow as tf
 
 from EEGModels import ShallowConvNet
 

@@ -300,16 +300,18 @@ def preprocess_and_augment(X_windows, y_cat, config):
     Returns:
         tuple: (X_train_final, y_train_final, X_test_scaled, y_test, scaler)
     """
+
     def balance_and_augment(X_train_scaled, y_train):
         """Balance classes by downsampling and augment the data."""
         labels = np.argmax(y_train, axis=1)
         unique, counts = np.unique(labels, return_counts=True)
         min_count = np.min(counts)
-        indices_per_class = [
-            np.nonzero(labels == i)[0] for i in range(len(unique))
-        ]
+        indices_per_class = [np.nonzero(labels == i)[0] for i in range(len(unique))]
         downsampled_indices = np.concatenate(
-            [np.random.choice(idxs, min_count, replace=False) for idxs in indices_per_class]
+            [
+                np.random.choice(idxs, min_count, replace=False)
+                for idxs in indices_per_class
+            ]
         )
         np.random.shuffle(downsampled_indices)
         X_train_bal = X_train_scaled[downsampled_indices]
@@ -326,10 +328,12 @@ def preprocess_and_augment(X_windows, y_cat, config):
     scaler = StandardScaler()
     X_train_flat = X_train.reshape(-1, config["N_CHANNELS"])
     scaler.fit(X_train_flat)
-    X_train_scaled = scaler.transform(X_train.reshape(-1, config["N_CHANNELS"])).reshape(
-        X_train.shape
+    X_train_scaled = scaler.transform(
+        X_train.reshape(-1, config["N_CHANNELS"])
+    ).reshape(X_train.shape)
+    X_test_scaled = scaler.transform(X_test.reshape(-1, config["N_CHANNELS"])).reshape(
+        X_test.shape
     )
-    X_test_scaled = scaler.transform(X_test.reshape(-1, config["N_CHANNELS"])).reshape(X_test.shape)
     X_train_final, y_train_final = balance_and_augment(X_train_scaled, y_train)
     return X_train_final, y_train_final, X_test_scaled, y_test, scaler
 
@@ -371,7 +375,8 @@ def extract_features_parallel(X_windows, config):
     """
     return np.array(
         Parallel(n_jobs=-1, prefer="threads")(
-            delayed(extract_features)(window, config["SAMPLING_RATE"]) for window in X_windows
+            delayed(extract_features)(window, config["SAMPLING_RATE"])
+            for window in X_windows
         )
     )
 

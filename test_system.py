@@ -20,8 +20,13 @@ import pytest
 from keras.models import load_model
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import check_labels_valid, check_no_nan, load_config, window_data
-from utils import CUSTOM_OBJECTS
+from utils import (
+    CUSTOM_OBJECTS,
+    check_labels_valid,
+    check_no_nan,
+    load_config,
+    window_data,
+)
 
 # Add a default timeout for all subprocess.run calls
 DEFAULT_TIMEOUT = 30  # seconds

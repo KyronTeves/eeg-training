@@ -22,14 +22,8 @@ import tensorflow as tf
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import (
-    CUSTOM_OBJECTS,
-    calibrate_all_models_lsl,  # use the new unified calibration
-    extract_features,
-    load_config,
-    setup_logging,
-)
-
+from utils import calibrate_all_models_lsl  # use the new unified calibration
+from utils import CUSTOM_OBJECTS, extract_features, load_config, setup_logging
 
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -246,7 +240,7 @@ class OptimizedPredictionPipeline:
         Process: Slices buffer to window size
         Output: np.ndarray of shape (1, window_size, n_channels)
         """
-        return np.array(list(self.buffer)[-self.window_size:]).reshape(
+        return np.array(list(self.buffer)[-self.window_size :]).reshape(
             (1, self.window_size, self.n_channels)
         )
 
@@ -538,7 +532,11 @@ class OptimizedPredictionPipeline:
                             callback(result)
                         self.prediction_ready.set()
                 except RuntimeError as e:
-                    logging.error("Unexpected runtime error in prediction loop: %s", e, exc_info=True)
+                    logging.error(
+                        "Unexpected runtime error in prediction loop: %s",
+                        e,
+                        exc_info=True,
+                    )
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
 
@@ -583,7 +581,7 @@ def process_prediction(pipeline, prediction_count):
         status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
 
         # Get individual model predictions for detailed output
-        window = np.array(list(pipeline.buffer)[-pipeline.window_size:])
+        window = np.array(list(pipeline.buffer)[-pipeline.window_size :])
         window = window.reshape((1, pipeline.window_size, pipeline.n_channels))
 
         # EEGNet
@@ -769,7 +767,7 @@ def eegnet_only_prediction(pipeline, prediction_count):
     Process: Runs EEGNet prediction, logs result
     Output: Updated prediction_count
     """
-    window = np.array(list(pipeline.buffer)[-pipeline.window_size:]).reshape(
+    window = np.array(list(pipeline.buffer)[-pipeline.window_size :]).reshape(
         (1, pipeline.window_size, pipeline.n_channels)
     )
     result = pipeline.predict_eegnet(window)
@@ -900,6 +898,7 @@ def test_models_without_lsl():
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         test_models_without_lsl()
     else:

@@ -8,8 +8,8 @@ Process: Loads test data and models, applies windowing and scaling, computes pre
 Output: Evaluation metrics, predictions, and logs.
 """
 
-import os
 import logging
+import os
 from collections import Counter
 
 import joblib
@@ -222,7 +222,9 @@ def plot_tsne_features(
         plt.figure(figsize=(8, 6))
         for label in np.unique(labels_str):
             idx = labels_str == label
-            plt.scatter(x_reduced[idx, 0], x_reduced[idx, 1], label=label, alpha=0.6, s=20)
+            plt.scatter(
+                x_reduced[idx, 0], x_reduced[idx, 1], label=label, alpha=0.6, s=20
+            )
         plt.legend()
         plt.title(title)
         plt.xlabel("Component 1")
@@ -259,7 +261,12 @@ def plot_tsne_features(
 
 
 def plot_feature_distributions(
-    x_features, y_labels, label_encoder, feature_indices=None, max_features=5, save_dir="plots"
+    x_features,
+    y_labels,
+    label_encoder,
+    feature_indices=None,
+    max_features=5,
+    save_dir="plots",
 ):
     """Plot histograms for selected features across classes and save to file."""
     os.makedirs(save_dir, exist_ok=True)
@@ -331,7 +338,9 @@ def main():
     x_windows, y_windows = window_data(x, labels, window_size, step_size)
     le = joblib.load(config["LABEL_ENCODER"])
     scaler = joblib.load(config["SCALER_EEGNET"])
-    x_windows_scaled = scaler.transform(x_windows.reshape(-1, n_channels)).reshape(x_windows.shape)
+    x_windows_scaled = scaler.transform(x_windows.reshape(-1, n_channels)).reshape(
+        x_windows.shape
+    )
     y_windows = le.transform(y_windows.ravel())
     # Feature extraction for tree models
     x_features = np.array(
@@ -346,19 +355,11 @@ def main():
     xgb = joblib.load(config["MODEL_XGB"])
     # Predict
     pred_eegnet_labels = np.argmax(
-        eegnet.predict(
-            np.expand_dims(
-                np.transpose(x_windows_scaled, (0, 2, 1)), -1
-            )
-        ),
+        eegnet.predict(np.expand_dims(np.transpose(x_windows_scaled, (0, 2, 1)), -1)),
         axis=1,
     )
     pred_shallow_labels = np.argmax(
-        shallow.predict(
-            np.expand_dims(
-                np.transpose(x_windows_scaled, (0, 2, 1)), -1
-            )
-        ),
+        shallow.predict(np.expand_dims(np.transpose(x_windows_scaled, (0, 2, 1)), -1)),
         axis=1,
     )
     pred_rf_labels = rf.predict(x_features_scaled)

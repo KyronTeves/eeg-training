@@ -19,7 +19,9 @@ from lsl_stream_handler import LSLStreamHandler
 from utils import check_labels_valid, check_no_nan, load_config, setup_logging
 
 
-def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
+def get_session_phases(
+    session_type: str, label: str, config: dict
+) -> list[tuple[int, str]]:
     """
     Get the list of (duration, label) phases for a given session type.
 
@@ -37,7 +39,11 @@ def get_session_phases(session_type: str, label: str, config: dict) -> list[tupl
 
 
 def collect_phase_data(
-    lsl_handler: LSLStreamHandler, phase_duration: int, phase_label: str, label: str, config: dict
+    lsl_handler: LSLStreamHandler,
+    phase_duration: int,
+    phase_label: str,
+    label: str,
+    config: dict,
 ) -> tuple[list, list]:
     """
     Collect EEG data and timestamps for a single phase.
@@ -60,7 +66,9 @@ def collect_phase_data(
         phase_data_np = np.array(phase_data)
         try:
             check_no_nan(phase_data_np, name="Phase EEG data")
-            check_labels_valid([label], valid_labels=config["LABELS"], name="Phase label")
+            check_labels_valid(
+                [label], valid_labels=config["LABELS"], name="Phase label"
+            )
         except ValueError as e:
             logging.error("Data validation failed for phase '%s': %s", phase_label, e)
             return [], []
@@ -157,7 +165,9 @@ def run_trials_for_label(lsl_handler, session_type, label, writer, total_rows, c
     Output: Updated total_rows
     """
     for trial in range(config["TRIALS_PER_LABEL"]):
-        logging.info("\nTrial %d/%d for '%s'", trial + 1, config["TRIALS_PER_LABEL"], label)
+        logging.info(
+            "\nTrial %d/%d for '%s'", trial + 1, config["TRIALS_PER_LABEL"], label
+        )
 
         # Pause between trials
         if trial > 0:
