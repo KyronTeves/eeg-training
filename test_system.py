@@ -8,7 +8,6 @@ Process: Tests data windowing, config loading, validation, model training, and i
 Output: Test results (pass/fail), error messages, and logs
 """
 
-import json
 import os
 import subprocess  # nosec B404
 import sys
@@ -26,6 +25,7 @@ from utils import (
     check_no_nan,
     load_config,
     window_data,
+    save_json,  # Add save_json utility
 )
 
 # Add a default timeout for all subprocess.run calls
@@ -34,8 +34,7 @@ DEFAULT_TIMEOUT = 30  # seconds
 
 def test_window_data_shape():
     """Test that window_data returns correct shapes."""
-    x = np.random.randn(1000, 16)
-    y = np.random.choice(["left", "right", "neutral"], size=(1000, 1))
+    x, y = make_synthetic_eeg_data(n_samples=1000, n_channels=16)
     x_windows, y_windows = window_data(x, y, window_size=250, step_size=125)
     assert x_windows.shape[1:] == (250, 16)
     assert x_windows.shape[0] == y_windows.shape[0]
@@ -43,8 +42,7 @@ def test_window_data_shape():
 
 def test_window_data_output():
     """Test window_data produces correct windowed output and label consistency."""
-    x = np.random.randn(500, 8)  # 500 samples, 8 channels
-    y = np.random.choice(["left", "right"], size=(500, 1))
+    x, y = make_synthetic_eeg_data(n_samples=500, n_channels=8, labels=["left", "right"])
     window_size = 100
     step_size = 50
     x_windows, y_windows = window_data(x, y, window_size, step_size)
@@ -188,8 +186,7 @@ class TestIntegration:
                 "SCALER_SHALLOW": os.path.join(tmpdir, "scaler_shallow.pkl"),
                 "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
             }
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f)
+            save_json(config, config_path)
             # 3. Run windowing script
             subprocess.run(
                 [sys.executable, "window_eeg_data.py"],
@@ -292,8 +289,7 @@ def test_model_prediction_after_training():
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f)
+        save_json(config, config_path)
         # 2. Run windowing and training scripts
         env = {**os.environ, "CONFIG_PATH": config_path}
         subprocess.run(
@@ -353,8 +349,7 @@ def test_windowed_npy_content():
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f)
+        save_json(config, config_path)
         env = {**os.environ, "CONFIG_PATH": config_path}
         subprocess.run(
             [sys.executable, "window_eeg_data.py"],
@@ -400,8 +395,7 @@ def test_windowing_with_malformed_csv():
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f)
+        save_json(config, config_path)
         env = {**os.environ, "CONFIG_PATH": config_path}
         # Run windowing script and expect failure
         result = subprocess.run(
@@ -440,8 +434,7 @@ def test_training_with_wrong_shape_npy():
             "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
         }
         config_path = os.path.join(tmpdir, "config.json")
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f)
+        save_json(config, config_path)
         # Write wrong-shape .npy files
         np.save(
             config["WINDOWED_NPY"], np.random.randn(5, 5, 5)
@@ -466,6 +459,18 @@ def test_training_with_wrong_shape_npy():
             or "exception" in result.stderr.lower()
             or "traceback" in result.stderr.lower()
         )
+
+
+# TEST UTILITIES
+
+def make_synthetic_eeg_data(n_samples=1000, n_channels=8, labels=None):
+    """Factory for synthetic EEG data and labels."""
+    x = np.random.randn(n_samples, n_channels)
+    if labels is None:
+        labels = np.random.choice(["left", "right", "neutral"], size=(n_samples, 1))
+    else:
+        labels = np.random.choice(labels, size=(n_samples, 1))
+    return x, labels
 
 
 if __name__ == "__main__":

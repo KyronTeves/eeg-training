@@ -90,8 +90,7 @@ def load_config(path: str = None) -> dict:
     """
     if path is None:
         path = os.environ.get("CONFIG_PATH", "config.json")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    return load_json(path)
 
 
 def window_data(
@@ -524,3 +523,15 @@ def handle_errors(main_func):
             logging.exception("Unhandled exception: %s", e)
             raise
     return wrapper
+
+
+def save_json(data, path):
+    """Save a dictionary as a JSON file."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def load_json(path):
+    """Load a dictionary from a JSON file."""
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
