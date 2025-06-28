@@ -9,6 +9,7 @@ Output: Windowed EEG data (.npy), windowed labels (.npy)
 """
 
 import logging
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -27,7 +28,7 @@ setup_logging()  # Set up consistent logging to file and console
 
 
 @log_function_call
-def load_and_filter_data(config: dict) -> pd.DataFrame:
+def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
     """
     Load EEG data from CSV and filter by session types if specified in config.
 
@@ -68,7 +69,7 @@ def load_and_filter_data(config: dict) -> pd.DataFrame:
 
 @log_function_call
 def process_and_window_data(
-    df: pd.DataFrame, config: dict
+    df: pd.DataFrame, config: dict[str, Any]
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Process DataFrame to extract EEG and labels, then create overlapping windows.
@@ -98,7 +99,7 @@ def process_and_window_data(
 
 @log_function_call
 def save_windowed_data(
-    x_windows: np.ndarray, y_windows: np.ndarray, config: dict
+    x_windows: np.ndarray, y_windows: np.ndarray, config: dict[str, Any]
 ) -> None:
     """
     Save windowed EEG data and labels to .npy files.
@@ -122,7 +123,7 @@ def save_windowed_data(
 
 @handle_errors
 @log_function_call
-def main():
+def main() -> None:
     """
     Main entry point for windowing EEG data for model training.
 

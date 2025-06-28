@@ -15,7 +15,7 @@ import time
 import functools
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, List
 
 import joblib
 import numpy as np
@@ -80,7 +80,7 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
     return np.array(features)
 
 
-def load_config(path: str = None) -> dict:
+def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     """
     Load configuration from a JSON file. If path is None, use the CONFIG_PATH environment variable
     or default to 'config.json'.
@@ -139,7 +139,7 @@ def window_data(
     return x_windows, y_windows
 
 
-def log_function_call(func):
+def log_function_call(func: Callable) -> Callable:
     """
     Decorator to log entry and exit of a function.
     """
@@ -154,7 +154,9 @@ def log_function_call(func):
     return wrapper
 
 
-def setup_logging(logfile: str = "eeg_training.log", default_level: str = None):
+def setup_logging(
+    logfile: str = "eeg_training.log", default_level: Optional[str] = None
+) -> None:
     """
     Set up logging to both console and file with rotation.
     Log level can be set via LOG_LEVEL env var or argument.
@@ -186,7 +188,7 @@ def setup_logging(logfile: str = "eeg_training.log", default_level: str = None):
     logging.basicConfig(level=level, handlers=[console_handler, file_handler])
 
 
-def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
+def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -> None:
     """
     Archive and rotate log file if it exceeds max_size_mb.
 
@@ -213,7 +215,7 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
         logging.info("Starting fresh log file with rotation enabled")
 
 
-def check_no_nan(x, name="data"):
+def check_no_nan(x: np.ndarray, name: str = "data") -> None:
     """
     Check for NaN values in a numpy array and raise error if found.
 
@@ -226,7 +228,9 @@ def check_no_nan(x, name="data"):
         raise ValueError(f"{name} contains NaN values.")
 
 
-def check_labels_valid(labels, valid_labels=None, name="labels"):
+def check_labels_valid(
+    labels: np.ndarray, valid_labels: Optional[List[Any]] = None, name: str = "labels"
+) -> None:
     """
     Check for NaN and invalid label values in an array.
 
@@ -244,7 +248,9 @@ def check_labels_valid(labels, valid_labels=None, name="labels"):
             raise ValueError(f"{name} contain invalid values: {invalid}")
 
 
-def collect_lsl_calib_data(lsl_stream_handler, config, seconds_per_class):
+def collect_lsl_calib_data(
+    lsl_stream_handler: Any, config: Dict[str, Any], seconds_per_class: int
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Collect calibration data from an LSL stream for each label class.
 
@@ -275,8 +281,14 @@ def collect_lsl_calib_data(lsl_stream_handler, config, seconds_per_class):
 
 
 def calibrate_deep_models(
-    config, x_model, y_cat, scaler, session_tag, save_dir, verbose
-):
+    config: Dict[str, Any],
+    x_model: np.ndarray,
+    y_cat: np.ndarray,
+    scaler: StandardScaler,
+    session_tag: str,
+    save_dir: str,
+    verbose: bool,
+) -> None:
     """
     Calibrate and save deep learning models (EEGNet and ShallowConvNet) for EEG classification.
 
@@ -355,7 +367,13 @@ def calibrate_deep_models(
     logging.info("ShallowConvNet session model saved to %s", shallow_out)
 
 
-def calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_dir):
+def calibrate_tree_models(
+    config: Dict[str, Any],
+    x_calib: np.ndarray,
+    y_calib_encoded: np.ndarray,
+    session_tag: str,
+    save_dir: str,
+) -> None:
     """
     Calibrate and save tree-based models (Random Forest, XGBoost) for EEG classification.
 
@@ -401,13 +419,13 @@ def calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_di
 
 
 def calibrate_all_models_lsl(
-    lsl_stream_handler,
-    config_path="config.json",
-    seconds_per_class=None,
-    session_tag=None,
-    save_dir="models",
-    verbose=True,
-):
+    lsl_stream_handler: Any,
+    config_path: str = "config.json",
+    seconds_per_class: Optional[int] = None,
+    session_tag: Optional[str] = None,
+    save_dir: str = "models",
+    verbose: bool = True,
+) -> None:
     """
     Unified, LSL-aware calibration for all models (EEGNet, ShallowConvNet, RF, XGBoost).
     Uses config for parameters and saves session-specific models/scalers.
@@ -459,7 +477,7 @@ def calibrate_all_models_lsl(
     print("Session calibration complete. All models saved.")
 
 
-def square(x):
+def square(x: Any) -> Any:
     """
     Compute the element-wise square of a tensor using TensorFlow.
 
@@ -469,7 +487,7 @@ def square(x):
     return tf.math.square(x)
 
 
-def log(x):
+def log(x: Any) -> Any:
     """
     Compute the element-wise natural logarithm of a tensor using TensorFlow,
     with values clipped to avoid log(0).
@@ -507,7 +525,7 @@ class ConfigError(EEGSystemError):
     """
 
 
-def handle_errors(main_func):
+def handle_errors(main_func: Callable) -> Callable:
     """
     Decorator to catch and log uncaught exceptions in script entry points.
     """
@@ -522,16 +540,17 @@ def handle_errors(main_func):
         except Exception as e:
             logging.exception("Unhandled exception: %s", e)
             raise
+
     return wrapper
 
 
-def save_json(data, path):
+def save_json(data: Dict[str, Any], path: str) -> None:
     """Save a dictionary as a JSON file."""
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f)
 
 
-def load_json(path):
+def load_json(path: str) -> Dict[str, Any]:
     """Load a dictionary from a JSON file."""
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)

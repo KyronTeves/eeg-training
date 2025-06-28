@@ -11,6 +11,7 @@ Output: Evaluation metrics, predictions, and logs.
 import logging
 import os
 from collections import Counter
+from typing import Any, List, Optional
 
 import joblib
 import matplotlib.pyplot as plt
@@ -36,13 +37,13 @@ from utils import (
 
 
 def ensemble_hard_voting(
-    le,
-    pred_eegnet_labels,
-    pred_shallow_labels,
-    pred_rf_labels,
-    pred_xgb_labels,
-    y_true_labels,
-):
+    le: Any,
+    pred_eegnet_labels: np.ndarray,
+    pred_shallow_labels: np.ndarray,
+    pred_rf_labels: np.ndarray,
+    pred_xgb_labels: np.ndarray,
+    y_true_labels: np.ndarray,
+) -> List[Any]:
     """Perform hard voting ensemble and return predicted labels.
 
     Args:
@@ -70,14 +71,14 @@ def ensemble_hard_voting(
 
 @log_function_call
 def log_sample_predictions(
-    y_true_str,
-    pred_eegnet_str,
-    pred_shallow_str,
-    pred_rf_str,
-    pred_xgb_str,
-    pred_ensemble_labels,
-    num_samples_to_log,
-):
+    y_true_str: np.ndarray,
+    pred_eegnet_str: np.ndarray,
+    pred_shallow_str: np.ndarray,
+    pred_rf_str: np.ndarray,
+    pred_xgb_str: np.ndarray,
+    pred_ensemble_labels: List[Any],
+    num_samples_to_log: int,
+) -> None:
     """Log sample predictions and accuracy for each model and the ensemble.
 
     Args:
@@ -158,7 +159,9 @@ def log_sample_predictions(
 
 
 @log_function_call
-def evaluate_model(y_true, y_pred, label_encoder, model_name):
+def evaluate_model(
+    y_true: np.ndarray, y_pred: np.ndarray, label_encoder: Any, model_name: str
+) -> None:
     """Log confusion matrix and classification report for a model.
 
     Args:
@@ -175,7 +178,12 @@ def evaluate_model(y_true, y_pred, label_encoder, model_name):
     )
 
 
-def print_class_distribution(df, label_col, label_encoder=None, name="Dataset"):
+def print_class_distribution(
+    df: pd.DataFrame,
+    label_col: str,
+    label_encoder: Optional[Any] = None,
+    name: str = "Dataset",
+) -> None:
     """Print the class distribution for a DataFrame column."""
 
     counts = Counter(df[label_col])
@@ -192,15 +200,15 @@ def print_class_distribution(df, label_col, label_encoder=None, name="Dataset"):
 
 
 def plot_tsne_features(
-    x_features,
-    y_labels,
-    label_encoder,
-    method="tsne",
-    perplexity=30,
-    n_components=2,
-    random_state=42,
-    save_dir="plots",
-):
+    x_features: np.ndarray,
+    y_labels: np.ndarray,
+    label_encoder: Any,
+    method: str = "tsne",
+    perplexity: int = 30,
+    n_components: int = 2,
+    random_state: int = 42,
+    save_dir: str = "plots",
+) -> None:
     """Plot t-SNE or UMAP of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
 
     os.makedirs(save_dir, exist_ok=True)
@@ -265,13 +273,13 @@ def plot_tsne_features(
 
 
 def plot_feature_distributions(
-    x_features,
-    y_labels,
-    label_encoder,
-    feature_indices=None,
-    max_features=5,
-    save_dir="plots",
-):
+    x_features: np.ndarray,
+    y_labels: np.ndarray,
+    label_encoder: Any,
+    feature_indices: Optional[List[int]] = None,
+    max_features: int = 5,
+    save_dir: str = "plots",
+) -> None:
     """Plot histograms for selected features across classes and save to file."""
     os.makedirs(save_dir, exist_ok=True)
     labels_str = (
@@ -304,7 +312,7 @@ def plot_feature_distributions(
 
 @handle_errors
 @log_function_call
-def main():
+def main() -> None:
     """Main evaluation pipeline for EEG models on held-out test data windows.
 
     Loads test data, applies windowing and feature extraction, loads models and scalers, generates predictions,

@@ -9,6 +9,7 @@ Output: Trained model files, encoders, scalers (for downstream evaluation and pr
 """
 
 import logging
+from typing import Any, Tuple
 
 import joblib
 import numpy as np
@@ -33,7 +34,12 @@ from utils import (
 )
 
 
-def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
+def augment_eeg_data(
+    x: np.ndarray,
+    noise_std: float = 0.01,
+    drift_max: float = 0.05,
+    artifact_prob: float = 0.05,
+) -> np.ndarray:
     """
     Augment EEG data with noise, drift, and simulated artifacts.
 
@@ -62,7 +68,14 @@ def augment_eeg_data(x, noise_std=0.01, drift_max=0.05, artifact_prob=0.05):
 
 
 @log_function_call
-def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
+def train_eegnet_model(
+    _x_train: np.ndarray,
+    _y_train: np.ndarray,
+    _x_test: np.ndarray,
+    _y_test: np.ndarray,
+    _config: dict[str, Any],
+    _le: LabelEncoder,
+) -> None:
     """
     Train and evaluate EEGNet or ShallowConvNet model.
 
@@ -159,7 +172,12 @@ def train_eegnet_model(_x_train, _y_train, _x_test, _y_test, _config, _le):
 
 
 @log_function_call
-def train_tree_models(_x_features, _y_encoded, _config, _le):
+def train_tree_models(
+    _x_features: np.ndarray,
+    _y_encoded: np.ndarray,
+    _config: dict[str, Any],
+    _le: LabelEncoder,
+) -> None:
     """
     Train and evaluate Random Forest and XGBoost models.
 
@@ -213,7 +231,7 @@ def train_tree_models(_x_features, _y_encoded, _config, _le):
 
 @handle_errors
 @log_function_call
-def main():
+def main() -> None:
     """
     Main function to orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models
     on windowed EEG data. Handles data loading, preprocessing, augmentation, model training, and artifact saving.
@@ -242,7 +260,7 @@ def main():
     train_tree_models(X_features, y_encoded, config, le)
 
 
-def load_windowed_data(config):
+def load_windowed_data(config: dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
     """
     Load windowed EEG data and corresponding labels from .npy files specified in the config.
 
@@ -276,7 +294,7 @@ def load_windowed_data(config):
         raise
 
 
-def encode_labels(y_windows):
+def encode_labels(y_windows: np.ndarray) -> Tuple[LabelEncoder, np.ndarray, np.ndarray]:
     """
     Encode string or categorical labels into integer and one-hot encoded formats.
 
@@ -294,7 +312,9 @@ def encode_labels(y_windows):
     return le, y_encoded, y_cat
 
 
-def preprocess_and_augment(X_windows, y_cat, config):
+def preprocess_and_augment(
+    X_windows: np.ndarray, y_cat: np.ndarray, config: dict[str, Any]
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, StandardScaler]:
     """
     Split EEG data into train/test sets, scale, balance classes, augment, and return processed arrays.
 
@@ -344,7 +364,7 @@ def preprocess_and_augment(X_windows, y_cat, config):
     return X_train_final, y_train_final, X_test_scaled, y_test, scaler
 
 
-def log_class_distribution(y_train_final):
+def log_class_distribution(y_train_final: np.ndarray) -> None:
     """
     Log the class distribution of the training data after downsampling and augmentation.
 
@@ -368,7 +388,7 @@ def log_class_distribution(y_train_final):
     logging.info("Detailed class distribution: %s", class_dist)
 
 
-def extract_features_parallel(X_windows, config):
+def extract_features_parallel(X_windows: np.ndarray, config: dict[str, Any]) -> np.ndarray:
     """
     Extract features from each EEG window in parallel using joblib.
 
