@@ -1,5 +1,8 @@
 # EEG Direction Classification & Real-Time Prediction
 
+[![Python 3.10.11](https://img.shields.io/badge/python-3.10.11-blue.svg)](https://www.python.org/downloads/release/python-31011/)
+[![License: Apache 2.0 / CC0 1.0](https://img.shields.io/badge/license-Apache%202.0%20%2F%20CC0-lightgrey.svg)](./LICENSE.TXT)
+
 > **⚠️ WORK IN PROGRESS**: This system is under active development. Features may be incomplete, unstable, or subject to change. Use for research and development purposes only. Real-time prediction and model integration are experimental and not guaranteed to be robust.
 
 ## Overview
@@ -7,6 +10,17 @@
 A modular pipeline for collecting, processing, training, evaluating, and performing real-time prediction of EEG-based direction commands using LSL streaming and multiple machine learning models.
 
 ---
+
+## Table of Contents
+
+- [Features](#features)
+- [Project Structure](#project-structure)
+- [Setup & Quickstart](#setup--quickstart)
+- [Development Status](#development-status)
+- [Real-time Output Example](#real-time-output-example)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [References](#references)
 
 ## Features
 
@@ -17,6 +31,7 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 - **Data Augmentation**: Class balancing and noise injection (optional)
 - **Ensemble Methods**: Weighted voting across all models
 - **Session Calibration**: Optional per-user fine-tuning
+- **Experimental Real-Time Prediction**: Online ensemble prediction is experimental and may not be robust
 
 ## Project Structure
 
@@ -27,13 +42,12 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 ├── train_eeg_model.py      # Train EEGNet, ShallowConvNet, RF, XGBoost models
 ├── test_eeg_model.py       # Evaluate trained models and ensembles
 ├── realtime_eeg_predict.py # Real-time prediction with LSL streaming & optimized pipeline
-├── calibrate_session.py    # Fine-tune models for individual sessions
 ├── lsl_stream_handler.py   # LSL streaming interface for OpenBCI GUI
 ├── utils.py                # Config loading, windowing, logging, validation utilities
 ├── EEGModels.py            # Model architectures (EEGNet, ShallowConvNet, etc.)
 ├── config.json             # Centralized configuration for all scripts
 ├── requirements.txt        # Python dependencies (includes pylsl)
-├── test_system.py          # Unit tests for utility functions
+├── test_system.py          # Unit and integration tests for the full pipeline
 ├── data/                   # Data files (CSV, .npy)
 ├── models/                 # Trained models, encoders, scalers
 └── ...
@@ -43,7 +57,7 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 
 ### Prerequisites
 
-- Python 3.8+
+- Python 3.10.11
 - OpenBCI Cyton board (or compatible EEG device)
 - OpenBCI GUI (for LSL streaming)
 
@@ -75,7 +89,7 @@ A modular pipeline for collecting, processing, training, evaluating, and perform
 
 - Start OpenBCI GUI and connect to your board
 - Configure filters (e.g., 1-50 Hz bandpass, 50/60 Hz notch)
-- Enable LSL streaming in the GUI (stream name: "OpenBCIGUI")
+- Enable LSL streaming in the GUI (default stream name: "obci_eeg1", use TimeSeriesFilt)
 
 ### Configure System
 
@@ -102,9 +116,9 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 | Real-time Prediction  | 🚧 In Progress| Experimental, not production-ready     |
 | Performance Optimization | 🚧 Ongoing  | Pipeline improvements in development   |
 
-- All scripts use centralized configuration (`config.json`)
-- Data and models are saved in `data/` and `models/` directories
-- Real-time prediction and ensemble logic are experimental
+- All scripts use centralized configuration (`config.json`).
+- Data and models are saved in `data/` and `models/` directories.
+- Real-time prediction and ensemble logic are experimental; session calibration is handled interactively in `realtime_eeg_predict.py`.
 
 ## Real-time Output Example
 
@@ -122,15 +136,6 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 - Check that `pylsl` is installed and stream name matches config
 - For model errors, retrain using `train_eeg_model.py` and check data quality
 - For performance issues, adjust window size, batch size, or confidence threshold in config
-
-## Contributing
-
-Pull requests are welcome. For major changes, please open an issue first to discuss.
-
-- Follow PEP8 and Pylint guidelines
-- Add or update docstrings for new functions
-- Add tests for new utilities in `test_system.py`
-- Update README for new features or changes
 
 ## License
 
