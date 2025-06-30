@@ -1,11 +1,8 @@
 """
-window_eeg_data.py
-
 Segment raw EEG CSV data into overlapping windows for model training.
 
-Input: Labeled EEG CSV file
-Process: Loads, filters, and windows EEG data for supervised learning.
-Output: Windowed EEG data (.npy), windowed labels (.npy)
+Loads, filters, and windows EEG data for supervised learning, saving windowed EEG and label arrays
+for downstream model training.
 """
 
 import logging
@@ -30,9 +27,11 @@ def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
     """
     Load EEG data from CSV and filter by session types if specified in config.
 
-    Input: config (dict) - configuration parameters
-    Process: Loads CSV, filters by session_type if present
-    Output: Filtered DataFrame
+    Args:
+        config (dict): Configuration parameters.
+
+    Returns:
+        pd.DataFrame: Filtered DataFrame.
     """
     csv_file = config["OUTPUT_CSV"]
 
@@ -69,11 +68,14 @@ def process_and_window_data(
     df: pd.DataFrame, config: dict[str, Any]
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Process DataFrame to extract EEG and labels, then create overlapping windows.
+    Extract EEG and labels from DataFrame, then create overlapping windows.
 
-    Input: df (DataFrame), config (dict)
-    Process: Extracts EEG columns, checks data, windows data/labels
-    Output: (x_windows, y_windows)
+    Args:
+        df (pd.DataFrame): Input DataFrame.
+        config (dict): Configuration dictionary.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: (x_windows, y_windows)
     """
     eeg_cols = [col for col in df.columns if col.startswith("ch_")]
     x = df[eeg_cols].values
@@ -100,9 +102,10 @@ def save_windowed_data(
     """
     Save windowed EEG data and labels to .npy files.
 
-    Input: x_windows (np.ndarray), y_windows (np.ndarray), config (dict)
-    Process: Saves arrays to disk
-    Output: None (side effect: files written)
+    Args:
+        x_windows (np.ndarray): Windowed EEG data.
+        y_windows (np.ndarray): Windowed labels.
+        config (dict): Configuration dictionary.
     """
     try:
         np.save(config["WINDOWED_NPY"], x_windows)
@@ -122,9 +125,7 @@ def main() -> None:
     """
     Main entry point for windowing EEG data for model training.
 
-    Input: None (uses config)
-    Process: Loads config/data, windows, saves output
-    Output: None (side effect: files written)
+    Loads config and data, windows the data, and saves output files.
     """
     config = load_config()
     filtered_df = load_and_filter_data(config)

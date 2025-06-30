@@ -1,11 +1,8 @@
 """
-utils.py
-
 Utility functions for the EEG training system.
 
-Input: Various (EEG data, config files, etc.)
-Process: Configuration loading, data windowing, calibration data collection, logging setup, validation utilities.
-Output: Processed data, configuration dicts, logging setup, validation results.
+Provides configuration loading, data windowing, calibration data collection, logging setup, and
+validation utilities for EEG data processing and model training.
 """
 
 import json

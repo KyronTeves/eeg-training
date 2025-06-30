@@ -1,11 +1,7 @@
 """
-realtime_eeg_predict.py
-
 Real-time EEG direction prediction using LSL streaming from OpenBCI GUI.
 
-Input: LSL stream from OpenBCI GUI (pre-filtered EEG data)
-Process: Loads trained models, buffers EEG data, performs real-time ensemble prediction, logs results.
-Output: Real-time predictions and confidence scores (logged and optionally displayed)
+Loads trained models, buffers EEG data, performs real-time ensemble prediction, and logs results for online BCI control.
 """
 
 import logging

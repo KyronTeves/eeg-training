@@ -1,11 +1,8 @@
 """
-test_eeg_model.py
+Evaluate trained EEGNet, ShallowConvNet, Random Forest, and XGBoost models on held-out EEG data windows.
 
-Evaluate trained EEGNet, ShallowConvNet, Random Forest, XGBoost models on held-out EEG data windows.
-
-Input: Labeled EEG CSV file, trained model files
-Process: Loads test data and models, applies windowing and scaling, computes predictions, reports metrics.
-Output: Evaluation metrics, predictions, and logs.
+Loads test data and models, applies windowing and scaling, computes predictions, and reports
+evaluation metrics for all models and ensemble.
 """
 
 import os

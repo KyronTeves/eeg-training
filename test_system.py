@@ -1,11 +1,8 @@
 """
-test_system.py
-
 Unit tests for EEG training system utility functions and pipeline integration.
 
-Input: Synthetic or real EEG data, configs, and models
-Process: Tests data windowing, config loading, validation, model training, and integration
-Output: Test results (pass/fail), error messages, and logs
+Tests data windowing, config loading, validation, model training, and integration using
+synthetic or real EEG data and configs.
 """
 
 import os

@@ -1,7 +1,7 @@
 """
-collect_data.py
-
 Collect EEG data from LSL stream (OpenBCI GUI), label it, and save to CSV for model training.
+
+Handles LSL connection, session/label prompting, data collection, and CSV writing for supervised EEG experiments.
 """
 
 import csv
@@ -18,12 +18,13 @@ from utils import check_labels_valid, check_no_nan, load_config, setup_logging, 
 
 def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
     """
-    Get the list of (duration, label) phases for a given session type.
+    Return the list of (duration, label) phases for a given session type.
 
     Args:
         session_type (str): Type of session.
         label (str): Label for the phase.
         config (dict): Configuration dictionary.
+
     Returns:
         list[tuple[int, str]]: List of (duration, label) tuples.
     """
@@ -52,6 +53,7 @@ def collect_phase_data(
         phase_label (str): Label for the phase.
         label (str): Label for the trial.
         config (dict): Configuration dictionary.
+
     Returns:
         tuple[list, list]: (phase_data, phase_timestamps)
     """
@@ -98,6 +100,7 @@ def write_phase_to_csv(
         label (str): Label for the trial.
         output_writer (csv.writer): CSV writer.
         config (dict): Configuration dictionary.
+
     Returns:
         tuple[list, list]: (rows, timestamps) written for this phase.
     """
@@ -141,6 +144,7 @@ def collect_trial_eeg_lsl(
         trial_num (int): Trial number.
         output_writer (csv.writer): CSV writer.
         config (dict): Configuration dictionary.
+
     Returns:
         tuple[int, list[float]]: (number of rows written, list of timestamps)
     """
@@ -195,6 +199,7 @@ def run_trials_for_label(
         writer (csv.writer): CSV writer.
         total_rows (int): Current total rows written.
         config (dict): Configuration dictionary.
+
     Returns:
         int: Updated total_rows.
     """
@@ -223,6 +228,8 @@ def run_trials_for_label(
 def main() -> None:
     """
     Main entry point for collecting EEG data from LSL and saving to CSV.
+
+    Loads config, connects to LSL, prompts for session/label, collects and writes data, and logs results.
     """
     setup_logging()
     config = load_config()
