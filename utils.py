@@ -139,22 +139,6 @@ def window_data(
     return x_windows, y_windows
 
 
-def log_function_call(func: Callable) -> Callable:
-    """
-    Decorator to log entry and exit of a function.
-    (DISABLED: No-op to reduce terminal clutter.)
-    """
-
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        # logging.info("Entering %s", func.__name__)
-        result = func(*args, **kwargs)
-        # logging.info("Exiting %s", func.__name__)
-        return result
-
-    return wrapper
-
-
 def setup_logging(
     logfile: str = "eeg_training.log", default_level: Optional[str] = None
 ) -> None:

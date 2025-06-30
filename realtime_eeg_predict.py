@@ -17,7 +17,6 @@ from collections import deque
 
 import joblib
 import numpy as np
-import tensorflow as tf
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
@@ -148,40 +147,6 @@ class OptimizedPredictionPipeline:
         except Exception as e:
             logging.exception("Failed to load models: %s", e)
             raise
-
-    def _optimize_tensorflow_model(self, model_path: str):
-        """
-        Attempt to optimize a Keras model for inference using TensorFlow Lite.
-
-        Args:
-            model_path (str): Path to Keras model file.
-        Returns:
-            dict: Interpreter and details, or fallback to original model.
-        """
-        try:
-            if "shallow" in model_path.lower():
-                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
-            else:
-                model = load_model(model_path)
-            converter = tf.lite.TFLiteConverter.from_keras_model(model)
-            converter.optimizations = [tf.lite.Optimize.DEFAULT]
-            tflite_model = converter.convert()
-            interpreter = tf.lite.Interpreter(model_content=tflite_model)
-            interpreter.allocate_tensors()
-            return {
-                "interpreter": interpreter,
-                "input_details": interpreter.get_input_details(),
-                "output_details": interpreter.get_output_details(),
-            }
-        except (OSError, ValueError, RuntimeError) as e:
-            logging.warning(
-                "TensorFlow Lite optimization failed: %s. Using original model.", e
-            )
-            if "shallow" in model_path.lower():
-                return {
-                    "model": load_model(model_path, custom_objects=CUSTOM_OBJECTS)
-                }
-            return {"model": load_model(model_path)}
 
     def _warmup_models(self):
         """

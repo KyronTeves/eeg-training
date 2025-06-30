@@ -17,7 +17,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import tensorflow as tf
 from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
 from sklearn.manifold import TSNE
@@ -31,17 +30,9 @@ from utils import (
     load_config,
     setup_logging,
     window_data,
+    square,
+    log,
 )
-
-
-def square(x):
-    """Return the element-wise square of the input tensor."""
-    return tf.math.square(x)
-
-
-def log(x):
-    """Return the element-wise natural logarithm of the input tensor, with a lower bound for stability."""
-    return tf.math.log(tf.math.maximum(x, 1e-7))
 
 
 def ensemble_hard_voting(
