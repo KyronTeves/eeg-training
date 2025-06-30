@@ -26,7 +26,6 @@ from utils import (
     CUSTOM_OBJECTS,
     extract_features,
     load_config,
-    log_function_call,
     setup_logging,
     handle_errors,  # Add error handler
 )
@@ -111,7 +110,6 @@ class OptimizedPredictionPipeline:
         self._shallow_shape_mismatch_logged = False
         self._shallow_error_logged = False
 
-    @log_function_call
     def load_optimized_models(self):
         """
         Load and optimize all models (EEGNet, ShallowConvNet, RF, XGBoost) and scalers for inference.
@@ -257,7 +255,6 @@ class OptimizedPredictionPipeline:
         """
         self.prediction_times.clear()
 
-    @log_function_call
     def predict_eegnet(self, window: np.ndarray) -> tuple[np.ndarray, float]:
         """
         Runs EEGNet model prediction on a window of EEG data.
@@ -315,7 +312,6 @@ class OptimizedPredictionPipeline:
                 self._eegnet_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
 
-    @log_function_call
     def predict_shallow(self, window: np.ndarray) -> tuple[np.ndarray, float]:
         """
         Runs ShallowConvNet model prediction on a window of EEG data.
@@ -364,7 +360,6 @@ class OptimizedPredictionPipeline:
                 self._shallow_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
 
-    @log_function_call
     def predict_tree_models(
         self, window: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray, float]:
@@ -393,7 +388,6 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    @log_function_call
     def predict_realtime(self) -> tuple[str, float] | None:
         """
         Performs ensemble prediction using all available models on the current buffer.
@@ -713,7 +707,6 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
 
 
 @handle_errors
-@log_function_call
 def main():
     """
     Main entry point for real-time EEG prediction using LSL streaming.

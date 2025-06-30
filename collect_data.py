@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import check_labels_valid, check_no_nan, load_config, setup_logging, log_function_call, handle_errors
+from utils import check_labels_valid, check_no_nan, load_config, setup_logging, handle_errors
 
 
 def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
@@ -220,7 +220,6 @@ def run_trials_for_label(
 
 
 @handle_errors
-@log_function_call
 def main() -> None:
     """
     Main entry point for collecting EEG data from LSL and saving to CSV.

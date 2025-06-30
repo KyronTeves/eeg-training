@@ -28,7 +28,6 @@ from utils import (
     check_no_nan,
     extract_features,
     load_config,
-    log_function_call,
     handle_errors,
     setup_logging,
 )
@@ -67,7 +66,6 @@ def augment_eeg_data(
     return x_aug
 
 
-@log_function_call
 def train_eegnet_model(
     _x_train: np.ndarray,
     _y_train: np.ndarray,
@@ -171,7 +169,6 @@ def train_eegnet_model(
         logging.info("%s saved to %s", model_name, model_path)
 
 
-@log_function_call
 def train_tree_models(
     _x_features: np.ndarray,
     _y_encoded: np.ndarray,
@@ -230,7 +227,6 @@ def train_tree_models(
 
 
 @handle_errors
-@log_function_call
 def main() -> None:
     """
     Main function to orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models

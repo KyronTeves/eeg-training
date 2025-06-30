@@ -15,7 +15,7 @@ from typing import Optional, Tuple
 import numpy as np
 from pylsl import StreamInlet, resolve_byprop
 
-from utils import setup_logging, log_function_call
+from utils import setup_logging
 
 setup_logging()
 
@@ -39,7 +39,6 @@ class LSLStreamHandler:
         self.sample_rate: Optional[float] = None
         self.n_channels: Optional[int] = None
 
-    @log_function_call
     def connect(self) -> bool:
         """
         Connect to the LSL stream from OpenBCI GUI.
@@ -69,7 +68,6 @@ class LSLStreamHandler:
             logging.error("Failed to connect to LSL stream: %s", e)
             return False
 
-    @log_function_call
     def get_chunk(self, max_samples: int = 250) -> Tuple[np.ndarray, np.ndarray]:
         """
         Get a chunk of data from the LSL stream.
@@ -92,7 +90,6 @@ class LSLStreamHandler:
             logging.error("Error pulling data from LSL stream: %s", e)
             return np.empty((0, self.n_channels or 0)), np.empty((0,))
 
-    @log_function_call
     def get_window(
         self, window_size: int, timeout: float = 2.0
     ) -> Optional[np.ndarray]:
@@ -123,7 +120,6 @@ class LSLStreamHandler:
             time.sleep(0.001)
         return np.array(collected_data[:window_size])
 
-    @log_function_call
     def disconnect(self) -> None:
         """
         Disconnect from the LSL stream.
