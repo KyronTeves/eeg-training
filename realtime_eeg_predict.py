@@ -40,6 +40,20 @@ warnings.filterwarnings("ignore", category=UserWarning, module="scipy")
 warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
 
 
+# Mapping for short label display
+SHORT_LABELS = {
+    "forward": "FWD",
+    "backward": "BWD",
+    "left": "LFT",
+    "right": "RGT",
+    "neutral": "NEU",
+}
+
+
+def short_label(label: str) -> str:
+    return SHORT_LABELS.get(label.lower(), label[:3].upper())
+
+
 class OptimizedPredictionPipeline:
     """
     High-performance real-time EEG prediction pipeline.
@@ -492,7 +506,7 @@ def process_prediction(pipeline, prediction_count):
     def fmt_model(label, conf, disabled):
         if disabled:
             return "---(---)"
-        return f"{label:<3}({conf:.3f})"
+        return f"{short_label(label):<3}({conf:.3f})"
 
     result = pipeline.predict_realtime()
     if result:

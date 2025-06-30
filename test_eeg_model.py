@@ -8,42 +8,50 @@ Process: Loads test data and models, applies windowing and scaling, computes pre
 Output: Evaluation metrics, predictions, and logs.
 """
 
-import logging
 import os
+import logging
 from collections import Counter
-from typing import Any, List, Optional
 
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import tensorflow as tf
+from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
 from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
 from umap import UMAP
 
 from utils import (
-    CUSTOM_OBJECTS,
     check_labels_valid,
     check_no_nan,
     extract_features,
     load_config,
     setup_logging,
     window_data,
-    log_function_call,
-    handle_errors,
 )
 
 
+def square(x):
+    """Return the element-wise square of the input tensor."""
+    return tf.math.square(x)
+
+
+def log(x):
+    """Return the element-wise natural logarithm of the input tensor, with a lower bound for stability."""
+    return tf.math.log(tf.math.maximum(x, 1e-7))
+
+
 def ensemble_hard_voting(
-    le: Any,
-    pred_eegnet_labels: np.ndarray,
-    pred_shallow_labels: np.ndarray,
-    pred_rf_labels: np.ndarray,
-    pred_xgb_labels: np.ndarray,
-    y_true_labels: np.ndarray,
-) -> List[Any]:
+    le,
+    pred_eegnet_labels,
+    pred_shallow_labels,
+    pred_rf_labels,
+    pred_xgb_labels,
+    y_true_labels,
+):
     """Perform hard voting ensemble and return predicted labels.
 
     Args:
@@ -69,16 +77,15 @@ def ensemble_hard_voting(
     return pred_ensemble_labels
 
 
-@log_function_call
 def log_sample_predictions(
-    y_true_str: np.ndarray,
-    pred_eegnet_str: np.ndarray,
-    pred_shallow_str: np.ndarray,
-    pred_rf_str: np.ndarray,
-    pred_xgb_str: np.ndarray,
-    pred_ensemble_labels: List[Any],
-    num_samples_to_log: int,
-) -> None:
+    y_true_str,
+    pred_eegnet_str,
+    pred_shallow_str,
+    pred_rf_str,
+    pred_xgb_str,
+    pred_ensemble_labels,
+    num_samples_to_log,
+):
     """Log sample predictions and accuracy for each model and the ensemble.
 
     Args:
@@ -158,10 +165,7 @@ def log_sample_predictions(
     )
 
 
-@log_function_call
-def evaluate_model(
-    y_true: np.ndarray, y_pred: np.ndarray, label_encoder: Any, model_name: str
-) -> None:
+def evaluate_model(y_true, y_pred, label_encoder, model_name):
     """Log confusion matrix and classification report for a model.
 
     Args:
@@ -178,12 +182,7 @@ def evaluate_model(
     )
 
 
-def print_class_distribution(
-    df: pd.DataFrame,
-    label_col: str,
-    label_encoder: Optional[Any] = None,
-    name: str = "Dataset",
-) -> None:
+def print_class_distribution(df, label_col, label_encoder=None, name="Dataset"):
     """Print the class distribution for a DataFrame column."""
 
     counts = Counter(df[label_col])
@@ -200,15 +199,15 @@ def print_class_distribution(
 
 
 def plot_tsne_features(
-    x_features: np.ndarray,
-    y_labels: np.ndarray,
-    label_encoder: Any,
-    method: str = "tsne",
-    perplexity: int = 30,
-    n_components: int = 2,
-    random_state: int = 42,
-    save_dir: str = "plots",
-) -> None:
+    x_features,
+    y_labels,
+    label_encoder,
+    method="tsne",
+    perplexity=30,
+    n_components=2,
+    random_state=42,
+    save_dir="plots",
+):
     """Plot t-SNE or UMAP of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
 
     os.makedirs(save_dir, exist_ok=True)
@@ -273,13 +272,13 @@ def plot_tsne_features(
 
 
 def plot_feature_distributions(
-    x_features: np.ndarray,
-    y_labels: np.ndarray,
-    label_encoder: Any,
-    feature_indices: Optional[List[int]] = None,
-    max_features: int = 5,
-    save_dir: str = "plots",
-) -> None:
+    x_features,
+    y_labels,
+    label_encoder,
+    feature_indices=None,
+    max_features=5,
+    save_dir="plots",
+):
     """Plot histograms for selected features across classes and save to file."""
     os.makedirs(save_dir, exist_ok=True)
     labels_str = (
@@ -310,9 +309,57 @@ def plot_feature_distributions(
         logging.info("Saved feature distribution plot to %s", fname)
 
 
-@handle_errors
-@log_function_call
-def main() -> None:
+def load_models_and_scalers(config):
+    """Load all models, scalers, and label encoder as specified in config.
+
+    Args:
+        config: Configuration dictionary with model/scaler paths.
+    Returns:
+        Tuple of (label_encoder, scaler_eegnet, scaler_tree, scaler_shallow, model_eegnet, model_shallow, rf, xgb)
+    Raises:
+        ImportError, OSError, AttributeError if loading fails.
+    """
+    le = joblib.load(config["LABEL_ENCODER"])
+    scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
+    scaler_tree = joblib.load(config["SCALER_TREE"])
+    model_eegnet = load_model(config["MODEL_EEGNET"])
+    rf = joblib.load(config["MODEL_RF"])
+    xgb = joblib.load(config["MODEL_XGB"])
+    model_shallow = load_model(
+        config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
+    )
+    scaler_shallow = joblib.load(config.get("SCALER_SHALLOW", config["SCALER_EEGNET"]))
+    return (
+        le,
+        scaler_eegnet,
+        scaler_tree,
+        scaler_shallow,
+        model_eegnet,
+        model_shallow,
+        rf,
+        xgb,
+    )
+
+
+def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndarray:
+    """Scale and reshape windowed EEG data for CNN input.
+
+    Args:
+        x_windows: Windowed EEG data, shape (n_windows, window_size, n_channels).
+        scaler: Fitted scaler for the data.
+        n_channels: Number of EEG channels.
+
+    Returns:
+        Scaled and reshaped data suitable for CNN input.
+    """
+    x_windows_flat = x_windows.reshape(-1, n_channels)
+    x_windows_scaled = scaler.transform(x_windows_flat).reshape(x_windows.shape)
+    x_windows_cnn = np.expand_dims(x_windows_scaled, -1)
+    x_windows_cnn = np.transpose(x_windows_cnn, (0, 2, 1, 3))
+    return x_windows_cnn
+
+
+def main():
     """Main evaluation pipeline for EEG models on held-out test data windows.
 
     Loads test data, applies windowing and feature extraction, loads models and scalers, generates predictions,
@@ -320,65 +367,97 @@ def main() -> None:
     """
     setup_logging()  # Set up consistent logging to file and console
     config = load_config()
+
     n_channels = config["N_CHANNELS"]
     window_size = config["WINDOW_SIZE"]
     step_size = config["STEP_SIZE"]
     csv_file = config["OUTPUT_CSV"]
     test_session_types = config["TEST_SESSION_TYPES"]
     sampling_rate = config["SAMPLING_RATE"]
+
     try:
         logging.info("Loading data from %s ...", csv_file)
         df = pd.read_csv(csv_file)
+        # Print class distribution for the full dataset (all session types)
         print_class_distribution(df, "label", name="Full Dataset (all session types)")
         test_df = df[df["session_type"].isin(test_session_types)]
         logging.info("Test samples: %d", len(test_df))
+        # Print class distribution for the test set
         print_class_distribution(
             test_df, "label", name="Test Set (filtered session types)"
         )
     except (pd.errors.EmptyDataError, OSError, ValueError, KeyError) as e:
         logging.error("Failed to load or filter test data: %s", e)
         raise
+
     eeg_cols = [col for col in test_df.columns if col.startswith("ch_")]
     x = test_df[eeg_cols].values
     labels = test_df["label"].values
+
     check_no_nan(x, name="EEG data")
     check_labels_valid(labels, valid_labels=config["LABELS"], name="Labels")
-    if x.shape[1] != n_channels:
-        raise ValueError(
-            f"Expected {n_channels} channels, but found {x.shape[1]} in the data."
-        )
+
     x = x.reshape(-1, n_channels)
     labels = labels.reshape(-1, 1)
     x_windows, y_windows = window_data(x, labels, window_size, step_size)
-    le = joblib.load(config["LABEL_ENCODER"])
-    scaler = joblib.load(config["SCALER_EEGNET"])
-    x_windows_scaled = scaler.transform(x_windows.reshape(-1, n_channels)).reshape(
-        x_windows.shape
-    )
-    y_windows = le.transform(y_windows.ravel())
-    # Feature extraction for tree models
+
+    if x_windows.shape[1:] != (window_size, n_channels):
+        logging.error("Windowed data shape mismatch.")
+        raise ValueError("Windowed data shape mismatch.")
+    if x_windows.shape[0] != y_windows.shape[0]:
+        logging.error("Number of windows and labels do not match.")
+        raise ValueError("Number of windows and labels do not match.")
+
+    logging.info("Test windows: %s", x_windows.shape)
+
+    logging.info("Extracting features for tree-based models...")
     x_features = np.array(
-        [extract_features(window, sampling_rate) for window in x_windows]
+        Parallel(n_jobs=-1, prefer="threads")(
+            delayed(extract_features)(window, sampling_rate) for window in x_windows
+        )
     )
-    scaler_tree = joblib.load(config["SCALER_TREE"])
+    logging.info("Feature extraction complete. Feature shape: %s", x_features.shape)
+
+    # Visualize feature space separability
+    try:
+        le = joblib.load(config["LABEL_ENCODER"])
+        y_labels_int = le.transform(y_windows.ravel())
+        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=2)
+        plot_tsne_features(x_features, y_labels_int, le, method="tsne", n_components=3)
+        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=2)
+        plot_tsne_features(x_features, y_labels_int, le, method="umap", n_components=3)
+        plot_feature_distributions(x_features, y_labels_int, le)
+    except (ValueError, RuntimeError, KeyError, OSError) as e:
+        logging.warning("Feature visualization failed: %s", e)
+
+    try:
+        (
+            le,
+            scaler_eegnet,
+            scaler_tree,
+            scaler_shallow,
+            model_eegnet,
+            model_shallow,
+            rf,
+            xgb,
+        ) = load_models_and_scalers(config)
+    except (ImportError, OSError, AttributeError) as e:
+        logging.error("Failed to load models or encoders: %s", e)
+        raise
+
+    x_windows_eegnet = prepare_cnn_input(x_windows, scaler_eegnet, n_channels)
+    x_windows_shallow = prepare_cnn_input(x_windows, scaler_shallow, n_channels)
     x_features_scaled = scaler_tree.transform(x_features)
-    # Load models
-    eegnet = load_model(config["MODEL_EEGNET"])
-    shallow = load_model(config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS)
-    rf = joblib.load(config["MODEL_RF"])
-    xgb = joblib.load(config["MODEL_XGB"])
-    # Predict
-    pred_eegnet_labels = np.argmax(
-        eegnet.predict(np.expand_dims(np.transpose(x_windows_scaled, (0, 2, 1)), -1)),
-        axis=1,
-    )
-    pred_shallow_labels = np.argmax(
-        shallow.predict(np.expand_dims(np.transpose(x_windows_scaled, (0, 2, 1)), -1)),
-        axis=1,
-    )
+
+    logging.info("Generating predictions for all models...")
+    pred_eegnet_prob = model_eegnet.predict(x_windows_eegnet)
+    pred_eegnet_labels = np.argmax(pred_eegnet_prob, axis=1)
+    pred_shallow_prob = model_shallow.predict(x_windows_shallow)
+    pred_shallow_labels = np.argmax(pred_shallow_prob, axis=1)
     pred_rf_labels = rf.predict(x_features_scaled)
     pred_xgb_labels = xgb.predict(x_features_scaled)
-    y_true_labels = y_windows
+    y_true_labels = le.transform(y_windows.ravel())
+
     pred_ensemble_labels = ensemble_hard_voting(
         le,
         pred_eegnet_labels,
@@ -388,11 +467,13 @@ def main() -> None:
         y_true_labels,
     )
     pred_ensemble_numeric = le.transform(pred_ensemble_labels)
-    y_true_str = le.inverse_transform(y_true_labels)
+
+    y_true_str = y_windows.ravel()
     pred_eegnet_str = le.inverse_transform(pred_eegnet_labels)
     pred_shallow_str = le.inverse_transform(pred_shallow_labels)
     pred_rf_str = le.inverse_transform(pred_rf_labels)
     pred_xgb_str = le.inverse_transform(pred_xgb_labels)
+
     num_samples_to_log = min(100, len(y_true_labels))
     if num_samples_to_log > 0:
         log_sample_predictions(
@@ -404,6 +485,7 @@ def main() -> None:
             pred_ensemble_labels,
             num_samples_to_log,
         )
+
     evaluate_model(y_true_labels, pred_eegnet_labels, le, "EEGNet")
     evaluate_model(y_true_labels, pred_shallow_labels, le, "ShallowConvNet")
     evaluate_model(y_true_labels, pred_rf_labels, le, "Random Forest")
