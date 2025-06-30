@@ -249,7 +249,11 @@ def check_labels_valid(
 
 
 def collect_lsl_calib_data(
-    lsl_stream_handler: Any, config: Dict[str, Any], seconds_per_class: int
+    lsl_stream_handler: Any,
+    label_classes: list[str],
+    window_size: int,
+    sample_rate: int,
+    seconds_per_class: int
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Collect calibration data from an LSL stream for each label class.
@@ -258,9 +262,6 @@ def collect_lsl_calib_data(
     Process: Prompts user for each label, collects EEG windows for a specified duration per class
     Output: Tuple of numpy arrays (calib_x, calib_y) containing calibration data and corresponding labels
     """
-    label_classes = config["LABELS"]
-    window_size = config["WINDOW_SIZE"]
-    sample_rate = config["SAMPLING_RATE"]
     calib_x, calib_y = [], []
     for label in label_classes:
         input(
@@ -281,7 +282,7 @@ def collect_lsl_calib_data(
 
 
 def calibrate_deep_models(
-    config: Dict[str, Any],
+    config: dict,
     x_model: np.ndarray,
     y_cat: np.ndarray,
     scaler: StandardScaler,
@@ -291,38 +292,12 @@ def calibrate_deep_models(
 ) -> None:
     """
     Calibrate and save deep learning models (EEGNet and ShallowConvNet) for EEG classification.
-
-    Input:
-        config (dict): Configuration dictionary.
-        x_model (np.ndarray): Preprocessed EEG data for model input.
-        y_cat (np.ndarray): One-hot encoded labels.
-        scaler (StandardScaler): Fitted scaler for data normalization.
-        session_tag (str): Unique session identifier.
-        save_dir (str): Directory to save models and scalers.
-        verbose (bool): Verbosity flag for model training.
-
-    Process:
-        Loads pretrained models, fine-tunes them on calibration data, and saves updated models and scalers.
-
-    Output:
-        None (side effect: models and scalers are saved to disk)
+    Input: config (dict), x_model (np.ndarray), y_cat (np.ndarray),
+           scaler (StandardScaler), session_tag (str), save_dir (str), verbose (bool)
+    Output: None (side effect: models and scalers saved)
     """
-    label_classes = config["LABELS"]
-    channels = (
-        config.get("EEG_CHANNELS")
-        or config.get("CHANNELS")
-        or list(range(config["N_CHANNELS"]))
-    )
-    window_size = config["WINDOW_SIZE"]
     # EEGNet
-    eegnet_path = config["MODEL_EEGNET"]
-    eegnet_out = config.get("MODEL_EEGNET_SESSION") or os.path.join(
-        save_dir, f"eeg_direction_model_session_{session_tag}.h5"
-    )
-    scaler_out = config.get("SCALER_EEGNET_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_session_{session_tag}.pkl"
-    )
-    model = load_model(eegnet_path)
+    model = load_model(config["MODEL_EEGNET"])
     model.compile(
         optimizer=Adam(learning_rate=0.001),
         loss="categorical_crossentropy",
@@ -335,21 +310,26 @@ def calibrate_deep_models(
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
+    eegnet_out = config.get("MODEL_EEGNET_SESSION") or os.path.join(
+        save_dir, f"eeg_direction_model_session_{session_tag}.h5"
+    )
+    scaler_out = config.get("SCALER_EEGNET_SESSION") or os.path.join(
+        save_dir, f"eeg_scaler_session_{session_tag}.pkl"
+    )
     model.save(eegnet_out)
     joblib.dump(scaler, scaler_out)
     logging.info("EEGNet session model saved to %s", eegnet_out)
     # ShallowConvNet
-    shallow_path = config["MODEL_SHALLOW"]
-    shallow_out = os.path.join(save_dir, f"eeg_shallow_model_session_{session_tag}.h5")
-    scaler_shallow_out = config.get("SCALER_TREE_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
-    )
     shallow = ShallowConvNet(
-        nb_classes=len(label_classes),
-        Chans=len(channels),
-        Samples=window_size,
+        nb_classes=len(config["LABELS"]),
+        Chans=len(
+            config.get("EEG_CHANNELS")
+            or config.get("CHANNELS")
+            or list(range(config["N_CHANNELS"]))
+        ),
+        Samples=config["WINDOW_SIZE"],
     )
-    shallow.load_weights(shallow_path)
+    shallow.load_weights(config["MODEL_SHALLOW"])
     shallow.compile(
         optimizer=Adam(learning_rate=0.001),
         loss="categorical_crossentropy",
@@ -362,58 +342,38 @@ def calibrate_deep_models(
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
+    shallow_out = os.path.join(save_dir, f"eeg_shallow_model_session_{session_tag}.h5")
+    scaler_shallow_out = config.get("SCALER_TREE_SESSION") or os.path.join(
+        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
+    )
     shallow.save(shallow_out)
     joblib.dump(scaler, scaler_shallow_out)
     logging.info("ShallowConvNet session model saved to %s", shallow_out)
 
 
 def calibrate_tree_models(
-    config: Dict[str, Any],
+    sample_rate: int,
     x_calib: np.ndarray,
     y_calib_encoded: np.ndarray,
-    session_tag: str,
-    save_dir: str,
+    scaler_tree_out: str,
+    rf_out: str,
+    xgb_out: str,
 ) -> None:
     """
     Calibrate and save tree-based models (Random Forest, XGBoost) for EEG classification.
-
-    Input:
-        config (dict): Configuration dictionary.
-        x_calib (np.ndarray): Calibration EEG data windows.
-        y_calib_encoded (np.ndarray): Encoded calibration labels.
-        session_tag (str): Unique session identifier.
-        save_dir (str): Directory to save models and scalers.
-
-    Process:
-        Extracts features, scales data, trains models, and saves them.
-
-    Output:
-        None (side effect: models and scalers are saved to disk)
     """
-    sample_rate = config["SAMPLING_RATE"]
     x_feat = np.array([extract_features(w, fs=sample_rate) for w in x_calib])
     scaler_tree = StandardScaler()
     x_feat_scaled = scaler_tree.fit_transform(x_feat)
-    scaler_tree_out = config.get("SCALER_TREE_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
-    )
     joblib.dump(scaler_tree, scaler_tree_out)
     # Random Forest
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     rf.fit(x_feat_scaled, y_calib_encoded)
-    rf_out = config.get("MODEL_RF_SESSION") or os.path.join(
-        save_dir, f"eeg_rf_model_session_{session_tag}.pkl"
-    )
     joblib.dump(rf, rf_out)
     logging.info("Random Forest session model saved to %s", rf_out)
     # XGBoost
-    xgb = XGBClassifier(
-        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss"
-    )
+    xgb = XGBClassifier(n_estimators=100, use_label_encoder=False, eval_metric="mlogloss")
     xgb.fit(x_feat_scaled, y_calib_encoded)
-    xgb_out = config.get("MODEL_XGB_SESSION") or os.path.join(
-        save_dir, f"eeg_xgb_model_session_{session_tag}.pkl"
-    )
     joblib.dump(xgb, xgb_out)
     logging.info("XGBoost session model saved to %s", xgb_out)
 
@@ -442,7 +402,11 @@ def calibrate_all_models_lsl(
 
     # --- Collect calibration data using LSL ---
     x_calib, y_calib = collect_lsl_calib_data(
-        lsl_stream_handler, config, seconds_per_class
+        lsl_stream_handler,
+        config["LABELS"],
+        config["WINDOW_SIZE"],
+        config["SAMPLING_RATE"],
+        seconds_per_class
     )
     check_no_nan(x_calib, name="calibration data")
     check_labels_valid(y_calib, valid_labels=config["LABELS"])
@@ -469,10 +433,34 @@ def calibrate_all_models_lsl(
     x_model = np.transpose(x_model, (0, 2, 1, 3))
     y_cat = to_categorical(y_calib_encoded)
 
+    # Remove unused variables and comments from previous refactor
+    # (No further changes needed, as config dict is now passed and used directly)
     calibrate_deep_models(
-        config, x_model, y_cat, scaler, session_tag, save_dir, verbose
+        config,
+        x_model,
+        y_cat,
+        scaler,
+        session_tag,
+        save_dir,
+        verbose,
     )
-    calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_dir)
+    scaler_tree_out = config.get("SCALER_TREE_SESSION") or os.path.join(
+        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
+    )
+    rf_out = config.get("MODEL_RF_SESSION") or os.path.join(
+        save_dir, f"eeg_rf_model_session_{session_tag}.pkl"
+    )
+    xgb_out = config.get("MODEL_XGB_SESSION") or os.path.join(
+        save_dir, f"eeg_xgb_model_session_{session_tag}.pkl"
+    )
+    calibrate_tree_models(
+        config["SAMPLING_RATE"],
+        x_calib,
+        y_calib_encoded,
+        scaler_tree_out,
+        rf_out,
+        xgb_out
+    )
 
     print("Session calibration complete. All models saved.")
 
