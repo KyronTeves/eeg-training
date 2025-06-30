@@ -51,6 +51,15 @@ SHORT_LABELS = {
 
 
 def short_label(label: str) -> str:
+    """
+    Return a short display label for a given direction label.
+
+    Args:
+        label (str): The full direction label.
+
+    Returns:
+        str: The short label (e.g., "FWD" for "forward").
+    """
     return SHORT_LABELS.get(label.lower(), label[:3].upper())
 
 
