@@ -22,8 +22,7 @@
   "WINDOW_SIZE": 125,
   "STEP_SIZE": 62,
   "USE_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
-  "TRAIN_SESSION_TYPES": ["pure", "jolt"],
-  "TEST_SESSION_TYPES": ["hybrid", "long"],
+  "TEST_SESSION_TYPES": ["pure", "jolt", "hybrid", "long"],
   
   "_model_training_config": "--- Model Training Configuration ---",
   "MODELS_TO_TRAIN": ["EEGNet", "ShallowConvNet"],
