@@ -208,6 +208,13 @@ def main() -> None:
     """
     setup_logging()
     config = load_config()
+    # Warn if train and test session types overlap
+    train_sessions = set(config.get("TRAIN_SESSION_TYPES", []))
+    test_sessions = set(config.get("TEST_SESSION_TYPES", []))
+    overlap = train_sessions & test_sessions
+    if overlap:
+        logging.warning("TRAIN_SESSION_TYPES and TEST_SESSION_TYPES overlap: %s. This may cause data leakage.", overlap)
+    # Only use windowed data from training session types
     x_windows, y_windows = load_windowed_data(config)
     check_no_nan(x_windows, name="Windowed EEG data")
     check_labels_valid(y_windows, name="Windowed labels")

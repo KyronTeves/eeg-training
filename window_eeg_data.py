@@ -23,12 +23,13 @@ from utils import (
 setup_logging()  # Set up consistent logging to file and console
 
 
-def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
+def load_and_filter_data(config: dict[str, Any], mode: str = "train") -> pd.DataFrame:
     """
-    Load EEG data from CSV and filter by session types if specified in config.
+    Load EEG data from CSV and filter by session types for train or test.
 
     Args:
         config (dict): Configuration parameters.
+        mode (str): 'train' or 'test'.
 
     Returns:
         pd.DataFrame: Filtered DataFrame.
@@ -51,10 +52,14 @@ def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
 
     if "session_type" in raw_data.columns:
         logging.info("Available session types: %s", raw_data["session_type"].unique())
-        use_sessions = config["USE_SESSION_TYPES"]
+        if mode == "train":
+            use_sessions = config.get("TRAIN_SESSION_TYPES", config["USE_SESSION_TYPES"])
+        else:
+            use_sessions = config.get("TEST_SESSION_TYPES", config["USE_SESSION_TYPES"])
         filtered_data = raw_data[raw_data["session_type"].isin(use_sessions)]
         logging.info(
-            "Using session types: %s, samples: %d",
+            "Using session types for %s: %s, samples: %d",
+            mode,
             use_sessions,
             len(filtered_data),
         )
@@ -128,7 +133,8 @@ def main() -> None:
     Loads config and data, windows the data, and saves output files.
     """
     config = load_config()
-    filtered_df = load_and_filter_data(config)
+    # Only generate training windows (for model training)
+    filtered_df = load_and_filter_data(config, mode="train")
 
     if filtered_df.empty:
         logging.info("No data to process. Exiting.")
