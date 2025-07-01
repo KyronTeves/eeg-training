@@ -7,7 +7,8 @@ evaluation metrics for all models and ensemble.
 
 import os
 import logging
-from collections import Counter
+import random
+from collections import Counter, defaultdict
 
 import joblib
 import matplotlib.pyplot as plt
@@ -83,14 +84,40 @@ def log_sample_predictions(
         pred_rf_str: Random Forest predicted labels as strings.
         pred_xgb_str: XGBoost predicted labels as strings.
         pred_ensemble_labels: Ensemble predicted labels as strings.
-        num_samples_to_log: Number of samples to log.
+        num_samples_to_log: Number of samples to log (total, spread across classes).
     """
+
     eegnet_matches = 0
     shallow_matches = 0
     ensemble_matches = 0
 
-    logging.info("--- Individual Sample Predictions ---")
-    for i in range(num_samples_to_log):
+    # Group indices by class
+    class_indices = defaultdict(list)
+    for i, label in enumerate(y_true_str):
+        class_indices[label].append(i)
+
+    # Determine how many samples per class to log
+    n_classes = len(class_indices)
+    samples_per_class = max(1, num_samples_to_log // n_classes)
+
+    selected_indices = []
+    for label, indices in class_indices.items():
+        random.shuffle(indices)
+        selected_indices.extend(indices[:samples_per_class])
+    # If we have fewer than num_samples_to_log, fill with randoms
+    if len(selected_indices) < num_samples_to_log:
+        remaining = set(range(len(y_true_str))) - set(selected_indices)
+        selected_indices.extend(
+            random.sample(
+                list(remaining),
+                min(num_samples_to_log - len(selected_indices), len(remaining)),
+            )
+        )
+    # Limit to exactly num_samples_to_log
+    selected_indices = selected_indices[:num_samples_to_log]
+
+    logging.info("--- Individual Sample Predictions (diverse by class) ---")
+    for i in selected_indices:
         actual_label = y_true_str[i]
 
         eegnet_pred = pred_eegnet_str[i]
