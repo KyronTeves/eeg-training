@@ -159,6 +159,19 @@ def train_eegnet_model(
         logging.info("%s saved to %s", model_name, model_path)
 
 
+def upsample_features_and_labels(x, y):
+    """Upsample all classes to the majority class count."""
+    unique, counts = np.unique(y, return_counts=True)
+    max_count = np.max(counts)
+    indices_per_class = [np.nonzero(y == i)[0] for i in unique]
+    upsampled_indices = np.concatenate([
+        np.random.choice(idxs, max_count, replace=True)
+        for idxs in indices_per_class
+    ])
+    np.random.shuffle(upsampled_indices)
+    return x[upsampled_indices], y[upsampled_indices]
+
+
 def train_tree_models(
     x_features: np.ndarray,
     y_encoded: np.ndarray,
@@ -179,52 +192,43 @@ def train_tree_models(
     scaler_tree = StandardScaler()
     x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
     x_test_scaled_tree = scaler_tree.transform(x_test_tree)
+    # Upsample all classes in training set
+    x_train_bal, y_train_bal = upsample_features_and_labels(x_train_scaled_tree, y_train_tree)
     # Compute class weights for RandomForest
     rf_class_weights = compute_class_weight(
         class_weight="balanced",
-        classes=np.unique(y_train_tree),
-        y=y_train_tree,
+        classes=np.unique(y_train_bal),
+        y=y_train_bal,
     )
-    rf_class_weight_dict = dict(zip(np.unique(y_train_tree), rf_class_weights))
+    rf_class_weight_dict = dict(zip(np.unique(y_train_bal), rf_class_weights))
     rf = RandomForestClassifier(
         n_estimators=100, random_state=42, class_weight=rf_class_weight_dict
     )
-    rf.fit(x_train_scaled_tree, y_train_tree)
+    rf.fit(x_train_bal, y_train_bal)
     rf_pred = rf.predict(x_test_scaled_tree)
     # Save Random Forest feature importances
-    np.save(config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"), rf.feature_importances_)
-    logging.info(
-        "Saved Random Forest feature importances to %s",
-        config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"),
-    )
+    rf_importance_path = config.get("RF_FEATURE_IMPORTANCES", "models/rf_feature_importances.npy")
+    np.save(rf_importance_path, rf.feature_importances_)
+    logging.info("Saved Random Forest feature importances to %s", rf_importance_path)
     logging.info("Random Forest Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logging.info(
         "Classification Report:\n%s",
         classification_report(y_test_tree, rf_pred, target_names=label_encoder.classes_),
     )
-    # Compute scale_pos_weight for XGBoost (multiclass: use class ratios)
-    class_counts = np.bincount(y_train_tree)
-    total = np.sum(class_counts)
-    scale_pos_weight = {
-        i: total / (len(class_counts) * c) if c > 0 else 1.0
-        for i, c in enumerate(class_counts)
-    }
+    # XGBoost: fit on upsampled data
     xgb = XGBClassifier(
         n_estimators=100,
         random_state=42,
         use_label_encoder=False,
         eval_metric="mlogloss",
-        scale_pos_weight=scale_pos_weight,
     )
-    xgb.fit(x_train_scaled_tree, y_train_tree)
+    xgb.fit(x_train_bal, y_train_bal)
     xgb_pred = xgb.predict(x_test_scaled_tree)
     # Save XGBoost feature importances
-    np.save(config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"), xgb.feature_importances_)
-    logging.info(
-        "Saved XGBoost feature importances to %s",
-        config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"),
-    )
+    xgb_importance_path = config.get("XGB_FEATURE_IMPORTANCES", "models/xgb_feature_importances.npy")
+    np.save(xgb_importance_path, xgb.feature_importances_)
+    logging.info("Saved XGBoost feature importances to %s", xgb_importance_path)
     logging.info("XGBoost Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logging.info(

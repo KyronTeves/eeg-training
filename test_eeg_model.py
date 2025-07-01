@@ -374,6 +374,22 @@ def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndar
     return x_windows_cnn
 
 
+def map_feature_index(idx, n_channels=16):
+    channels = [f"ch_{i}" for i in range(n_channels)]
+    feature_types = ["delta", "theta", "alpha", "beta", "gamma", "mean", "var", "std"]
+    ch = idx // 8
+    ft = idx % 8
+    return f"{channels[ch]}_{feature_types[ft]}"
+
+
+def print_top_feature_importances(importances, model_name, top_n=10, n_channels=16):
+    indices = np.argsort(importances)[::-1][:top_n]
+    print(f"\nTop {top_n} features for {model_name}:")
+    for rank, idx in enumerate(indices, 1):
+        mapped = map_feature_index(idx, n_channels)
+        print(f"{rank:2d}. Feature {idx:3d} ({mapped}): Importance = {importances[idx]:.4f}")
+
+
 def main():
     """Main evaluation pipeline for EEG models on held-out test data windows.
 
@@ -435,8 +451,8 @@ def main():
 
     # Plot feature importances for tree-based models
     try:
-        rf_importances = np.load(config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"))
-        xgb_importances = np.load(config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"))
+        rf_importances = np.load(config.get("RF_FEATURE_IMPORTANCES", "models/rf_feature_importances.npy"))
+        xgb_importances = np.load(config.get("XGB_FEATURE_IMPORTANCES", "models/xgb_feature_importances.npy"))
         feature_indices = np.arange(len(rf_importances))
         plt.figure(figsize=(10, 5))
         plt.bar(feature_indices, rf_importances)
@@ -456,6 +472,9 @@ def main():
         plt.savefig("plots/xgb_feature_importances.png")
         plt.close()
         logging.info("Saved XGBoost feature importances plot to plots/xgb_feature_importances.png")
+        # Print top features for both models
+        print_top_feature_importances(rf_importances, "Random Forest", top_n=10, n_channels=n_channels)
+        print_top_feature_importances(xgb_importances, "XGBoost", top_n=10, n_channels=n_channels)
     except (OSError, ValueError) as e:
         logging.warning("Feature importance plotting failed: %s", e)
 
