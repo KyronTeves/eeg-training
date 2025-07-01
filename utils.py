@@ -1,24 +1,23 @@
 """
-utils.py
-
 Utility functions for the EEG training system.
 
-Input: Various (EEG data, config files, etc.)
-Process: Configuration loading, data windowing, calibration data collection, logging setup, validation utilities.
-Output: Processed data, configuration dicts, logging setup, validation results.
+Provides configuration loading, data windowing, calibration data collection, logging setup, and
+validation utilities for EEG data processing and model training.
 """
 
 import json
 import logging
 import os
 import time
+import functools
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Tuple
+from typing import Any, Callable, Dict, Optional, Tuple, List
 
 import joblib
 import numpy as np
 import pandas as pd
+import tensorflow as tf
 from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
@@ -78,16 +77,17 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
     return np.array(features)
 
 
-def load_config(path: str = "config.json") -> dict:
+def load_config(path: Optional[str] = None) -> Dict[str, Any]:
     """
-    Load configuration from a JSON file.
-
+    Load configuration from a JSON file. If path is None, use the CONFIG_PATH environment variable
+    or default to 'config.json'.
     Input: path (str) - path to config file
     Process: Reads and parses JSON
     Output: Config dictionary
     """
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    if path is None:
+        path = os.environ.get("CONFIG_PATH", "config.json")
+    return load_json(path)
 
 
 def window_data(
@@ -136,14 +136,19 @@ def window_data(
     return x_windows, y_windows
 
 
-def setup_logging(logfile: str = "eeg_training.log"):
+def setup_logging(
+    logfile: str = "eeg_training.log", default_level: Optional[str] = None
+) -> None:
     """
     Set up logging to both console and file with rotation.
-
-    Input: logfile (str)
+    Log level can be set via LOG_LEVEL env var or argument.
+    Input: logfile (str), default_level (str)
     Process: Configures logging handlers and formatters
     Output: None (side effect: logging configured)
     """
+    # Determine log level
+    level_str = os.environ.get("LOG_LEVEL", default_level or "INFO")
+    level = getattr(logging, level_str.upper(), logging.INFO)
 
     # Create rotating file handler (10MB max, keep 5 backup files)
     file_handler = RotatingFileHandler(
@@ -162,10 +167,10 @@ def setup_logging(logfile: str = "eeg_training.log"):
     console_handler.setFormatter(formatter)
 
     # Configure root logger
-    logging.basicConfig(level=logging.INFO, handlers=[console_handler, file_handler])
+    logging.basicConfig(level=level, handlers=[console_handler, file_handler])
 
 
-def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
+def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -> None:
     """
     Archive and rotate log file if it exceeds max_size_mb.
 
@@ -192,7 +197,7 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50):
         logging.info("Starting fresh log file with rotation enabled")
 
 
-def check_no_nan(x, name="data"):
+def check_no_nan(x: np.ndarray, name: str = "data") -> None:
     """
     Check for NaN values in a numpy array and raise error if found.
 
@@ -205,7 +210,9 @@ def check_no_nan(x, name="data"):
         raise ValueError(f"{name} contains NaN values.")
 
 
-def check_labels_valid(labels, valid_labels=None, name="labels"):
+def check_labels_valid(
+    labels: np.ndarray, valid_labels: Optional[List[Any]] = None, name: str = "labels"
+) -> None:
     """
     Check for NaN and invalid label values in an array.
 
@@ -223,7 +230,13 @@ def check_labels_valid(labels, valid_labels=None, name="labels"):
             raise ValueError(f"{name} contain invalid values: {invalid}")
 
 
-def collect_lsl_calib_data(lsl_stream_handler, config, seconds_per_class):
+def collect_lsl_calib_data(
+    lsl_stream_handler: Any,
+    label_classes: list[str],
+    window_size: int,
+    sample_rate: int,
+    seconds_per_class: int
+) -> Tuple[np.ndarray, np.ndarray]:
     """
     Collect calibration data from an LSL stream for each label class.
 
@@ -231,9 +244,6 @@ def collect_lsl_calib_data(lsl_stream_handler, config, seconds_per_class):
     Process: Prompts user for each label, collects EEG windows for a specified duration per class
     Output: Tuple of numpy arrays (calib_x, calib_y) containing calibration data and corresponding labels
     """
-    label_classes = config["LABELS"]
-    window_size = config["WINDOW_SIZE"]
-    sample_rate = config["SAMPLING_RATE"]
     calib_x, calib_y = [], []
     for label in label_classes:
         input(
@@ -254,42 +264,21 @@ def collect_lsl_calib_data(lsl_stream_handler, config, seconds_per_class):
 
 
 def calibrate_deep_models(
-    config, x_model, y_cat, scaler, session_tag, save_dir, verbose
-):
+    config: dict,
+    x_model: np.ndarray,
+    y_cat: np.ndarray,
+    scaler: StandardScaler,
+    save_dir: str,
+    verbose: bool,
+) -> None:
     """
     Calibrate and save deep learning models (EEGNet and ShallowConvNet) for EEG classification.
-
-    Input:
-        config (dict): Configuration dictionary.
-        x_model (np.ndarray): Preprocessed EEG data for model input.
-        y_cat (np.ndarray): One-hot encoded labels.
-        scaler (StandardScaler): Fitted scaler for data normalization.
-        session_tag (str): Unique session identifier.
-        save_dir (str): Directory to save models and scalers.
-        verbose (bool): Verbosity flag for model training.
-
-    Process:
-        Loads pretrained models, fine-tunes them on calibration data, and saves updated models and scalers.
-
-    Output:
-        None (side effect: models and scalers are saved to disk)
+    Input: config (dict), x_model (np.ndarray), y_cat (np.ndarray),
+           scaler (StandardScaler), save_dir (str), verbose (bool)
+    Output: None (side effect: models and scalers saved)
     """
-    label_classes = config["LABELS"]
-    channels = (
-        config.get("EEG_CHANNELS")
-        or config.get("CHANNELS")
-        or list(range(config["N_CHANNELS"]))
-    )
-    window_size = config["WINDOW_SIZE"]
     # EEGNet
-    eegnet_path = config["MODEL_EEGNET"]
-    eegnet_out = config.get("MODEL_EEGNET_SESSION") or os.path.join(
-        save_dir, f"eeg_direction_model_session_{session_tag}.h5"
-    )
-    scaler_out = config.get("SCALER_EEGNET_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_session_{session_tag}.pkl"
-    )
-    model = load_model(eegnet_path)
+    model = load_model(config["MODEL_EEGNET"])
     model.compile(
         optimizer=Adam(learning_rate=0.001),
         loss="categorical_crossentropy",
@@ -302,21 +291,23 @@ def calibrate_deep_models(
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
+    # Save EEGNet model and scaler to generic session paths (no timestamp)
+    eegnet_out = os.path.join(save_dir, "eeg_direction_model_session.h5")
+    scaler_out = os.path.join(save_dir, "eeg_scaler_session.pkl")
     model.save(eegnet_out)
     joblib.dump(scaler, scaler_out)
     logging.info("EEGNet session model saved to %s", eegnet_out)
     # ShallowConvNet
-    shallow_path = config["MODEL_SHALLOW"]
-    shallow_out = os.path.join(save_dir, f"eeg_shallow_model_session_{session_tag}.h5")
-    scaler_shallow_out = config.get("SCALER_TREE_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
-    )
     shallow = ShallowConvNet(
-        nb_classes=len(label_classes),
-        Chans=len(channels),
-        Samples=window_size,
+        nb_classes=len(config["LABELS"]),
+        Chans=len(
+            config.get("EEG_CHANNELS")
+            or config.get("CHANNELS")
+            or list(range(config["N_CHANNELS"]))
+        ),
+        Samples=config["WINDOW_SIZE"],
     )
-    shallow.load_weights(shallow_path)
+    shallow.load_weights(config["MODEL_SHALLOW"])
     shallow.compile(
         optimizer=Adam(learning_rate=0.001),
         loss="categorical_crossentropy",
@@ -329,64 +320,48 @@ def calibrate_deep_models(
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
+    # Save ShallowConvNet model to generic session path (no timestamp)
+    shallow_out = os.path.join(save_dir, "eeg_shallow_model_session.h5")
+    scaler_shallow_out = os.path.join(save_dir, "eeg_scaler_tree_session.pkl")
     shallow.save(shallow_out)
     joblib.dump(scaler, scaler_shallow_out)
     logging.info("ShallowConvNet session model saved to %s", shallow_out)
 
 
-def calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_dir):
+def calibrate_tree_models(
+    sample_rate: int,
+    x_calib: np.ndarray,
+    y_calib_encoded: np.ndarray,
+    scaler_tree_out: str,
+    rf_out: str,
+    xgb_out: str,
+) -> None:
     """
     Calibrate and save tree-based models (Random Forest, XGBoost) for EEG classification.
-
-    Input:
-        config (dict): Configuration dictionary.
-        x_calib (np.ndarray): Calibration EEG data windows.
-        y_calib_encoded (np.ndarray): Encoded calibration labels.
-        session_tag (str): Unique session identifier.
-        save_dir (str): Directory to save models and scalers.
-
-    Process:
-        Extracts features, scales data, trains models, and saves them.
-
-    Output:
-        None (side effect: models and scalers are saved to disk)
     """
-    sample_rate = config["SAMPLING_RATE"]
     x_feat = np.array([extract_features(w, fs=sample_rate) for w in x_calib])
     scaler_tree = StandardScaler()
     x_feat_scaled = scaler_tree.fit_transform(x_feat)
-    scaler_tree_out = config.get("SCALER_TREE_SESSION") or os.path.join(
-        save_dir, f"eeg_scaler_tree_session_{session_tag}.pkl"
-    )
     joblib.dump(scaler_tree, scaler_tree_out)
     # Random Forest
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     rf.fit(x_feat_scaled, y_calib_encoded)
-    rf_out = config.get("MODEL_RF_SESSION") or os.path.join(
-        save_dir, f"eeg_rf_model_session_{session_tag}.pkl"
-    )
     joblib.dump(rf, rf_out)
     logging.info("Random Forest session model saved to %s", rf_out)
     # XGBoost
-    xgb = XGBClassifier(
-        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss"
-    )
+    xgb = XGBClassifier(n_estimators=100, use_label_encoder=False, eval_metric="mlogloss")
     xgb.fit(x_feat_scaled, y_calib_encoded)
-    xgb_out = config.get("MODEL_XGB_SESSION") or os.path.join(
-        save_dir, f"eeg_xgb_model_session_{session_tag}.pkl"
-    )
     joblib.dump(xgb, xgb_out)
     logging.info("XGBoost session model saved to %s", xgb_out)
 
 
 def calibrate_all_models_lsl(
-    lsl_stream_handler,
-    config_path="config.json",
-    seconds_per_class=None,
-    session_tag=None,
-    save_dir="models",
-    verbose=True,
-):
+    lsl_stream_handler: Any,
+    config_path: str = "config.json",
+    seconds_per_class: Optional[int] = None,
+    save_dir: str = "models",
+    verbose: bool = True,
+) -> None:
     """
     Unified, LSL-aware calibration for all models (EEGNet, ShallowConvNet, RF, XGBoost).
     Uses config for parameters and saves session-specific models/scalers.
@@ -397,13 +372,15 @@ def calibrate_all_models_lsl(
     config = {k.upper(): v for k, v in config.items()}
     if seconds_per_class is None:
         seconds_per_class = config.get("CALIBRATION_SECONDS_PER_CLASS", 10)
-    if session_tag is None:
-        session_tag = time.strftime("%Y%m%d_%H%M%S")
     os.makedirs(save_dir, exist_ok=True)
 
     # --- Collect calibration data using LSL ---
     x_calib, y_calib = collect_lsl_calib_data(
-        lsl_stream_handler, config, seconds_per_class
+        lsl_stream_handler,
+        config["LABELS"],
+        config["WINDOW_SIZE"],
+        config["SAMPLING_RATE"],
+        seconds_per_class
     )
     check_no_nan(x_calib, name="calibration data")
     check_labels_valid(y_calib, valid_labels=config["LABELS"])
@@ -412,12 +389,9 @@ def calibrate_all_models_lsl(
     le = LabelEncoder()
     le.fit(config["LABELS"])
     y_calib_encoded = le.transform(y_calib)
-    le_path = config.get("LABEL_ENCODER_SESSION") or os.path.join(
-        save_dir, f"eeg_label_encoder_session_{session_tag}.pkl"
-    )
-    label_classes_path = config.get("LABEL_CLASSES_NPY_SESSION") or os.path.join(
-        save_dir, f"eeg_label_classes_session_{session_tag}.npy"
-    )
+    # Save label encoder and class list to generic session paths (no timestamp)
+    le_path = os.path.join(save_dir, "eeg_label_encoder.pkl")
+    label_classes_path = os.path.join(save_dir, "eeg_label_classes.npy")
     joblib.dump(le, le_path)
     np.save(label_classes_path, config["LABELS"])
 
@@ -431,8 +405,102 @@ def calibrate_all_models_lsl(
     y_cat = to_categorical(y_calib_encoded)
 
     calibrate_deep_models(
-        config, x_model, y_cat, scaler, session_tag, save_dir, verbose
+        config,
+        x_model,
+        y_cat,
+        scaler,
+        save_dir,
+        verbose,
     )
-    calibrate_tree_models(config, x_calib, y_calib_encoded, session_tag, save_dir)
+    scaler_tree_out = os.path.join(save_dir, "eeg_scaler_tree.pkl")
+    rf_out = os.path.join(save_dir, "eeg_rf_model.pkl")
+    xgb_out = os.path.join(save_dir, "eeg_xgb_model.pkl")
+    calibrate_tree_models(
+        config["SAMPLING_RATE"],
+        x_calib,
+        y_calib_encoded,
+        scaler_tree_out,
+        rf_out,
+        xgb_out,
+    )
 
     print("Session calibration complete. All models saved.")
+
+
+def square(x: Any) -> Any:
+    """
+    Compute the element-wise square of a tensor using TensorFlow.
+
+    Input: x (Tensor) - input tensor
+    Output: Tensor with each element squared
+    """
+    return tf.math.square(x)
+
+
+def log(x: Any) -> Any:
+    """
+    Compute the element-wise natural logarithm of a tensor using TensorFlow,
+    with values clipped to avoid log(0).
+
+    Input: x (Tensor) - input tensor
+    Output: Tensor with the natural logarithm applied element-wise
+    """
+    return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
+
+
+CUSTOM_OBJECTS = {"square": square, "log": log}
+
+
+class EEGSystemError(Exception):
+    """
+    Base exception for EEG system errors.
+    """
+
+
+class DataLoadError(EEGSystemError):
+    """
+    Raised when data loading fails.
+    """
+
+
+class ModelLoadError(EEGSystemError):
+    """
+    Raised when model loading fails.
+    """
+
+
+class ConfigError(EEGSystemError):
+    """
+    Raised when configuration is invalid or missing.
+    """
+
+
+def handle_errors(main_func: Callable) -> Callable:
+    """
+    Decorator to catch and log uncaught exceptions in script entry points.
+    """
+
+    @functools.wraps(main_func)
+    def wrapper(*args, **kwargs):
+        try:
+            return main_func(*args, **kwargs)
+        except EEGSystemError as e:
+            logging.error("EEGSystemError: %s", e)
+            raise
+        except Exception as e:
+            logging.exception("Unhandled exception: %s", e)
+            raise
+
+    return wrapper
+
+
+def save_json(data: Dict[str, Any], path: str) -> None:
+    """Save a dictionary as a JSON file."""
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def load_json(path: str) -> Dict[str, Any]:
+    """Load a dictionary from a JSON file."""
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)

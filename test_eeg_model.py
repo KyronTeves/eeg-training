@@ -1,11 +1,8 @@
 """
-test_eeg_model.py
+Evaluate trained EEGNet, ShallowConvNet, Random Forest, and XGBoost models on held-out EEG data windows.
 
-Evaluate trained EEGNet, ShallowConvNet, Random Forest, XGBoost models on held-out EEG data windows.
-
-Input: Labeled EEG CSV file, trained model files
-Process: Loads test data and models, applies windowing and scaling, computes predictions, reports metrics.
-Output: Evaluation metrics, predictions, and logs.
+Loads test data and models, applies windowing and scaling, computes predictions, and reports
+evaluation metrics for all models and ensemble.
 """
 
 import os
@@ -17,7 +14,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
-import tensorflow as tf
 from joblib import Parallel, delayed
 from keras.models import load_model  # type: ignore
 from sklearn.manifold import TSNE
@@ -31,17 +27,9 @@ from utils import (
     load_config,
     setup_logging,
     window_data,
+    square,
+    log,
 )
-
-
-def square(x):
-    """Return the element-wise square of the input tensor."""
-    return tf.math.square(x)
-
-
-def log(x):
-    """Return the element-wise natural logarithm of the input tensor, with a lower bound for stability."""
-    return tf.math.log(tf.math.maximum(x, 1e-7))
 
 
 def ensemble_hard_voting(
@@ -233,7 +221,9 @@ def plot_tsne_features(
         plt.figure(figsize=(8, 6))
         for label in np.unique(labels_str):
             idx = labels_str == label
-            plt.scatter(x_reduced[idx, 0], x_reduced[idx, 1], label=label, alpha=0.6, s=20)
+            plt.scatter(
+                x_reduced[idx, 0], x_reduced[idx, 1], label=label, alpha=0.6, s=20
+            )
         plt.legend()
         plt.title(title)
         plt.xlabel("Component 1")
@@ -270,7 +260,12 @@ def plot_tsne_features(
 
 
 def plot_feature_distributions(
-    x_features, y_labels, label_encoder, feature_indices=None, max_features=5, save_dir="plots"
+    x_features,
+    y_labels,
+    label_encoder,
+    feature_indices=None,
+    max_features=5,
+    save_dir="plots",
 ):
     """Plot histograms for selected features across classes and save to file."""
     os.makedirs(save_dir, exist_ok=True)
@@ -300,6 +295,56 @@ def plot_feature_distributions(
         plt.savefig(fname)
         plt.close()
         logging.info("Saved feature distribution plot to %s", fname)
+
+
+def load_models_and_scalers(config):
+    """Load all models, scalers, and label encoder as specified in config.
+
+    Args:
+        config: Configuration dictionary with model/scaler paths.
+    Returns:
+        Tuple of (label_encoder, scaler_eegnet, scaler_tree, scaler_shallow, model_eegnet, model_shallow, rf, xgb)
+    Raises:
+        ImportError, OSError, AttributeError if loading fails.
+    """
+    le = joblib.load(config["LABEL_ENCODER"])
+    scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
+    scaler_tree = joblib.load(config["SCALER_TREE"])
+    model_eegnet = load_model(config["MODEL_EEGNET"])
+    rf = joblib.load(config["MODEL_RF"])
+    xgb = joblib.load(config["MODEL_XGB"])
+    model_shallow = load_model(
+        config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
+    )
+    scaler_shallow = joblib.load(config.get("SCALER_SHALLOW", config["SCALER_EEGNET"]))
+    return (
+        le,
+        scaler_eegnet,
+        scaler_tree,
+        scaler_shallow,
+        model_eegnet,
+        model_shallow,
+        rf,
+        xgb,
+    )
+
+
+def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndarray:
+    """Scale and reshape windowed EEG data for CNN input.
+
+    Args:
+        x_windows: Windowed EEG data, shape (n_windows, window_size, n_channels).
+        scaler: Fitted scaler for the data.
+        n_channels: Number of EEG channels.
+
+    Returns:
+        Scaled and reshaped data suitable for CNN input.
+    """
+    x_windows_flat = x_windows.reshape(-1, n_channels)
+    x_windows_scaled = scaler.transform(x_windows_flat).reshape(x_windows.shape)
+    x_windows_cnn = np.expand_dims(x_windows_scaled, -1)
+    x_windows_cnn = np.transpose(x_windows_cnn, (0, 2, 1, 3))
+    return x_windows_cnn
 
 
 def main():
@@ -374,32 +419,22 @@ def main():
         logging.warning("Feature visualization failed: %s", e)
 
     try:
-        scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
-        scaler_tree = joblib.load(config["SCALER_TREE"])
-        model_eegnet = load_model(config["MODEL_EEGNET"])
-        rf = joblib.load(config["MODEL_RF"])
-        xgb = joblib.load(config["MODEL_XGB"])
-        model_shallow = load_model(
-            config["MODEL_SHALLOW"], custom_objects={"square": square, "log": log}
-        )
-        scaler_shallow = joblib.load(
-            config.get("SCALER_SHALLOW", config["SCALER_EEGNET"])
-        )
+        (
+            le,
+            scaler_eegnet,
+            scaler_tree,
+            scaler_shallow,
+            model_eegnet,
+            model_shallow,
+            rf,
+            xgb,
+        ) = load_models_and_scalers(config)
     except (ImportError, OSError, AttributeError) as e:
         logging.error("Failed to load models or encoders: %s", e)
         raise
 
-    x_windows_flat = x_windows.reshape(-1, n_channels)
-    x_windows_scaled_eegnet = scaler_eegnet.transform(x_windows_flat).reshape(
-        x_windows.shape
-    )
-    x_windows_eegnet = np.expand_dims(x_windows_scaled_eegnet, -1)
-    x_windows_eegnet = np.transpose(x_windows_eegnet, (0, 2, 1, 3))
-    x_windows_scaled_shallow = scaler_shallow.transform(x_windows_flat).reshape(
-        x_windows.shape
-    )
-    x_windows_shallow = np.expand_dims(x_windows_scaled_shallow, -1)
-    x_windows_shallow = np.transpose(x_windows_shallow, (0, 2, 1, 3))
+    x_windows_eegnet = prepare_cnn_input(x_windows, scaler_eegnet, n_channels)
+    x_windows_shallow = prepare_cnn_input(x_windows, scaler_shallow, n_channels)
     x_features_scaled = scaler_tree.transform(x_features)
 
     logging.info("Generating predictions for all models...")
