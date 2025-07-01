@@ -16,6 +16,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
@@ -89,6 +90,14 @@ def train_eegnet_model(
     d = config["EEGNET_D"]
     f2 = config["EEGNET_F2"]
     models_to_train = config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
+    # Compute class weights for neural nets
+    y_train_labels = np.argmax(y_train, axis=1)
+    class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.arange(y_train.shape[1]),
+        y=y_train_labels,
+    )
+    class_weight_dict = dict(enumerate(class_weights))
     for model_name in models_to_train:
         logging.info("=== Training %s ===", model_name)
         if model_name == "EEGNet":
@@ -127,7 +136,7 @@ def train_eegnet_model(
             epochs=config["EPOCHS"],
             batch_size=config["BATCH_SIZE"],
             validation_split=config["VALIDATION_SPLIT"],
-            class_weight=None,  # Set externally if needed
+            class_weight=class_weight_dict,
             callbacks=[early_stopping],
             verbose=1,
         )
@@ -170,23 +179,52 @@ def train_tree_models(
     scaler_tree = StandardScaler()
     x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
     x_test_scaled_tree = scaler_tree.transform(x_test_tree)
-    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    # Compute class weights for RandomForest
+    rf_class_weights = compute_class_weight(
+        class_weight="balanced",
+        classes=np.unique(y_train_tree),
+        y=y_train_tree,
+    )
+    rf_class_weight_dict = dict(zip(np.unique(y_train_tree), rf_class_weights))
+    rf = RandomForestClassifier(
+        n_estimators=100, random_state=42, class_weight=rf_class_weight_dict
+    )
     rf.fit(x_train_scaled_tree, y_train_tree)
     rf_pred = rf.predict(x_test_scaled_tree)
+    # Save Random Forest feature importances
+    np.save(config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"), rf.feature_importances_)
+    logging.info(
+        "Saved Random Forest feature importances to %s",
+        config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"),
+    )
     logging.info("Random Forest Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logging.info(
         "Classification Report:\n%s",
         classification_report(y_test_tree, rf_pred, target_names=label_encoder.classes_),
     )
+    # Compute scale_pos_weight for XGBoost (multiclass: use class ratios)
+    class_counts = np.bincount(y_train_tree)
+    total = np.sum(class_counts)
+    scale_pos_weight = {
+        i: total / (len(class_counts) * c) if c > 0 else 1.0
+        for i, c in enumerate(class_counts)
+    }
     xgb = XGBClassifier(
         n_estimators=100,
         random_state=42,
         use_label_encoder=False,
         eval_metric="mlogloss",
+        scale_pos_weight=scale_pos_weight,
     )
     xgb.fit(x_train_scaled_tree, y_train_tree)
     xgb_pred = xgb.predict(x_test_scaled_tree)
+    # Save XGBoost feature importances
+    np.save(config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"), xgb.feature_importances_)
+    logging.info(
+        "Saved XGBoost feature importances to %s",
+        config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"),
+    )
     logging.info("XGBoost Results:")
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logging.info(

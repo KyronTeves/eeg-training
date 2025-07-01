@@ -433,6 +433,32 @@ def main():
     )
     logging.info("Feature extraction complete. Feature shape: %s", x_features.shape)
 
+    # Plot feature importances for tree-based models
+    try:
+        rf_importances = np.load(config.get("RF_FEATURE_IMPORTANCES", "rf_feature_importances.npy"))
+        xgb_importances = np.load(config.get("XGB_FEATURE_IMPORTANCES", "xgb_feature_importances.npy"))
+        feature_indices = np.arange(len(rf_importances))
+        plt.figure(figsize=(10, 5))
+        plt.bar(feature_indices, rf_importances)
+        plt.title("Random Forest Feature Importances")
+        plt.xlabel("Feature Index")
+        plt.ylabel("Importance")
+        plt.tight_layout()
+        plt.savefig("plots/rf_feature_importances.png")
+        plt.close()
+        logging.info("Saved Random Forest feature importances plot to plots/rf_feature_importances.png")
+        plt.figure(figsize=(10, 5))
+        plt.bar(feature_indices, xgb_importances)
+        plt.title("XGBoost Feature Importances")
+        plt.xlabel("Feature Index")
+        plt.ylabel("Importance")
+        plt.tight_layout()
+        plt.savefig("plots/xgb_feature_importances.png")
+        plt.close()
+        logging.info("Saved XGBoost feature importances plot to plots/xgb_feature_importances.png")
+    except (OSError, ValueError) as e:
+        logging.warning("Feature importance plotting failed: %s", e)
+
     # Visualize feature space separability
     try:
         le = joblib.load(config["LABEL_ENCODER"])
