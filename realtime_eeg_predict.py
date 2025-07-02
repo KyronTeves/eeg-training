@@ -1,7 +1,18 @@
 """
 Real-time EEG direction prediction using LSL streaming from OpenBCI GUI.
 
-Loads trained models, buffers EEG data, performs real-time ensemble prediction, and logs results for online BCI control.
+This script provides an interactive menu for selecting prediction mode (EEGNet, ShallowConvNet,
+Random Forest, XGBoost, or Ensemble) and allows switching between models in real time without
+restarting. After each session, you can return to the menu or exit cleanly.
+
+Typical usage example:
+    $ python realtime_eeg_predict.py
+
+Features:
+    - Real-time prediction using multiple models or ensemble.
+    - Interactive menu for model selection and session switching.
+    - Supports both weighted soft voting and hard voting for ensemble.
+    - Clean exit and reconnection to LSL stream as needed.
 """
 
 import logging
@@ -546,7 +557,7 @@ def process_prediction(pipeline, prediction_count, use_hard_voting=False):
 
         # Neat, aligned output
         logging.info(
-            "[%-4d] %s %-8s (ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
+            "[%-4d] %s %-8s(ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
             prediction_count,
             status,
             predicted_label.upper(),
