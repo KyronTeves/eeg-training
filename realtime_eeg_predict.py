@@ -610,11 +610,9 @@ def session_calibration(lsl_handler, config):
 
 def select_prediction_mode():
     """
-    Prompt user to select prediction display mode (individual model or ensemble).
-
-    Input: None (user input)
-    Process: Prints options, reads user input
-    Output: True if ensemble mode, False if EEGNet only
+    Prompt user to select prediction display mode (individual model, ensemble, or exit).
+    Returns:
+        str: Mode string ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble', 'exit')
     """
     print("\nChoose prediction display mode:")
     print("1. EEGNet only")
@@ -622,8 +620,9 @@ def select_prediction_mode():
     print("3. Random Forest only")
     print("4. XGBoost only")
     print("5. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
+    print("6. Exit")
     while True:
-        mode = input("Enter 1, 2, 3, 4, or 5: ").strip()
+        mode = input("Enter 1, 2, 3, 4, 5, or 6: ").strip()
         if mode == "1":
             return 'eegnet'
         elif mode == "2":
@@ -634,8 +633,10 @@ def select_prediction_mode():
             return 'xgb'
         elif mode == "5":
             return 'ensemble'
+        elif mode == "6":
+            return 'exit'
         else:
-            print("Invalid selection. Please enter a number from 1 to 5.")
+            print("Invalid selection. Please enter a number from 1 to 6.")
 
 
 def initialize_pipeline(config_dict):
@@ -749,22 +750,32 @@ def main():
         )
         return
     session_calibration(lsl_handler, config)
-    mode = select_prediction_mode()
-    use_hard_voting = False
-    if mode == 'ensemble':
-        print("\nChoose ensemble method:")
-        print("1. Weighted soft voting (default)")
-        print("2. Hard voting (majority rule, matches offline test)")
-        method = input("Enter 1 or 2: ").strip()
-        if method == "2":
-            use_hard_voting = True
-    pipeline = initialize_pipeline(
-        config,
-    )
-    logging.info("=== REAL-TIME PREDICTION STARTED ===")
-    logging.info("Think of different directions to control the system.")
-    logging.info("Press Ctrl+C to stop.")
-    prediction_loop(lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting)
+    pipeline = initialize_pipeline(config)
+    while True:
+        mode = select_prediction_mode()
+        if mode == 'exit':
+            print("Exiting real-time prediction.")
+            break
+        # Reconnect LSL if needed
+        if not lsl_handler.connected and not lsl_handler.connect():
+            logging.error("Failed to reconnect to LSL stream. Exiting.")
+            break
+        use_hard_voting = False
+        if mode == 'ensemble':
+            print("\nChoose ensemble method:")
+            print("1. Weighted soft voting (default)")
+            print("2. Hard voting (majority rule, matches offline test)")
+            method = input("Enter 1 or 2: ").strip()
+            if method == "2":
+                use_hard_voting = True
+        logging.info("=== REAL-TIME PREDICTION STARTED ===")
+        logging.info("Think of different directions to control the system.")
+        logging.info("Press Ctrl+C to stop.")
+        try:
+            prediction_loop(lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting)
+        except KeyboardInterrupt:
+            print("\nPrediction stopped. Returning to menu...")
+            continue
 
 
 @handle_errors

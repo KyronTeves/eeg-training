@@ -34,6 +34,12 @@ class LSLStreamHandler:
         self.inlet: Optional[StreamInlet] = None
         self.sample_rate: Optional[float] = None
         self.n_channels: Optional[int] = None
+        self._connected: bool = False
+
+    @property
+    def connected(self) -> bool:
+        """Return True if currently connected to an LSL stream."""
+        return self._connected and self.inlet is not None
 
     def connect(self) -> bool:
         """
@@ -59,9 +65,11 @@ class LSLStreamHandler:
                 self.n_channels,
                 stream_info.channel_format(),
             )
+            self._connected = True
             return True
         except (RuntimeError, ValueError, ImportError) as e:
             logging.error("Failed to connect to LSL stream: %s", e)
+            self._connected = False
             return False
 
     def get_chunk(self, max_samples: int = 250) -> Tuple[np.ndarray, np.ndarray]:
@@ -125,6 +133,7 @@ class LSLStreamHandler:
         if self.inlet:
             self.inlet.close_stream()
             self.inlet = None
+            self._connected = False
             logging.info("Disconnected from LSL stream")
 
 # pylsl>=1.16.0 required in requirements.txt
