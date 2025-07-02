@@ -1,7 +1,13 @@
 """
-Collect EEG data from LSL stream (OpenBCI GUI), label it, and save to CSV for model training.
+collect_data.py
 
-Handles LSL connection, session/label prompting, data collection, and CSV writing for supervised EEG experiments.
+Collect EEG data from an LSL stream (OpenBCI GUI), label it, and save to CSV for model training.
+
+This script manages LSL connection, session/label prompting, data collection, and CSV writing for
+supervised EEG experiments.
+
+Typical usage:
+    $ python collect_data.py
 """
 
 import csv
@@ -18,10 +24,10 @@ from utils import check_labels_valid, check_no_nan, load_config, setup_logging, 
 
 def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
     """
-    Return the list of (duration, label) phases for a given session type.
+    Returns the list of (duration, label) phases for a given session type.
 
     Args:
-        session_type (str): Type of session.
+        session_type (str): Session type (e.g., 'pure', 'jolt').
         label (str): Label for the phase.
         config (dict): Configuration dictionary.
 
@@ -45,11 +51,11 @@ def collect_phase_data(
     config: dict,
 ) -> tuple[list[Any], list[float]]:
     """
-    Collect EEG data and timestamps for a single phase.
+    Collects EEG data and timestamps for a single phase.
 
     Args:
-        lsl_handler (LSLStreamHandler): LSL handler.
-        phase_duration (int): Duration of phase in seconds.
+        lsl_handler (LSLStreamHandler): LSL handler instance.
+        phase_duration (int): Duration of the phase in seconds.
         phase_label (str): Label for the phase.
         label (str): Label for the trial.
         config (dict): Configuration dictionary.
@@ -89,7 +95,7 @@ def write_phase_to_csv(
     config: dict,
 ) -> tuple[list, list]:
     """
-    Write phase EEG data and metadata to CSV, returning new rows and timestamps.
+    Writes phase EEG data and metadata to CSV, returning new rows and timestamps.
 
     Args:
         phase_data (list): EEG data samples.
@@ -135,10 +141,10 @@ def collect_trial_eeg_lsl(
     config: dict,
 ) -> tuple[int, list[float]]:
     """
-    Collect EEG data for a single trial using LSL streaming.
+    Collects EEG data for a single trial using LSL streaming.
 
     Args:
-        lsl_handler (LSLStreamHandler): LSL handler.
+        lsl_handler (LSLStreamHandler): LSL handler instance.
         session_type (str): Session type.
         label (str): Label for the trial.
         trial_num (int): Trial number.
@@ -172,7 +178,7 @@ def collect_trial_eeg_lsl(
 
 def prompt_start_trial(trial_num: int, label: str) -> None:
     """
-    Prompt the user to start a trial.
+    Prompts the user to start a trial.
 
     Args:
         trial_num (int): Trial number.
@@ -190,10 +196,10 @@ def run_trials_for_label(
     config: dict,
 ) -> int:
     """
-    Run all trials for a given label and update total_rows.
+    Runs all trials for a given label and updates total_rows.
 
     Args:
-        lsl_handler (LSLStreamHandler): LSL handler.
+        lsl_handler (LSLStreamHandler): LSL handler instance.
         session_type (str): Session type.
         label (str): Label for the trial.
         writer (csv.writer): CSV writer.

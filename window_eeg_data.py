@@ -1,8 +1,13 @@
 """
+window_eeg_data.py
+
 Segment raw EEG CSV data into overlapping windows for model training.
 
 Loads, filters, and windows EEG data for supervised learning, saving windowed EEG and label arrays
 for downstream model training.
+
+Typical usage:
+    $ python window_eeg_data.py
 """
 
 import logging
@@ -25,7 +30,7 @@ setup_logging()  # Set up consistent logging to file and console
 
 def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
     """
-    Load EEG data from CSV and filter by session types if specified in config.
+    Loads EEG data from CSV and filters by session types if specified in config.
 
     Args:
         config (dict): Configuration parameters.
@@ -68,7 +73,7 @@ def process_and_window_data(
     df: pd.DataFrame, config: dict[str, Any]
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Extract EEG and labels from DataFrame, then create overlapping windows.
+    Extracts EEG and labels from DataFrame, then creates overlapping windows.
 
     Args:
         df (pd.DataFrame): Input DataFrame.
@@ -100,7 +105,7 @@ def save_windowed_data(
     x_windows: np.ndarray, y_windows: np.ndarray, config: dict[str, Any]
 ) -> None:
     """
-    Save windowed EEG data and labels to .npy files.
+    Saves windowed EEG data and labels to .npy files.
 
     Args:
         x_windows (np.ndarray): Windowed EEG data.

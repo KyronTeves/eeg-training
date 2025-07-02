@@ -1,7 +1,12 @@
 """
+train_eeg_model.py
+
 Train EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
 
 Handles data loading, preprocessing, augmentation, model training, and artifact saving for EEG classification.
+
+Typical usage:
+    $ python train_eeg_model.py
 """
 
 import logging
@@ -35,7 +40,8 @@ def augment_eeg_data(
     drift_max: float = 0.05,
     artifact_prob: float = 0.05,
 ) -> np.ndarray:
-    """Augment EEG data with noise, drift, and simulated artifacts.
+    """
+    Augments EEG data with noise, drift, and simulated artifacts.
 
     Args:
         x (np.ndarray): Input EEG data, shape (n_windows, window_size, n_channels).
@@ -65,7 +71,8 @@ def train_eegnet_model(
     config: dict[str, Any],
     label_encoder: LabelEncoder,
 ) -> None:
-    """Train and evaluate EEGNet or ShallowConvNet model.
+    """
+    Trains and evaluates EEGNet or ShallowConvNet model.
 
     Args:
         x_train (np.ndarray): Training data, shape (n_samples, window, channels, 1).
@@ -156,7 +163,8 @@ def train_tree_models(
     config: dict[str, Any],
     label_encoder: LabelEncoder,
 ) -> None:
-    """Train and evaluate Random Forest and XGBoost models.
+    """
+    Trains and evaluates Random Forest and XGBoost models.
 
     Args:
         x_features (np.ndarray): Feature matrix for tree models.
@@ -231,7 +239,8 @@ def main() -> None:
 
 
 def load_windowed_data(config: dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
-    """Load windowed EEG data and corresponding labels from .npy files specified in the config.
+    """
+    Loads windowed EEG data and corresponding labels from .npy files specified in the config.
 
     Args:
         config (dict): Configuration dictionary containing file paths for windowed EEG data and labels.
@@ -267,7 +276,8 @@ def load_windowed_data(config: dict[str, Any]) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def encode_labels(y_windows: np.ndarray) -> Tuple[LabelEncoder, np.ndarray, np.ndarray]:
-    """Encode string or categorical labels into integer and one-hot encoded formats.
+    """
+    Encodes string or categorical labels into integer and one-hot encoded formats.
 
     Args:
         y_windows (np.ndarray): Array of labels to encode.
@@ -287,7 +297,8 @@ def encode_labels(y_windows: np.ndarray) -> Tuple[LabelEncoder, np.ndarray, np.n
 def preprocess_and_augment(
     x_windows: np.ndarray, y_cat: np.ndarray, config: dict[str, Any]
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, StandardScaler]:
-    """Split EEG data into train/test sets, scale, balance classes, augment, and return processed arrays.
+    """
+    Splits EEG data into train/test sets, scales, balances classes, augments, and returns processed arrays.
 
     Args:
         x_windows (np.ndarray): Windowed EEG data.
@@ -337,7 +348,8 @@ def preprocess_and_augment(
 
 
 def log_class_distribution(y_train_final: np.ndarray) -> None:
-    """Log the class distribution of the training data after downsampling and augmentation.
+    """
+    Logs the class distribution of the training data after downsampling and augmentation.
 
     Args:
         y_train_final (np.ndarray): One-hot encoded or categorical labels for the training set.
@@ -358,7 +370,8 @@ def log_class_distribution(y_train_final: np.ndarray) -> None:
 
 
 def extract_features_parallel(x_windows: np.ndarray, config: dict[str, Any]) -> np.ndarray:
-    """Extract features from each EEG window in parallel using joblib.
+    """
+    Extracts features from each EEG window in parallel using joblib.
 
     Args:
         x_windows (np.ndarray): Array of windowed EEG data.

@@ -1,4 +1,6 @@
 """
+test_eeg_model.py
+
 Evaluate trained EEGNet, ShallowConvNet, Random Forest, and XGBoost models on held-out EEG data windows.
 
 Loads test data and models, applies windowing and scaling, computes predictions, and reports
@@ -41,7 +43,8 @@ def ensemble_hard_voting(
     pred_xgb_labels,
     y_true_labels,
 ):
-    """Perform hard voting ensemble and return predicted labels.
+    """
+    Perform hard voting ensemble and return predicted labels.
 
     Args:
         le: Label encoder for inverse transforming labels.
@@ -52,7 +55,7 @@ def ensemble_hard_voting(
         y_true_labels: True labels for the data.
 
     Returns:
-        List of ensemble-predicted labels (majority vote).
+        list: Ensemble-predicted labels (majority vote).
     """
     pred_ensemble_labels = []
     for i in range(len(y_true_labels)):
@@ -75,7 +78,8 @@ def log_sample_predictions(
     pred_ensemble_labels,
     num_samples_to_log,
 ):
-    """Log sample predictions and accuracy for each model and the ensemble.
+    """
+    Log sample predictions and accuracy for each model and the ensemble.
 
     Args:
         y_true_str: True labels as strings.
@@ -181,7 +185,8 @@ def log_sample_predictions(
 
 
 def evaluate_model(y_true, y_pred, label_encoder, model_name):
-    """Log confusion matrix and classification report for a model.
+    """
+    Log confusion matrix and classification report for a model.
 
     Args:
         y_true: True label indices.
@@ -198,7 +203,9 @@ def evaluate_model(y_true, y_pred, label_encoder, model_name):
 
 
 def print_class_distribution(df, label_col, label_encoder=None, name="Dataset"):
-    """Print the class distribution for a DataFrame column."""
+    """
+    Print the class distribution for a DataFrame column.
+    """
 
     counts = Counter(df[label_col])
     if label_encoder is not None:
@@ -223,7 +230,9 @@ def plot_tsne_features(
     random_state=42,
     save_dir="plots",
 ):
-    """Plot t-SNE or UMAP of feature vectors colored by class and save to file. Supports 2D and 3D plots."""
+    """
+    Plot t-SNE or UMAP of feature vectors colored by class and save to file. Supports 2D and 3D plots.
+    """
 
     os.makedirs(save_dir, exist_ok=True)
     if method == "tsne":
@@ -294,7 +303,9 @@ def plot_feature_distributions(
     max_features=5,
     save_dir="plots",
 ):
-    """Plot histograms for selected features across classes and save to file."""
+    """
+    Plot histograms for selected features across classes and save to file.
+    """
     os.makedirs(save_dir, exist_ok=True)
     labels_str = (
         label_encoder.inverse_transform(y_labels)
@@ -325,12 +336,15 @@ def plot_feature_distributions(
 
 
 def load_models_and_scalers(config):
-    """Load all models, scalers, and label encoder as specified in config.
+    """
+    Load all models, scalers, and label encoder as specified in config.
 
     Args:
         config: Configuration dictionary with model/scaler paths.
+
     Returns:
-        Tuple of (label_encoder, scaler_eegnet, scaler_tree, scaler_shallow, model_eegnet, model_shallow, rf, xgb)
+        tuple: (label_encoder, scaler_eegnet, scaler_tree, scaler_shallow, model_eegnet, model_shallow, rf, xgb)
+
     Raises:
         ImportError, OSError, AttributeError if loading fails.
     """
@@ -357,7 +371,8 @@ def load_models_and_scalers(config):
 
 
 def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndarray:
-    """Scale and reshape windowed EEG data for CNN input.
+    """
+    Scale and reshape windowed EEG data for CNN input.
 
     Args:
         x_windows: Windowed EEG data, shape (n_windows, window_size, n_channels).
@@ -365,7 +380,7 @@ def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndar
         n_channels: Number of EEG channels.
 
     Returns:
-        Scaled and reshaped data suitable for CNN input.
+        np.ndarray: Scaled and reshaped data suitable for CNN input.
     """
     x_windows_flat = x_windows.reshape(-1, n_channels)
     x_windows_scaled = scaler.transform(x_windows_flat).reshape(x_windows.shape)
@@ -375,7 +390,8 @@ def prepare_cnn_input(x_windows: np.ndarray, scaler, n_channels: int) -> np.ndar
 
 
 def main():
-    """Main evaluation pipeline for EEG models on held-out test data windows.
+    """
+    Main evaluation pipeline for EEG models on held-out test data windows.
 
     Loads test data, applies windowing and feature extraction, loads models and scalers, generates predictions,
     logs sample predictions, and reports evaluation metrics for all models and ensemble.

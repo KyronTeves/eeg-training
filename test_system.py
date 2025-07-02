@@ -1,4 +1,6 @@
 """
+test_system.py
+
 Unit tests for EEG training system utility functions and pipeline integration.
 
 Tests data windowing, config loading, validation, model training, and integration using
@@ -30,7 +32,9 @@ DEFAULT_TIMEOUT = 30  # seconds
 
 
 def test_window_data_shape():
-    """Test that window_data returns correct shapes."""
+    """
+    Test that window_data returns correct shapes.
+    """
     x, y = make_synthetic_eeg_data(n_samples=1000, n_channels=16)
     x_windows, y_windows = window_data(x, y, window_size=250, step_size=125)
     assert x_windows.shape[1:] == (250, 16)
@@ -38,7 +42,9 @@ def test_window_data_shape():
 
 
 def test_window_data_output():
-    """Test window_data produces correct windowed output and label consistency."""
+    """
+    Test window_data produces correct windowed output and label consistency.
+    """
     x, y = make_synthetic_eeg_data(n_samples=500, n_channels=8, labels=["left", "right"])
     window_size = 100
     step_size = 50
@@ -55,7 +61,9 @@ def test_window_data_output():
 
 
 def test_load_config_keys():
-    """Test that config contains required keys."""
+    """
+    Test that config contains required keys.
+    """
     config = load_config()
     required_keys = [
         "N_CHANNELS",
@@ -83,7 +91,9 @@ def test_load_config_keys():
     ],
 )
 def test_check_no_nan_cases(arr, should_raise):
-    """Test check_no_nan with arrays that should or should not raise ValueError."""
+    """
+    Test check_no_nan with arrays that should or should not raise ValueError.
+    """
     if callable(arr):
         arr = arr()
     if should_raise:
@@ -102,7 +112,9 @@ def test_check_no_nan_cases(arr, should_raise):
     ],
 )
 def test_check_labels_valid_cases(labels, should_raise):
-    """Test check_labels_valid with valid and invalid label arrays."""
+    """
+    Test check_labels_valid with valid and invalid label arrays.
+    """
     if should_raise:
         with pytest.raises(ValueError):
             check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
@@ -123,7 +135,9 @@ def test_check_labels_valid_cases(labels, should_raise):
     ],
 )
 def test_model_train_save_load(model_class, model_name):
-    """Test that EEGNet and ShallowConvNet can be trained, saved, and loaded on dummy data."""
+    """
+    Test that EEGNet and ShallowConvNet can be trained, saved, and loaded on dummy data.
+    """
     x = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
     y = np.zeros((20,))
     y[:10] = 1  # Two classes
@@ -150,10 +164,14 @@ def test_model_train_save_load(model_class, model_name):
 # Integration & Pipeline Tests
 # ----------------------
 class TestIntegration:
-    """Integration and pipeline tests for the EEG training system."""
+    """
+    Integration and pipeline tests for the EEG training system.
+    """
 
     def test_end_to_end_pipeline(self):
-        """Black-box end-to-end test: CSV -> windowed .npy -> model file."""
+        """
+        Black-box end-to-end test: CSV -> windowed .npy -> model file.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             # 1. Create synthetic CSV
             csv_path = os.path.join(tmpdir, "eeg.csv")
@@ -239,7 +257,9 @@ class TestIntegration:
             assert shallow_preds.shape[0] == 5
 
     def test_error_handling_missing_config(self):
-        """Test error handling for missing config file in windowing and training scripts."""
+        """
+        Test error handling for missing config file in windowing and training scripts.
+        """
         with tempfile.TemporaryDirectory() as tmpdir:
             # No config file created
             env = {
@@ -279,7 +299,9 @@ class TestIntegration:
 
 
 def test_model_prediction_after_training():
-    """Test that a trained model can be loaded and used for prediction."""
+    """
+    Test that a trained model can be loaded and used for prediction.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         # 1. Create synthetic CSV and config
         n_samples, n_channels = 100, 4
@@ -366,7 +388,9 @@ def test_model_prediction_after_training():
 
 
 def test_windowed_npy_content():
-    """Test that windowed .npy files have correct shapes and label values after windowing."""
+    """
+    Test that windowed .npy files have correct shapes and label values after windowing.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         _, n_channels = 120, 3
         data = np.random.randn(120, n_channels)
@@ -430,7 +454,9 @@ def test_windowed_npy_content():
 
 
 def test_windowing_with_malformed_csv():
-    """Test that window_eeg_data.py fails gracefully on malformed CSV input."""
+    """
+    Test that window_eeg_data.py fails gracefully on malformed CSV input.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a malformed CSV (missing columns, bad delimiter)
         malformed_csv_path = os.path.join(tmpdir, "malformed.csv")
@@ -473,7 +499,9 @@ def test_windowing_with_malformed_csv():
 
 
 def test_training_with_wrong_shape_npy():
-    """Test that train_eeg_model.py fails gracefully on wrong-shape .npy input."""
+    """
+    Test that train_eeg_model.py fails gracefully on wrong-shape .npy input.
+    """
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a valid config
         config = {
@@ -522,7 +550,9 @@ def test_training_with_wrong_shape_npy():
 # TEST UTILITIES
 
 def make_synthetic_eeg_data(n_samples=1000, n_channels=8, labels=None):
-    """Factory for synthetic EEG data and labels."""
+    """
+    Factory for synthetic EEG data and labels.
+    """
     x = np.random.randn(n_samples, n_channels)
     if labels is None:
         labels = np.random.choice(["left", "right", "neutral"], size=(n_samples, 1))

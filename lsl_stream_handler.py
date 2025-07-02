@@ -1,4 +1,6 @@
 """
+lsl_stream_handler.py
+
 LSL Stream Handler for receiving pre-filtered EEG data from OpenBCI GUI.
 
 Connects to LSL, receives and buffers EEG data, and provides windowed access for downstream processing.
@@ -23,7 +25,7 @@ class LSLStreamHandler:
 
     def __init__(self, stream_name: str = "OpenBCIGUI", timeout: float = 10.0) -> None:
         """
-        Initialize the LSL stream handler.
+        Initializes the LSL stream handler.
 
         Args:
             stream_name (str): Name of the LSL stream to connect to.
@@ -38,12 +40,14 @@ class LSLStreamHandler:
 
     @property
     def connected(self) -> bool:
-        """Return True if currently connected to an LSL stream."""
+        """
+        Returns True if currently connected to an LSL stream.
+        """
         return self._connected and self.inlet is not None
 
     def connect(self) -> bool:
         """
-        Connect to the LSL stream from OpenBCI GUI.
+        Connects to the LSL stream from OpenBCI GUI.
 
         Returns:
             bool: True if successful, False otherwise.
@@ -74,13 +78,13 @@ class LSLStreamHandler:
 
     def get_chunk(self, max_samples: int = 250) -> Tuple[np.ndarray, np.ndarray]:
         """
-        Retrieve a chunk of data from the LSL stream.
+        Retrieves a chunk of data from the LSL stream.
 
         Args:
             max_samples (int): Maximum number of samples to retrieve.
 
         Returns:
-            Tuple[np.ndarray, np.ndarray]: (data, timestamps) arrays.
+            tuple: (data, timestamps) arrays.
         """
         if self.inlet is None:
             raise RuntimeError("LSL stream not connected. Call connect() first.")
@@ -99,14 +103,14 @@ class LSLStreamHandler:
         self, window_size: int, timeout: float = 2.0
     ) -> Optional[np.ndarray]:
         """
-        Collect exactly window_size samples from the stream.
+        Collects exactly window_size samples from the stream.
 
         Args:
             window_size (int): Number of samples to collect.
             timeout (float): Timeout in seconds.
 
         Returns:
-            Optional[np.ndarray]: Array of shape (window_size, channels) or None if timeout.
+            np.ndarray or None: Array of shape (window_size, channels) or None if timeout.
         """
         if self.inlet is None:
             raise RuntimeError("LSL stream not connected. Call connect() first.")
@@ -128,7 +132,7 @@ class LSLStreamHandler:
 
     def disconnect(self) -> None:
         """
-        Disconnect from the LSL stream.
+        Disconnects from the LSL stream.
         """
         if self.inlet:
             self.inlet.close_stream()

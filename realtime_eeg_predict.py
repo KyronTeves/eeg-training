@@ -1,11 +1,13 @@
 """
+realtime_eeg_predict.py
+
 Real-time EEG direction prediction using LSL streaming from OpenBCI GUI.
 
 This script provides an interactive menu for selecting prediction mode (EEGNet, ShallowConvNet,
 Random Forest, XGBoost, or Ensemble) and allows switching between models in real time without
 restarting. After each session, you can return to the menu or exit cleanly.
 
-Typical usage example:
+Typical usage:
     $ python realtime_eeg_predict.py
 
 Features:
@@ -57,7 +59,7 @@ SHORT_LABELS = {
 
 def short_label(label: str) -> str:
     """
-    Return a short display label for a given direction label.
+    Returns a short display label for a given direction label.
 
     Args:
         label (str): The full direction label.
@@ -72,11 +74,14 @@ class OptimizedPredictionPipeline:
     """
     High-performance real-time EEG prediction pipeline.
 
-    Input: EEG samples from LSL stream (buffered in real time)
-    Process: Loads and manages all models (EEGNet, ShallowConvNet, RF, XGBoost),
-        preprocesses data, performs ensemble prediction, manages async prediction loop,
-        tracks performance, and handles session calibration.
-    Output: Real-time predictions (label, confidence), performance stats, logs.
+    Args:
+        config_dict (dict): Configuration dictionary.
+
+    Handles model loading, preprocessing, ensemble prediction, async prediction loop,
+    performance tracking, and session calibration.
+
+    Returns:
+        Real-time predictions (label, confidence), performance stats, logs.
     """
 
     def __init__(self, config_dict: dict):
@@ -503,11 +508,13 @@ class OptimizedPredictionPipeline:
 
 def process_prediction(pipeline, prediction_count, use_hard_voting=False):
     """
-    Process a single ensemble prediction and log detailed model breakdown.
+    Processes a single ensemble prediction and logs detailed model breakdown.
 
     Args:
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): The current prediction count.
+        use_hard_voting (bool): Whether to use hard voting.
+
     Returns:
         int: Updated prediction count.
     """
@@ -580,11 +587,14 @@ def process_prediction(pipeline, prediction_count, use_hard_voting=False):
 
 def session_calibration(lsl_handler, config):
     """
-    Handle session calibration logic and update config with session model/scaler paths if calibration is performed.
+    Handles session calibration logic and updates config with session model/scaler paths if calibration is performed.
 
-    Input: lsl_handler (LSLStreamHandler), config (dict)
-    Process: Prompts user, runs unified calibration, updates config with session paths
-    Output: None (side effect: config updated)
+    Args:
+        lsl_handler (LSLStreamHandler): LSL handler.
+        config (dict): Configuration dictionary.
+
+    Returns:
+        None (side effect: config updated)
     """
     session_model_path_eegnet = "models/eeg_direction_model_session.h5"
     session_scaler_path_eegnet = "models/eeg_scaler_session.pkl"
@@ -621,7 +631,8 @@ def session_calibration(lsl_handler, config):
 
 def select_prediction_mode():
     """
-    Prompt user to select prediction display mode (individual model, ensemble, or exit).
+    Prompts user to select prediction display mode (individual model, ensemble, or exit).
+
     Returns:
         str: Mode string ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble', 'exit')
     """
@@ -652,11 +663,13 @@ def select_prediction_mode():
 
 def initialize_pipeline(config_dict):
     """
-    Initialize the prediction pipeline with the correct models and scalers.
+    Initializes the prediction pipeline with the correct models and scalers.
 
-    Input: config_dict (dict)
-    Process: Loads session-specific or pre-trained models/scalers as needed
-    Output: Initialized OptimizedPredictionPipeline
+    Args:
+        config_dict (dict): Configuration dictionary.
+
+    Returns:
+        OptimizedPredictionPipeline: Initialized pipeline.
     """
     pipeline = OptimizedPredictionPipeline(config_dict)
     pipeline.load_optimized_models()
@@ -665,12 +678,13 @@ def initialize_pipeline(config_dict):
 
 def model_only_prediction(pipeline, prediction_count, model_name):
     """
-    Run prediction for a single model and log the result.
+    Runs prediction for a single model and logs the result.
 
     Args:
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): Current prediction count.
         model_name (str): One of 'eegnet', 'shallow', 'rf', 'xgb'.
+
     Returns:
         int: Updated prediction count.
     """
@@ -713,6 +727,7 @@ def prediction_loop(lsl_handler, pipeline, mode, config_dict, use_hard_voting=Fa
         mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
         use_hard_voting (bool): Use hard voting for ensemble if True.
+
     Returns:
         None
     """
@@ -792,7 +807,7 @@ def main():
 @handle_errors
 def test_models_without_lsl():
     """
-    Test model loading and prediction functionality without requiring an LSL stream.
+    Tests model loading and prediction functionality without requiring an LSL stream.
 
     Loads models, performs a fake prediction, and logs the results for verification.
     """
