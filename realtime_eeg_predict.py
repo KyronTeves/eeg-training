@@ -9,7 +9,7 @@ import os
 import threading
 import time
 import warnings
-from collections import deque
+from collections import deque, Counter
 
 import joblib
 import numpy as np
@@ -349,9 +349,12 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    def predict_realtime(self) -> tuple[str, float] | None:
+    def predict_realtime(self, use_hard_voting=False) -> tuple[str, float] | None:
         """
         Performs ensemble prediction using all available models on the current buffer.
+
+        Args:
+            use_hard_voting (bool): If True, use hard voting (majority rule). If False, use weighted soft voting.
 
         Returns:
             tuple[str, float] | None: (predicted_label, confidence) or None if not enough data
@@ -362,6 +365,37 @@ class OptimizedPredictionPipeline:
         eeg_probs, _ = self.predict_eegnet(window)
         shallow_probs, _ = self.predict_shallow(window)
         rf_probs, xgb_probs, _ = self.predict_tree_models(window)
+
+        # Logging for diagnostics
+        logging.debug("EEGNet probs: %s", eeg_probs)
+        logging.debug("ShallowConvNet probs: %s", shallow_probs)
+        logging.debug("RandomForest probs: %s", rf_probs)
+        logging.debug("XGBoost probs: %s", xgb_probs)
+
+        # Get predicted labels for hard voting
+        model_preds = []
+        if not np.all(eeg_probs == 0):
+            eeg_pred = np.argmax(eeg_probs)
+            model_preds.append(eeg_pred)
+        if not np.all(shallow_probs == 0):
+            shallow_pred = np.argmax(shallow_probs)
+            model_preds.append(shallow_pred)
+        model_preds.append(np.argmax(rf_probs))
+        model_preds.append(np.argmax(xgb_probs))
+        if use_hard_voting:
+            # Hard voting (majority rule)
+            if not model_preds:
+                return "neutral", 0.0
+
+            vote_counts = Counter(model_preds)
+            majority_pred = vote_counts.most_common(1)[0][0]
+            confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
+            predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+            self.last_prediction = predicted_label
+            self.prediction_confidence = confidence
+            return predicted_label, confidence
+
+        # Default: weighted soft voting
         available_models = []
         model_weights = []
         model_predictions = []
@@ -456,7 +490,7 @@ class OptimizedPredictionPipeline:
         logging.info("Asynchronous prediction stopped.")
 
 
-def process_prediction(pipeline, prediction_count):
+def process_prediction(pipeline, prediction_count, use_hard_voting=False):
     """
     Process a single ensemble prediction and log detailed model breakdown.
 
@@ -472,7 +506,7 @@ def process_prediction(pipeline, prediction_count):
             return "---(---)"
         return f"{short_label(label):<3}({conf:.3f})"
 
-    result = pipeline.predict_realtime()
+    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
     if result:
         predicted_label, confidence = result
         prediction_count += 1
@@ -576,7 +610,7 @@ def session_calibration(lsl_handler, config):
 
 def select_prediction_mode():
     """
-    Prompt user to select prediction display mode (EEGNet only or ensemble).
+    Prompt user to select prediction display mode (individual model or ensemble).
 
     Input: None (user input)
     Process: Prints options, reads user input
@@ -584,9 +618,24 @@ def select_prediction_mode():
     """
     print("\nChoose prediction display mode:")
     print("1. EEGNet only")
-    print("2. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
-    mode = input("Enter 1 or 2: ").strip()
-    return mode == "2"
+    print("2. ShallowConvNet only")
+    print("3. Random Forest only")
+    print("4. XGBoost only")
+    print("5. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
+    while True:
+        mode = input("Enter 1, 2, 3, 4, or 5: ").strip()
+        if mode == "1":
+            return 'eegnet'
+        elif mode == "2":
+            return 'shallow'
+        elif mode == "3":
+            return 'rf'
+        elif mode == "4":
+            return 'xgb'
+        elif mode == "5":
+            return 'ensemble'
+        else:
+            print("Invalid selection. Please enter a number from 1 to 5.")
 
 
 def initialize_pipeline(config_dict):
@@ -602,39 +651,56 @@ def initialize_pipeline(config_dict):
     return pipeline
 
 
-def eegnet_only_prediction(pipeline, prediction_count):
+def model_only_prediction(pipeline, prediction_count, model_name):
     """
-    Run EEGNet-only prediction and log the result.
+    Run prediction for a single model and log the result.
 
-    Input: pipeline (OptimizedPredictionPipeline), prediction_count (int)
-    Process: Runs EEGNet prediction, logs result
-    Output: Updated prediction_count
+    Args:
+        pipeline (OptimizedPredictionPipeline): The prediction pipeline.
+        prediction_count (int): Current prediction count.
+        model_name (str): One of 'eegnet', 'shallow', 'rf', 'xgb'.
+    Returns:
+        int: Updated prediction count.
     """
     window = pipeline.get_current_window()
-    result = pipeline.predict_eegnet(window)
-    if result:
-        probs, confidence = result
-        pred_idx = np.argmax(probs)
-        pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
-        prediction_count += 1
-        logging.info(
-            "[%4d] %8s (conf: %.3f) [EEGNet only]",
-            prediction_count,
-            pred_label.upper(),
-            confidence,
-        )
+    if model_name == 'eegnet':
+        probs, confidence = pipeline.predict_eegnet(window)
+    elif model_name == 'shallow':
+        probs, confidence = pipeline.predict_shallow(window)
+    elif model_name == 'rf':
+        _, rf_probs, _ = pipeline.predict_tree_models(window)
+        probs = rf_probs
+        confidence = np.max(probs)
+    elif model_name == 'xgb':
+        _, xgb_probs, _ = pipeline.predict_tree_models(window)
+        probs = xgb_probs
+        confidence = np.max(probs)
+    else:
+        logging.error("Unknown model: %s", model_name)
+        return prediction_count
+    pred_idx = np.argmax(probs)
+    pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
+    prediction_count += 1
+    logging.info(
+        "[%4d] %8s (conf: %.3f) [%s only]",
+        prediction_count,
+        pred_label.upper(),
+        confidence,
+        model_name.upper(),
+    )
     return prediction_count
 
 
-def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
+def prediction_loop(lsl_handler, pipeline, mode, config_dict, use_hard_voting=False):
     """
     Main loop for real-time EEG prediction from LSL stream.
 
     Args:
         lsl_handler (LSLStreamHandler): LSL handler.
         pipeline (OptimizedPredictionPipeline): Prediction pipeline.
-        show_ensemble (bool): Whether to show ensemble predictions.
+        mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
+        use_hard_voting (bool): Use hard voting for ensemble if True.
     Returns:
         None
     """
@@ -646,13 +712,13 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
                 for sample in window:
                     pipeline.add_sample(sample)
                 if pipeline.is_ready_for_prediction():
-                    if show_ensemble:
+                    if mode == 'ensemble':
                         prediction_count = process_prediction(
-                            pipeline, prediction_count
+                            pipeline, prediction_count, use_hard_voting=use_hard_voting
                         )
                     else:
-                        prediction_count = eegnet_only_prediction(
-                            pipeline, prediction_count
+                        prediction_count = model_only_prediction(
+                            pipeline, prediction_count, mode
                         )
             time.sleep(0.001)
     except KeyboardInterrupt:
@@ -667,7 +733,6 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
         logging.info("Total predictions: %d", prediction_count)
 
 
-@handle_errors
 def main():
     """
     Main entry point for real-time EEG prediction using LSL streaming.
@@ -684,14 +749,22 @@ def main():
         )
         return
     session_calibration(lsl_handler, config)
-    show_ensemble = select_prediction_mode()
+    mode = select_prediction_mode()
+    use_hard_voting = False
+    if mode == 'ensemble':
+        print("\nChoose ensemble method:")
+        print("1. Weighted soft voting (default)")
+        print("2. Hard voting (majority rule, matches offline test)")
+        method = input("Enter 1 or 2: ").strip()
+        if method == "2":
+            use_hard_voting = True
     pipeline = initialize_pipeline(
         config,
     )
     logging.info("=== REAL-TIME PREDICTION STARTED ===")
     logging.info("Think of different directions to control the system.")
     logging.info("Press Ctrl+C to stop.")
-    prediction_loop(lsl_handler, pipeline, show_ensemble, config)
+    prediction_loop(lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting)
 
 
 @handle_errors
