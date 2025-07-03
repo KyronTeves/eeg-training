@@ -128,9 +128,7 @@ class OptimizedPredictionPipeline:
         logging.info("Loading and optimizing models for real-time inference...")
         try:
             # CNN Models - now trained with correct window size (125)
-            self.models["eegnet"] = {
-                "model": load_model(self.config["MODEL_EEGNET"])
-            }
+            self.models["eegnet"] = {"model": load_model(self.config["MODEL_EEGNET"])}
             self.models["shallow"] = {
                 "model": load_model(
                     self.config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS
@@ -217,7 +215,7 @@ class OptimizedPredictionPipeline:
         Returns:
             np.ndarray: Array of shape (1, window_size, n_channels)
         """
-        return np.array(list(self.buffer)[-self.window_size:]).reshape(
+        return np.array(list(self.buffer)[-self.window_size :]).reshape(
             (1, self.window_size, self.n_channels)
         )
 
@@ -308,11 +306,9 @@ class OptimizedPredictionPipeline:
                     self._shallow_shape_mismatch_logged = True
                 return np.zeros(len(self.label_encoder.classes_)), 0.0
             scaler_to_use = self.scalers.get("shallow") or self.scalers["eegnet"]
-            window_scaled = (
-                scaler_to_use
-                .transform(window.reshape(-1, self.n_channels))
-                .reshape(window.shape)
-            )
+            window_scaled = scaler_to_use.transform(
+                window.reshape(-1, self.n_channels)
+            ).reshape(window.shape)
             window_input = np.expand_dims(window_scaled, -1)
             window_input = np.transpose(window_input, (0, 2, 1, 3))
             predictions = self.models["shallow"]["model"].predict(
@@ -641,17 +637,17 @@ def select_prediction_mode():
     while True:
         mode = input("Enter 1, 2, 3, 4, 5, or 6: ").strip()
         if mode == "1":
-            return 'eegnet'
+            return "eegnet"
         elif mode == "2":
-            return 'shallow'
+            return "shallow"
         elif mode == "3":
-            return 'rf'
+            return "rf"
         elif mode == "4":
-            return 'xgb'
+            return "xgb"
         elif mode == "5":
-            return 'ensemble'
+            return "ensemble"
         elif mode == "6":
-            return 'exit'
+            return "exit"
         else:
             print("Invalid selection. Please enter a number from 1 to 6.")
 
@@ -684,15 +680,15 @@ def model_only_prediction(pipeline, prediction_count, model_name):
         int: Updated prediction count.
     """
     window = pipeline.get_current_window()
-    if model_name == 'eegnet':
+    if model_name == "eegnet":
         probs, confidence = pipeline.predict_eegnet(window)
-    elif model_name == 'shallow':
+    elif model_name == "shallow":
         probs, confidence = pipeline.predict_shallow(window)
-    elif model_name == 'rf':
+    elif model_name == "rf":
         _, rf_probs, _ = pipeline.predict_tree_models(window)
         probs = rf_probs
         confidence = np.max(probs)
-    elif model_name == 'xgb':
+    elif model_name == "xgb":
         _, xgb_probs, _ = pipeline.predict_tree_models(window)
         probs = xgb_probs
         confidence = np.max(probs)
@@ -734,7 +730,7 @@ def prediction_loop(lsl_handler, pipeline, mode, config_dict, use_hard_voting=Fa
                 for sample in window:
                     pipeline.add_sample(sample)
                 if pipeline.is_ready_for_prediction():
-                    if mode == 'ensemble':
+                    if mode == "ensemble":
                         prediction_count = process_prediction(
                             pipeline, prediction_count, use_hard_voting=use_hard_voting
                         )
@@ -774,7 +770,7 @@ def main():
     pipeline = initialize_pipeline(config)
     while True:
         mode = select_prediction_mode()
-        if mode == 'exit':
+        if mode == "exit":
             print("Exiting real-time prediction.")
             break
         # Reconnect LSL if needed
@@ -782,7 +778,7 @@ def main():
             logging.error("Failed to reconnect to LSL stream. Exiting.")
             break
         use_hard_voting = False
-        if mode == 'ensemble':
+        if mode == "ensemble":
             print("\nChoose ensemble method:")
             print("1. Weighted soft voting (default)")
             print("2. Hard voting (majority rule, matches offline test)")
@@ -793,7 +789,9 @@ def main():
         logging.info("Think of different directions to control the system.")
         logging.info("Press Ctrl+C to stop.")
         try:
-            prediction_loop(lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting)
+            prediction_loop(
+                lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting
+            )
         except KeyboardInterrupt:
             print("\nPrediction stopped. Returning to menu...")
             continue

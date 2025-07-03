@@ -140,4 +140,5 @@ class LSLStreamHandler:
             self._connected = False
             logging.info("Disconnected from LSL stream")
 
+
 # pylsl>=1.16.0 required in requirements.txt

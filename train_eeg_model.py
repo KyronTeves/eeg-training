@@ -24,8 +24,14 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import (check_labels_valid, check_no_nan, extract_features,
-                   handle_errors, load_config, setup_logging)
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    extract_features,
+    handle_errors,
+    load_config,
+    setup_logging,
+)
 
 
 def augment_eeg_data(
@@ -179,7 +185,9 @@ def train_tree_models(
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logging.info(
         "Classification Report:\n%s",
-        classification_report(y_test_tree, rf_pred, target_names=label_encoder.classes_),
+        classification_report(
+            y_test_tree, rf_pred, target_names=label_encoder.classes_
+        ),
     )
     xgb = XGBClassifier(
         n_estimators=100,
@@ -193,7 +201,9 @@ def train_tree_models(
     logging.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logging.info(
         "Classification Report:\n%s",
-        classification_report(y_test_tree, xgb_pred, target_names=label_encoder.classes_),
+        classification_report(
+            y_test_tree, xgb_pred, target_names=label_encoder.classes_
+        ),
     )
     joblib.dump(rf, config["MODEL_RF"])
     joblib.dump(xgb, config["MODEL_XGB"])
@@ -363,7 +373,9 @@ def log_class_distribution(y_train_final: np.ndarray) -> None:
     logging.info("Detailed class distribution: %s", class_dist)
 
 
-def extract_features_parallel(x_windows: np.ndarray, config: dict[str, Any]) -> np.ndarray:
+def extract_features_parallel(
+    x_windows: np.ndarray, config: dict[str, Any]
+) -> np.ndarray:
     """
     Extracts features from each EEG window in parallel using joblib.
 

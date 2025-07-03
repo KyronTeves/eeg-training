@@ -19,8 +19,13 @@ from keras.models import load_model
 
 from EEGModels import EEGNet, ShallowConvNet
 from utils import save_json  # Add save_json utility
-from utils import (CUSTOM_OBJECTS, check_labels_valid, check_no_nan,
-                   load_config, window_data)
+from utils import (
+    CUSTOM_OBJECTS,
+    check_labels_valid,
+    check_no_nan,
+    load_config,
+    window_data,
+)
 
 # Add a default timeout for all subprocess.run calls
 DEFAULT_TIMEOUT = 30  # seconds
@@ -40,7 +45,9 @@ def test_window_data_output():
     """
     Test window_data produces correct windowed output and label consistency.
     """
-    x, y = make_synthetic_eeg_data(n_samples=500, n_channels=8, labels=["left", "right"])
+    x, y = make_synthetic_eeg_data(
+        n_samples=500, n_channels=8, labels=["left", "right"]
+    )
     window_size = 100
     step_size = 50
     x_windows, y_windows = window_data(x, y, window_size, step_size)
@@ -302,7 +309,9 @@ def test_model_prediction_after_training():
         n_samples, n_channels = 100, 4
         data = np.random.randn(n_samples, n_channels)
         # Ensure at least 2 samples per class for stratified split
-        labels = np.array(["left"] * (n_samples // 2) + ["right"] * (n_samples - n_samples // 2))
+        labels = np.array(
+            ["left"] * (n_samples // 2) + ["right"] * (n_samples - n_samples // 2)
+        )
         np.random.shuffle(labels)
         df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
         df["session_type"] = "pure"
@@ -359,7 +368,9 @@ def test_model_prediction_after_training():
         y_windowed = np.load(config["WINDOWED_LABELS_NPY"])
         unique, counts = np.unique(y_windowed, return_counts=True)
         if np.any(counts < 2):
-            pytest.skip(f"Not enough samples per class after windowing: {dict(zip(unique, counts))}")
+            pytest.skip(
+                f"Not enough samples per class after windowing: {dict(zip(unique, counts))}"
+            )
         subprocess.run(
             [sys.executable, "train_eeg_model.py"],
             env=env,
@@ -439,9 +450,8 @@ def test_windowed_npy_content():
         y = np.load(config["WINDOWED_LABELS_NPY"])
         # Check shapes
         # Accept either (n_windows, window_size, n_channels) or (n_windows, n_channels, window_size)
-        assert (
-            (x.shape[1] == config["WINDOW_SIZE"] and x.shape[2] == n_channels)
-            or (x.shape[2] == config["WINDOW_SIZE"] and x.shape[1] == n_channels)
+        assert (x.shape[1] == config["WINDOW_SIZE"] and x.shape[2] == n_channels) or (
+            x.shape[2] == config["WINDOW_SIZE"] and x.shape[1] == n_channels
         )
         assert x.shape[0] == y.shape[0]
         # Check label values
@@ -543,6 +553,7 @@ def test_training_with_wrong_shape_npy():
 
 
 # TEST UTILITIES
+
 
 def make_synthetic_eeg_data(n_samples=1000, n_channels=8, labels=None):
     """

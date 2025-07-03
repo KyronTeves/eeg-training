@@ -17,8 +17,13 @@ import numpy as np
 import pandas as pd
 
 from utils import handle_errors  # Import error handler
-from utils import (check_labels_valid, check_no_nan, load_config,
-                   setup_logging, window_data)
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    load_config,
+    setup_logging,
+    window_data,
+)
 
 setup_logging()  # Set up consistent logging to file and console
 

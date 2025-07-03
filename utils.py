@@ -263,7 +263,7 @@ def collect_lsl_calib_data(
     label_classes: list[str],
     window_size: int,
     sample_rate: int,
-    seconds_per_class: int
+    seconds_per_class: int,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Collects calibration data from an LSL stream for each label class.
@@ -402,7 +402,9 @@ def calibrate_tree_models(
     joblib.dump(rf, rf_out)
     logging.info("Random Forest session model saved to %s", rf_out)
     # XGBoost
-    xgb = XGBClassifier(n_estimators=100, use_label_encoder=False, eval_metric="mlogloss")
+    xgb = XGBClassifier(
+        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss"
+    )
     xgb.fit(x_feat_scaled, y_calib_encoded)
     joblib.dump(xgb, xgb_out)
     logging.info("XGBoost session model saved to %s", xgb_out)
@@ -443,7 +445,7 @@ def calibrate_all_models_lsl(
         config["LABELS"],
         config["WINDOW_SIZE"],
         config["SAMPLING_RATE"],
-        seconds_per_class
+        seconds_per_class,
     )
     check_no_nan(x_calib, name="calibration data")
     check_labels_valid(y_calib, valid_labels=config["LABELS"])

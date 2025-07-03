@@ -19,11 +19,18 @@ from typing import Any
 import numpy as np
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import (check_labels_valid, check_no_nan, handle_errors,
-                   load_config, setup_logging)
+from utils import (
+    check_labels_valid,
+    check_no_nan,
+    handle_errors,
+    load_config,
+    setup_logging,
+)
 
 
-def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
+def get_session_phases(
+    session_type: str, label: str, config: dict
+) -> list[tuple[int, str]]:
     """
     Returns the list of (duration, label) phases for a given session type.
 
@@ -78,7 +85,9 @@ def collect_phase_data(
         phase_data_np = np.array(phase_data)
         try:
             check_no_nan(phase_data_np, name="Phase EEG data")
-            check_labels_valid([label], valid_labels=config["LABELS"], name="Phase label")
+            check_labels_valid(
+                [label], valid_labels=config["LABELS"], name="Phase label"
+            )
         except ValueError as e:
             logging.error("Data validation failed for phase '%s': %s", phase_label, e)
             return [], []
@@ -116,7 +125,9 @@ def write_phase_to_csv(
     if phase_data:
         for i, sample in enumerate(phase_data):
             if len(sample) == config["N_CHANNELS"]:
-                timestamp = phase_timestamps[i] if i < len(phase_timestamps) else time.time()
+                timestamp = (
+                    phase_timestamps[i] if i < len(phase_timestamps) else time.time()
+                )
                 row = [
                     datetime.fromtimestamp(timestamp).isoformat(),
                     timestamp,
@@ -124,7 +135,7 @@ def write_phase_to_csv(
                     trial_num,
                     phase_label,
                     label,
-                ] + (sample.tolist() if hasattr(sample, 'tolist') else list(sample))
+                ] + (sample.tolist() if hasattr(sample, "tolist") else list(sample))
                 output_writer.writerow(row)
                 rows.append(row)
                 timestamps.append(timestamp)
@@ -211,7 +222,9 @@ def run_trials_for_label(
         int: Updated total_rows.
     """
     for trial in range(config["TRIALS_PER_LABEL"]):
-        logging.info("\nTrial %d/%d for '%s'", trial + 1, config["TRIALS_PER_LABEL"], label)
+        logging.info(
+            "\nTrial %d/%d for '%s'", trial + 1, config["TRIALS_PER_LABEL"], label
+        )
         if trial > 0:
             logging.info("30-second break between trials...")
             time.sleep(30)
