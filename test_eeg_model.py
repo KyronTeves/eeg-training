@@ -7,8 +7,8 @@ Loads test data and models, applies windowing and scaling, computes predictions,
 evaluation metrics for all models and ensemble.
 """
 
-import os
 import logging
+import os
 import random
 from collections import Counter, defaultdict
 
@@ -23,16 +23,8 @@ from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
 from umap import UMAP
 
-from utils import (
-    check_labels_valid,
-    check_no_nan,
-    extract_features,
-    load_config,
-    setup_logging,
-    window_data,
-    square,
-    log,
-)
+from utils import (check_labels_valid, check_no_nan, extract_features,
+                   load_config, log, setup_logging, square, window_data)
 
 
 def ensemble_hard_voting(

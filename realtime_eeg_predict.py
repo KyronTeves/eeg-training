@@ -22,21 +22,16 @@ import os
 import threading
 import time
 import warnings
-from collections import deque, Counter
+from collections import Counter, deque
 
 import joblib
 import numpy as np
 from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import (
-    calibrate_all_models_lsl,  # use the new unified calibration
-    CUSTOM_OBJECTS,
-    extract_features,
-    load_config,
-    setup_logging,
-    handle_errors,  # Add error handler
-)
+from utils import calibrate_all_models_lsl  # use the new unified calibration
+from utils import handle_errors  # Add error handler
+from utils import CUSTOM_OBJECTS, extract_features, load_config, setup_logging
 
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"

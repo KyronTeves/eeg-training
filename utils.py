@@ -10,14 +10,14 @@ Typical usage:
     from utils import load_config, window_data, setup_logging
 """
 
+import functools
 import json
 import logging
 import os
 import time
-import functools
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Any, Callable, Dict, Optional, Tuple, List
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np

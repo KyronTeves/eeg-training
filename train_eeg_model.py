@@ -24,14 +24,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import (
-    check_labels_valid,
-    check_no_nan,
-    extract_features,
-    load_config,
-    handle_errors,
-    setup_logging,
-)
+from utils import (check_labels_valid, check_no_nan, extract_features,
+                   handle_errors, load_config, setup_logging)
 
 
 def augment_eeg_data(

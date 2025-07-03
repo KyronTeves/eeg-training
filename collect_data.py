@@ -19,7 +19,8 @@ from typing import Any
 import numpy as np
 
 from lsl_stream_handler import LSLStreamHandler
-from utils import check_labels_valid, check_no_nan, load_config, setup_logging, handle_errors
+from utils import (check_labels_valid, check_no_nan, handle_errors,
+                   load_config, setup_logging)
 
 
 def get_session_phases(session_type: str, label: str, config: dict) -> list[tuple[int, str]]:
