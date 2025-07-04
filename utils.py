@@ -1,5 +1,4 @@
-"""
-utils.py
+"""utils.py.
 
 Utility functions for the EEG training system.
 
@@ -9,6 +8,7 @@ validation utilities for EEG data processing and model training.
 Typical usage:
     from utils import load_config, window_data, setup_logging
 """
+from __future__ import annotations
 
 import functools
 import json
@@ -17,7 +17,8 @@ import os
 import time
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Callable
 
 import joblib
 import numpy as np
@@ -29,21 +30,27 @@ from keras.utils import to_categorical
 from scipy.signal import welch
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from tensorflow import Tensor
 from xgboost import XGBClassifier
 
 from EEGModels import ShallowConvNet
 
+if TYPE_CHECKING:
+    from lsl_stream_handler import LSLStreamHandler
+
+logger = logging.getLogger(__name__)
+
 
 def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
-    """
-    Extracts features from a single EEG window for tree-based models.
+    """Extract features from a single EEG window for tree-based models.
 
     Args:
         window (np.ndarray): EEG window, shape (window_size, n_channels).
-        fs (int): Sampling frequency.
+        fs (int, optional): Sampling frequency. Defaults to 250.
 
     Returns:
         np.ndarray: 1D array of features (length: n_channels * 8).
+
     """
     features = []
     n_channels = window.shape[1]
@@ -85,15 +92,15 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
     return np.array(features)
 
 
-def load_config(path: Optional[str] = None) -> Dict[str, Any]:
-    """
-    Loads configuration from a JSON file.
+def load_config(path: str | None = None) -> dict[str, Any]:
+    """Load configuration from a JSON file.
 
     Args:
-        path (str, optional): Path to config file. If None, uses CONFIG_PATH env var or 'config.json'.
+        path (str | None, optional): Path to config file. If None(default), uses CONFIG_PATH env var|'config.json'.
 
     Returns:
-        dict: Config dictionary.
+        dict[str, Any]: Configuration dictionary.
+
     """
     if path is None:
         path = os.environ.get("CONFIG_PATH", "config.json")
@@ -101,10 +108,9 @@ def load_config(path: Optional[str] = None) -> Dict[str, Any]:
 
 
 def window_data(
-    data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Segments data and labels into overlapping windows using stride tricks.
+    data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Segment data and labels into overlapping windows using stride tricks.
 
     Args:
         data (np.ndarray): EEG data.
@@ -114,6 +120,7 @@ def window_data(
 
     Returns:
         tuple: (x_windows, y_windows)
+
     """
     n_windows = (len(data) - window_size) // step_size + 1
     if n_windows <= 0:
@@ -137,11 +144,11 @@ def window_data(
                 np.argmax(np.unique(window, return_counts=True)[1])
             ]
             for window in label_windows.reshape(n_windows, -1)
-        ]
+        ],
     )
 
     # Data quality assessment
-    logging.info(
+    logger.info(
         "Data quality: Range [%.3f, %.3f], Std: %.3f, NaN count: %d",
         np.min(x_windows),
         np.max(x_windows),
@@ -152,17 +159,17 @@ def window_data(
 
 
 def setup_logging(
-    logfile: str = "eeg_training.log", default_level: Optional[str] = None
+    logfile: str = "eeg_training.log", default_level: str | None = None,
 ) -> None:
-    """
-    Sets up logging to both console and file with rotation.
+    """Set up logging to both console and file with rotation.
 
     Args:
-        logfile (str): Log file name.
-        default_level (str, optional): Default log level.
+        logfile (str): Log file name.  Defaults to "eeg_training.log".
+        default_level (str | None): Default log level. Defaults to None.
 
     Returns:
         None
+
     """
     # Determine log level
     level_str = os.environ.get("LOG_LEVEL", default_level or "INFO")
@@ -189,87 +196,88 @@ def setup_logging(
 
 
 def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -> None:
-    """
-    Archives and rotates log file if it exceeds max_size_mb.
+    """Archive and rotate log file if it exceeds max_size_mb.
 
     Args:
-        logfile (str): Log file name.
-        max_size_mb (int): Max size in MB before rotating.
+        logfile (str): Log file name. Defaults to "eeg_training.log".
+        max_size_mb (int): Max size in MB before rotating. Defaults to 50.
 
     Returns:
         None
-    """
 
-    if not os.path.exists(logfile):
+    """
+    if not Path(logfile).exists():
         return
 
-    file_size_mb = os.path.getsize(logfile) / (1024 * 1024)
+    file_size_mb = Path(logfile).stat().st_size / (1024 * 1024)
 
     if file_size_mb > max_size_mb:
         # Archive the current log
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
         archive_name = f"{logfile}.archive_{timestamp}"
 
-        os.rename(logfile, archive_name)
+        Path(logfile).rename(archive_name)
 
-        logging.info(
-            "Large log file archived to %s (%.1fMB)", archive_name, file_size_mb
+        logger.info(
+            "Large log file archived to %s (%.1fMB)", archive_name, file_size_mb,
         )
-        logging.info("Starting fresh log file with rotation enabled")
+        logger.info("Starting fresh log file with rotation enabled")
 
 
 def check_no_nan(x: np.ndarray, name: str = "data") -> None:
-    """
-    Checks for NaN values in a numpy array and raises error if found.
+    """Check for NaN values in a numpy array and raises error if found.
 
     Args:
         x (np.ndarray): Array to check.
-        name (str): Name for logging.
+        name (str): Name for logging. Defaults to "data".
 
     Raises:
         ValueError: If NaN found.
+
     """
     if np.isnan(x).any():
-        logging.error("%s contains NaN values.", name)
-        raise ValueError(f"{name} contains NaN values.")
+        logger.error("%s contains NaN values.", name)
+        msg = f"{name} contains NaN values."
+        raise ValueError(msg)
 
 
 def check_labels_valid(
-    labels: np.ndarray, valid_labels: Optional[List[Any]] = None, name: str = "labels"
+    labels: np.ndarray, valid_labels: list[Any] | None = None, name: str = "labels",
 ) -> None:
-    """
-    Checks for NaN and invalid label values in an array.
+    """Check for NaN and invalid label values in an array.
 
     Args:
-        labels (array-like): Labels to check.
-        valid_labels (list, optional): List of valid labels.
-        name (str): Name for logging.
+        labels (np.ndarray): Labels to check.
+        valid_labels (list[Any] | None, optional): List of valid labels. Defaults to None.
+        name (str): Name for logging. Defaults to "labels".
 
     Raises:
         ValueError: If invalid labels or NaN found.
+
     """
-    if pd.isnull(labels).any():
-        logging.error("%s contain NaN values.", name)
-        raise ValueError(f"{name} contain NaN values.")
+    if pd.isna(labels).any():
+        logger.error("%s contain NaN values.", name)
+        msg = f"{name} contain NaN values."
+        raise ValueError(msg)
     if valid_labels is not None:
         invalid = set(labels) - set(valid_labels)
         if invalid:
-            logging.error("%s contain invalid values: %s", name, invalid)
-            raise ValueError(f"{name} contain invalid values: {invalid}")
+            logger.error("%s contain invalid values: %s", name, invalid)
+            msg = f"{name} contain invalid values: {invalid}"
+            raise ValueError(msg)
 
 
 def collect_lsl_calib_data(
-    lsl_stream_handler: Any,
+    lsl_stream_handler: LSLStreamHandler,
     label_classes: list[str],
     window_size: int,
     sample_rate: int,
     seconds_per_class: int,
-) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Collects calibration data from an LSL stream for each label class.
+) -> tuple[np.ndarray, np.ndarray]:
+    """Collect calibration data from an LSL stream for each label class.
 
     Args:
-        lsl_stream_handler (object): LSL handler.
+        lsl_stream_handler (LSLStreamHandler): LSL handler.
         label_classes (list[str]): List of label classes.
         window_size (int): Window size.
         sample_rate (int): Sample rate.
@@ -277,12 +285,11 @@ def collect_lsl_calib_data(
 
     Returns:
         tuple: (calib_x, calib_y) arrays.
+
     """
     calib_x, calib_y = [], []
     for label in label_classes:
-        input(
-            f"Calibrating '{label}': Press Enter to record for {seconds_per_class} seconds..."
-        )
+        input(f"Calibrating '{label}': Press Enter to record for {seconds_per_class} seconds...")
         data = []
         start_time = time.time()
         while time.time() - start_time < seconds_per_class:
@@ -293,20 +300,20 @@ def collect_lsl_calib_data(
             time.sleep(window_size / sample_rate)
         calib_x.extend(data)
         calib_y.extend([label] * len(data))
-        logging.info("Collected %d windows for label '%s'.", len(data), label)
+        logger.info("Collected %d windows for label '%s'.", len(data), label)
     return np.array(calib_x), np.array(calib_y)
 
 
-def calibrate_deep_models(
+def calibrate_deep_models(  # noqa: PLR0913
     config: dict,
     x_model: np.ndarray,
     y_cat: np.ndarray,
     scaler: StandardScaler,
     save_dir: str,
+    *,
     verbose: bool,
 ) -> None:
-    """
-    Calibrates and saves deep learning models (EEGNet and ShallowConvNet) for EEG classification.
+    """Calibrate and save deep learning models (EEGNet and ShallowConvNet) for EEG classification.
 
     Args:
         config (dict): Configuration dictionary.
@@ -318,6 +325,7 @@ def calibrate_deep_models(
 
     Returns:
         None
+
     """
     # EEGNet
     model = load_model(config["MODEL_EEGNET"])
@@ -334,18 +342,18 @@ def calibrate_deep_models(
         verbose=verbose,
     )
     # Save EEGNet model and scaler to generic session paths (no timestamp)
-    eegnet_out = os.path.join(save_dir, "eeg_direction_model_session.h5")
-    scaler_out = os.path.join(save_dir, "eeg_scaler_session.pkl")
+    eegnet_out = Path(save_dir) / "eeg_direction_model_session.h5"
+    scaler_out = Path(save_dir) / "eeg_scaler_session.pkl"
     model.save(eegnet_out)
     joblib.dump(scaler, scaler_out)
-    logging.info("EEGNet session model saved to %s", eegnet_out)
+    logger.info("EEGNet session model saved to %s", eegnet_out)
     # ShallowConvNet
     shallow = ShallowConvNet(
         nb_classes=len(config["LABELS"]),
         Chans=len(
             config.get("EEG_CHANNELS")
             or config.get("CHANNELS")
-            or list(range(config["N_CHANNELS"]))
+            or list(range(config["N_CHANNELS"])),
         ),
         Samples=config["WINDOW_SIZE"],
     )
@@ -363,14 +371,14 @@ def calibrate_deep_models(
         verbose=verbose,
     )
     # Save ShallowConvNet model to generic session path (no timestamp)
-    shallow_out = os.path.join(save_dir, "eeg_shallow_model_session.h5")
-    scaler_shallow_out = os.path.join(save_dir, "eeg_scaler_tree_session.pkl")
+    shallow_out = Path(save_dir) / "eeg_shallow_model_session.h5"
+    scaler_shallow_out = Path(save_dir) / "eeg_scaler_tree_session.pkl"
     shallow.save(shallow_out)
     joblib.dump(scaler, scaler_shallow_out)
-    logging.info("ShallowConvNet session model saved to %s", shallow_out)
+    logger.info("ShallowConvNet session model saved to %s", shallow_out)
 
 
-def calibrate_tree_models(
+def calibrate_tree_models(  # noqa: PLR0913
     sample_rate: int,
     x_calib: np.ndarray,
     y_calib_encoded: np.ndarray,
@@ -378,8 +386,7 @@ def calibrate_tree_models(
     rf_out: str,
     xgb_out: str,
 ) -> None:
-    """
-    Calibrates and saves tree-based models (Random Forest, XGBoost) for EEG classification.
+    """Calibrate and save tree-based models (Random Forest, XGBoost) for EEG classification.
 
     Args:
         sample_rate (int): Sample rate.
@@ -391,6 +398,7 @@ def calibrate_tree_models(
 
     Returns:
         None
+
     """
     x_feat = np.array([extract_features(w, fs=sample_rate) for w in x_calib])
     scaler_tree = StandardScaler()
@@ -400,25 +408,26 @@ def calibrate_tree_models(
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     rf.fit(x_feat_scaled, y_calib_encoded)
     joblib.dump(rf, rf_out)
-    logging.info("Random Forest session model saved to %s", rf_out)
+    logger.info("Random Forest session model saved to %s", rf_out)
     # XGBoost
     xgb = XGBClassifier(
-        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss"
+        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss",
     )
     xgb.fit(x_feat_scaled, y_calib_encoded)
     joblib.dump(xgb, xgb_out)
-    logging.info("XGBoost session model saved to %s", xgb_out)
+    logger.info("XGBoost session model saved to %s", xgb_out)
 
 
 def calibrate_all_models_lsl(
-    lsl_stream_handler: Any,
+    lsl_stream_handler: LSLStreamHandler,
     config_path: str = "config.json",
-    seconds_per_class: Optional[int] = None,
+    seconds_per_class: int | None = None,
     save_dir: str = "models",
+    *,
     verbose: bool = True,
 ) -> None:
-    """
-    Unified, LSL-aware calibration for all models (EEGNet, ShallowConvNet, RF, XGBoost).
+    """Unified, LSL-aware calibration for all models (EEGNet, ShallowConvNet, RF, XGBoost).
+
     Uses config for parameters and saves session-specific models/scalers.
 
     Args:
@@ -430,14 +439,14 @@ def calibrate_all_models_lsl(
 
     Returns:
         None
-    """
 
+    """
     # --- Load config ---
     config = load_config(config_path)
     config = {k.upper(): v for k, v in config.items()}
     if seconds_per_class is None:
         seconds_per_class = config.get("CALIBRATION_SECONDS_PER_CLASS", 10)
-    os.makedirs(save_dir, exist_ok=True)
+    Path(save_dir).mkdir(parents=True, exist_ok=True)
 
     # --- Collect calibration data using LSL ---
     x_calib, y_calib = collect_lsl_calib_data(
@@ -455,8 +464,8 @@ def calibrate_all_models_lsl(
     le.fit(config["LABELS"])
     y_calib_encoded = le.transform(y_calib)
     # Save label encoder and class list to generic session paths (no timestamp)
-    le_path = os.path.join(save_dir, "eeg_label_encoder.pkl")
-    label_classes_path = os.path.join(save_dir, "eeg_label_classes.npy")
+    le_path = Path(save_dir) / "eeg_label_encoder.pkl"
+    label_classes_path = Path(save_dir) / "eeg_label_classes.npy"
     joblib.dump(le, le_path)
     np.save(label_classes_path, config["LABELS"])
 
@@ -475,11 +484,11 @@ def calibrate_all_models_lsl(
         y_cat,
         scaler,
         save_dir,
-        verbose,
+        verbose=verbose,
     )
-    scaler_tree_out = os.path.join(save_dir, "eeg_scaler_tree.pkl")
-    rf_out = os.path.join(save_dir, "eeg_rf_model.pkl")
-    xgb_out = os.path.join(save_dir, "eeg_xgb_model.pkl")
+    scaler_tree_out = Path(save_dir) / "eeg_scaler_tree.pkl"
+    rf_out = Path(save_dir) / "eeg_rf_model.pkl"
+    xgb_out = Path(save_dir) / "eeg_xgb_model.pkl"
     calibrate_tree_models(
         config["SAMPLING_RATE"],
         x_calib,
@@ -489,31 +498,33 @@ def calibrate_all_models_lsl(
         xgb_out,
     )
 
-    print("Session calibration complete. All models saved.")
+    logger.info("Session calibration complete. All models saved.")
 
 
-def square(x: Any) -> Any:
-    """
-    Computes the element-wise square of a tensor using TensorFlow.
+def square(x: Tensor) -> Tensor:
+    """Compute the element-wise square of a tensor using TensorFlow.
 
     Args:
         x (Tensor): Input tensor.
 
     Returns:
         Tensor: Squared tensor.
+
     """
     return tf.math.square(x)
 
 
-def log(x: Any) -> Any:
-    """
-    Computes the element-wise natural logarithm of a tensor using TensorFlow, with values clipped to avoid log(0).
+def log(x: Tensor) -> Tensor:
+    """Compute the element-wise natural logarithm of a tensor using TensorFlow.
+
+    With values clipped to avoid log(0).
 
     Args:
         x (Tensor): Input tensor.
 
     Returns:
         Tensor: Log-transformed tensor.
+
     """
     return tf.math.log(tf.clip_by_value(x, 1e-7, tf.reduce_max(x)))
 
@@ -538,54 +549,49 @@ class ConfigError(EEGSystemError):
 
 
 def handle_errors(main_func: Callable) -> Callable:
-    """
-    Decorator to catch and log uncaught exceptions in script entry points.
+    """Define decorator to catch and log uncaught exceptions in script entry points.
 
     Args:
         main_func (Callable): Main function to wrap.
 
     Returns:
         Callable: Wrapped function.
-    """
 
+    """
     @functools.wraps(main_func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args, **kwargs) -> Any:  # noqa: ANN002, ANN003, ANN401
         try:
             return main_func(*args, **kwargs)
-        except EEGSystemError as e:
-            logging.error("EEGSystemError: %s", e)
+        except EEGSystemError:
+            logger.exception("EEGSystemError.")
             raise
-        except Exception as e:
-            logging.exception("Unhandled exception: %s", e)
+        except Exception:
+            logger.exception("Unhandled exception.")
             raise
-
     return wrapper
 
 
-def save_json(data: Dict[str, Any], path: str) -> None:
-    """
-    Saves a dictionary as a JSON file.
+def save_json(data: dict[str, Any], path: str) -> None:
+    """Save a dictionary as a JSON file.
 
     Args:
-        data (dict): Data to save.
+        data (dict[str, Any]): Data to save.
         path (str): File path.
 
-    Returns:
-        None
     """
-    with open(path, "w", encoding="utf-8") as f:
+    with Path(path).open("w", encoding="utf-8") as f:
         json.dump(data, f)
 
 
-def load_json(path: str) -> Dict[str, Any]:
-    """
-    Loads a dictionary from a JSON file.
+def load_json(path: str) -> dict[str, Any]:
+    """Load a dictionary from a JSON file.
 
     Args:
         path (str): File path.
 
     Returns:
-        dict: Loaded data.
+        dict[str, Any]: Loaded data.
+
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with Path(path).open("r", encoding="utf-8") as f:
         return json.load(f)

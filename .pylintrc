@@ -1,5 +1,0 @@
-[MAIN]
-ignore=EEGModels.py
-
-[FORMAT]
-max-line-length=120
