@@ -1,16 +1,18 @@
-"""
-test_system.py
+# ruff: noqa: S101, S603
+"""test_system.py.
 
 Unit tests for EEG training system utility functions and pipeline integration.
 
 Tests data windowing, config loading, validation, model training, and integration using
 synthetic or real EEG data and configs.
 """
+from __future__ import annotations
 
 import os
 import subprocess  # nosec B404
 import sys
 import tempfile
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -18,12 +20,12 @@ import pytest
 from keras.models import load_model
 
 from EEGModels import EEGNet, ShallowConvNet
-from utils import save_json  # Add save_json utility
 from utils import (
     CUSTOM_OBJECTS,
     check_labels_valid,
     check_no_nan,
     load_config,
+    save_json,  # Add save_json utility
     window_data,
 )
 
@@ -31,22 +33,18 @@ from utils import (
 DEFAULT_TIMEOUT = 30  # seconds
 
 
-def test_window_data_shape():
-    """
-    Test that window_data returns correct shapes.
-    """
+def test_window_data_shape() -> None:
+    """Test that window_data returns correct shapes."""
     x, y = make_synthetic_eeg_data(n_samples=1000, n_channels=16)
     x_windows, y_windows = window_data(x, y, window_size=250, step_size=125)
     assert x_windows.shape[1:] == (250, 16)
     assert x_windows.shape[0] == y_windows.shape[0]
 
 
-def test_window_data_output():
-    """
-    Test window_data produces correct windowed output and label consistency.
-    """
+def test_window_data_output() -> None:
+    """Test window_data produces correct windowed output and label consistency."""
     x, y = make_synthetic_eeg_data(
-        n_samples=500, n_channels=8, labels=["left", "right"]
+        n_samples=500, n_channels=8, labels=["left", "right"],
     )
     window_size = 100
     step_size = 50
@@ -62,10 +60,8 @@ def test_window_data_output():
         assert label in ["left", "right"]
 
 
-def test_load_config_keys():
-    """
-    Test that config contains required keys.
-    """
+def test_load_config_keys() -> None:
+    """Test that config contains required keys."""
     config = load_config()
     required_keys = [
         "N_CHANNELS",
@@ -86,39 +82,35 @@ def test_load_config_keys():
 
 
 @pytest.mark.parametrize(
-    "arr,should_raise",
+    ("arr", "should_raise"),
     [
         (np.zeros((10, 10)), False),
         (lambda: (a := np.zeros((5, 5)), a.__setitem__((0, 0), np.nan), a)[-1], True),
     ],
 )
-def test_check_no_nan_cases(arr, should_raise):
-    """
-    Test check_no_nan with arrays that should or should not raise ValueError.
-    """
+def test_check_no_nan_cases(arr: np.ndarray, *, should_raise: bool) -> None:
+    """Test check_no_nan with arrays that should or should not raise ValueError."""
     if callable(arr):
         arr = arr()
     if should_raise:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="nan|NaN|NAN"):
             check_no_nan(arr)
     else:
         check_no_nan(arr)
 
 
 @pytest.mark.parametrize(
-    "labels,should_raise",
+    ("labels", "should_raise"),
     [
         (np.array(["left", "right", "neutral"]), False),
         (np.array(["left", np.nan, "right"], dtype=object), True),
         (np.array(["left", "up", "right"]), True),
     ],
 )
-def test_check_labels_valid_cases(labels, should_raise):
-    """
-    Test check_labels_valid with valid and invalid label arrays.
-    """
+def test_check_labels_valid_cases(labels: np.ndarray, *, should_raise: bool) -> None:
+    """Test check_labels_valid with valid and invalid label arrays."""
     if should_raise:
-        with pytest.raises(ValueError):
+        with pytest.raises(ValueError, match="label|Label|invalid|Invalid"):
             check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
     else:
         check_labels_valid(labels, valid_labels=["left", "right", "neutral"])
@@ -130,30 +122,29 @@ def test_check_labels_valid_cases(labels, should_raise):
 
 
 @pytest.mark.parametrize(
-    "model_class, model_name",
+    ("model_class", "model_name"),
     [
         (EEGNet, "eegnet"),
         (ShallowConvNet, "shallow"),
     ],
 )
-def test_model_train_save_load(model_class, model_name):
-    """
-    Test that EEGNet and ShallowConvNet can be trained, saved, and loaded on dummy data.
-    """
-    x = np.random.randn(20, 16, 250, 1)  # (batch, channels, samples, 1)
+def test_model_train_save_load(model_class: type, model_name: str) -> None:
+    """Test that EEGNet and ShallowConvNet can be trained, saved, and loaded on dummy data."""
+    rng = np.random.default_rng()
+    x = rng.standard_normal((20, 16, 250, 1))  # (batch, channels, samples, 1)
     y = np.zeros((20,))
     y[:10] = 1  # Two classes
     y_cat = np.zeros((20, 2))
     y_cat[np.arange(20), y.astype(int)] = 1
     model = model_class(nb_classes=2, Chans=16, Samples=250)
     model.compile(
-        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"]
+        optimizer="adam", loss="categorical_crossentropy", metrics=["accuracy"],
     )
     model.fit(x, y_cat, epochs=1, batch_size=4, verbose=0)
     with tempfile.TemporaryDirectory() as tmpdir:
-        model_path = os.path.join(tmpdir, f"test_{model_name}_model.h5")
+        model_path = Path(tmpdir) / f"test_{model_name}_model.h5"
         model.save(model_path)
-        assert os.path.exists(model_path)
+        assert model_path.exists()
         if model_name == "shallow":
             # Provide custom objects for ShallowConvNet
             loaded = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
@@ -166,42 +157,39 @@ def test_model_train_save_load(model_class, model_name):
 # Integration & Pipeline Tests
 # ----------------------
 class TestIntegration:
-    """
-    Integration and pipeline tests for the EEG training system.
-    """
+    """Integration and pipeline tests for the EEG training system."""
 
-    def test_end_to_end_pipeline(self):
-        """
-        Black-box end-to-end test: CSV -> windowed .npy -> model file.
-        """
+    def test_end_to_end_pipeline(self) -> None:
+        """Black-box end-to-end test: CSV -> windowed .npy -> model file."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # 1. Create synthetic CSV
-            csv_path = os.path.join(tmpdir, "eeg.csv")
+            csv_path = Path(tmpdir) / "eeg.csv"
             n_samples, n_channels = 200, 4
-            data = np.random.randn(n_samples, n_channels)
-            labels = np.random.choice(["left", "right"], size=n_samples)
+            rng = np.random.default_rng()
+            data = rng.standard_normal((n_samples, n_channels))
+            labels = rng.choice(["left", "right"], size=n_samples)
             df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
             df["session_type"] = "pure"
             df["label"] = labels
             df.to_csv(csv_path, index=False)
             # 2. Create minimal config.json
-            config_path = os.path.join(tmpdir, "config.json")
+            config_path = Path(tmpdir) / "config.json"
             config = {
                 "N_CHANNELS": n_channels,
                 "WINDOW_SIZE": 50,
                 "STEP_SIZE": 25,
                 "OUTPUT_CSV": csv_path,
-                "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
-                "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+                "WINDOWED_NPY": str(Path(tmpdir) / "X.npy"),
+                "WINDOWED_LABELS_NPY": str(Path(tmpdir) / "y.npy"),
                 "SESSION_TYPES": ["pure"],
                 "USE_SESSION_TYPES": ["pure"],
                 "LABELS": ["left", "right"],
-                "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
-                "MODEL_SHALLOW": os.path.join(tmpdir, "shallow.h5"),
-                "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-                "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
-                "SCALER_SHALLOW": os.path.join(tmpdir, "scaler_shallow.pkl"),
-                "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+                "MODEL_EEGNET": str(Path(tmpdir) / "model.h5"),
+                "MODEL_SHALLOW": str(Path(tmpdir) / "shallow.h5"),
+                "LABEL_ENCODER": str(Path(tmpdir) / "le.pkl"),
+                "SCALER_EEGNET": str(Path(tmpdir) / "scaler.pkl"),
+                "SCALER_SHALLOW": str(Path(tmpdir) / "scaler_shallow.pkl"),
+                "LABEL_CLASSES_NPY": str(Path(tmpdir) / "classes.npy"),
                 "EARLY_STOPPING_MONITOR": "val_loss",
                 "EARLY_STOPPING_PATIENCE": 3,
                 "EEGNET_KERN_LENGTH": 64,
@@ -217,9 +205,9 @@ class TestIntegration:
                 "BATCH_SIZE": 8,
                 "VALIDATION_SPLIT": 0.2,
                 "SAMPLING_RATE": 250,
-                "MODEL_RF": os.path.join(tmpdir, "rf.pkl"),
-                "MODEL_XGB": os.path.join(tmpdir, "xgb.pkl"),
-                "SCALER_TREE": os.path.join(tmpdir, "scaler_tree.pkl"),
+                "MODEL_RF": str(Path(tmpdir) / "rf.pkl"),
+                "MODEL_XGB": str(Path(tmpdir) / "xgb.pkl"),
+                "SCALER_TREE": str(Path(tmpdir) / "scaler_tree.pkl"),
             }
             save_json(config, config_path)
             # 3. Run windowing script
@@ -231,8 +219,8 @@ class TestIntegration:
                 check=True,
                 timeout=DEFAULT_TIMEOUT,
             )  # nosec B603
-            assert os.path.exists(config["WINDOWED_NPY"])
-            assert os.path.exists(config["WINDOWED_LABELS_NPY"])
+            assert Path(config["WINDOWED_NPY"]).exists()
+            assert Path(config["WINDOWED_LABELS_NPY"]).exists()
             # 4. Run training script
             subprocess.run(
                 [sys.executable, "train_eeg_model.py"],
@@ -242,31 +230,31 @@ class TestIntegration:
                 check=True,
                 timeout=DEFAULT_TIMEOUT,
             )  # nosec B603
-            assert os.path.exists(config["MODEL_EEGNET"])
-            assert os.path.exists(config["MODEL_SHALLOW"])
-            assert os.path.exists(config["LABEL_ENCODER"])
-            assert os.path.exists(config["SCALER_EEGNET"])
+            assert Path(config["MODEL_EEGNET"]).exists()
+            assert Path(config["MODEL_SHALLOW"]).exists()
+            assert Path(config["LABEL_ENCODER"]).exists()
+            assert Path(config["SCALER_EEGNET"]).exists()
             # Removed assertion for SCALER_SHALLOW, as it is not created by the code
             x = np.load(config["WINDOWED_NPY"])
-            if x.ndim == 3:
+            ndim_without_channel = 3
+            if x.ndim == ndim_without_channel:
                 x = x[..., np.newaxis]
             # Transpose to (batch, channels, samples, 1) for ShallowConvNet
             x_shallow = np.transpose(x, (0, 2, 1, 3))
             shallow_model = load_model(
-                config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS
+                config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS,
             )
-            shallow_preds = shallow_model.predict(x_shallow[:5])
-            assert shallow_preds.shape[0] == 5
+            n_pred_samples = 5
+            shallow_preds = shallow_model.predict(x_shallow[:n_pred_samples])
+            assert shallow_preds.shape[0] == n_pred_samples
 
-    def test_error_handling_missing_config(self):
-        """
-        Test error handling for missing config file in windowing and training scripts.
-        """
+    def test_error_handling_missing_config(self) -> None:
+        """Test error handling for missing config file in windowing and training scripts."""
         with tempfile.TemporaryDirectory() as tmpdir:
             # No config file created
             env = {
                 **os.environ,
-                "CONFIG_PATH": os.path.join(tmpdir, "missing_config.json"),
+                "CONFIG_PATH": Path(tmpdir) / "missing_config.json",
             }
             # Windowing script should fail
             result = subprocess.run(
@@ -300,39 +288,38 @@ class TestIntegration:
             )
 
 
-def test_model_prediction_after_training():
-    """
-    Test that a trained model can be loaded and used for prediction.
-    """
+def test_model_prediction_after_training() -> None:
+    """Test that a trained model can be loaded and used for prediction."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # 1. Create synthetic CSV and config
         n_samples, n_channels = 100, 4
-        data = np.random.randn(n_samples, n_channels)
+        rng = np.random.default_rng()
+        data = rng.standard_normal((n_samples, n_channels))
         # Ensure at least 2 samples per class for stratified split
         labels = np.array(
-            ["left"] * (n_samples // 2) + ["right"] * (n_samples - n_samples // 2)
+            ["left"] * (n_samples // 2) + ["right"] * (n_samples - n_samples // 2),
         )
-        np.random.shuffle(labels)
+        rng.shuffle(labels)
         df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
         df["session_type"] = "pure"
         df["label"] = labels
-        csv_path = os.path.join(tmpdir, "eeg.csv")
+        csv_path = Path(tmpdir) / "eeg.csv"
         df.to_csv(csv_path, index=False)
         config = {
             "N_CHANNELS": n_channels,
             "WINDOW_SIZE": 50,
             "STEP_SIZE": 25,
             "OUTPUT_CSV": csv_path,
-            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
-            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "WINDOWED_NPY": Path(tmpdir) / "X.npy",
+            "WINDOWED_LABELS_NPY": Path(tmpdir) / "y.npy",
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
-            "MODEL_SHALLOW": os.path.join(tmpdir, "shallow.h5"),
-            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
-            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+            "MODEL_EEGNET": Path(tmpdir) / "model.h5",
+            "MODEL_SHALLOW": Path(tmpdir) / "shallow.h5",
+            "LABEL_ENCODER": Path(tmpdir) / "le.pkl",
+            "SCALER_EEGNET": Path(tmpdir) / "scaler.pkl",
+            "LABEL_CLASSES_NPY": Path(tmpdir) / "classes.npy",
             "EARLY_STOPPING_MONITOR": "val_loss",
             "EARLY_STOPPING_PATIENCE": 3,
             "EEGNET_KERN_LENGTH": 64,
@@ -348,14 +335,14 @@ def test_model_prediction_after_training():
             "BATCH_SIZE": 8,
             "VALIDATION_SPLIT": 0.2,
             "SAMPLING_RATE": 250,
-            "MODEL_RF": os.path.join(tmpdir, "rf.pkl"),
-            "MODEL_XGB": os.path.join(tmpdir, "xgb.pkl"),
-            "SCALER_TREE": os.path.join(tmpdir, "scaler_tree.pkl"),
+            "MODEL_RF": Path(tmpdir) / "rf.pkl",
+            "MODEL_XGB": Path(tmpdir) / "xgb.pkl",
+            "SCALER_TREE": Path(tmpdir) / "scaler_tree.pkl",
         }
-        config_path = os.path.join(tmpdir, "config.json")
+        config_path = Path(tmpdir) / "config.json"
         save_json(config, config_path)
         # 2. Run windowing and training scripts
-        env = {**os.environ, "CONFIG_PATH": config_path}
+        env = {**os.environ, "CONFIG_PATH": str(config_path)}
         subprocess.run(
             [sys.executable, "window_eeg_data.py"],
             env=env,
@@ -367,9 +354,10 @@ def test_model_prediction_after_training():
         # Check label distribution after windowing
         y_windowed = np.load(config["WINDOWED_LABELS_NPY"])
         unique, counts = np.unique(y_windowed, return_counts=True)
-        if np.any(counts < 2):
+        min_samples_per_class = 2
+        if np.any(counts < min_samples_per_class):
             pytest.skip(
-                f"Not enough samples per class after windowing: {dict(zip(unique, counts))}"
+                f"Not enough samples per class after windowing: {dict(zip(unique, counts))}",
             )
         subprocess.run(
             [sys.executable, "train_eeg_model.py"],
@@ -387,39 +375,40 @@ def test_model_prediction_after_training():
             # If EEGNet does not use custom objects, fallback
             model = load_model(config["MODEL_EEGNET"])
         # Model expects (batch, channels, samples, 1) or similar
-        if x.ndim == 3:
+        ndim_without_channel = 3
+        if x.ndim == ndim_without_channel:
             x = x[..., np.newaxis]
-        preds = model.predict(x[:5])
-        assert preds.shape[0] == 5
+        n_pred_samples = 5
+        preds = model.predict(x[:n_pred_samples])
+        assert preds.shape[0] == n_pred_samples
 
 
-def test_windowed_npy_content():
-    """
-    Test that windowed .npy files have correct shapes and label values after windowing.
-    """
+def test_windowed_npy_content() -> None:
+    """Test that windowed .npy files have correct shapes and label values after windowing."""
     with tempfile.TemporaryDirectory() as tmpdir:
         _, n_channels = 120, 3
-        data = np.random.randn(120, n_channels)
-        labels = np.random.choice(["left", "right"], size=120)
+        rng = np.random.default_rng()
+        data = rng.standard_normal((120, n_channels))
+        labels = rng.choice(["left", "right"], size=120)
         df = pd.DataFrame(data, columns=[f"ch_{i}" for i in range(n_channels)])
         df["session_type"] = "pure"
         df["label"] = labels
-        csv_path = os.path.join(tmpdir, "eeg.csv")
+        csv_path = Path(tmpdir) / "eeg.csv"
         df.to_csv(csv_path, index=False)
         config = {
             "N_CHANNELS": n_channels,
             "WINDOW_SIZE": 30,
             "STEP_SIZE": 10,
             "OUTPUT_CSV": csv_path,
-            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
-            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "WINDOWED_NPY": Path(tmpdir) / "X.npy",
+            "WINDOWED_LABELS_NPY": Path(tmpdir) / "y.npy",
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
-            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
-            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+            "MODEL_EEGNET": Path(tmpdir) / "model.h5",
+            "LABEL_ENCODER": Path(tmpdir) / "le.pkl",
+            "SCALER_EEGNET": Path(tmpdir) / "scaler.pkl",
+            "LABEL_CLASSES_NPY": Path(tmpdir) / "classes.npy",
             "EARLY_STOPPING_MONITOR": "val_loss",
             "EARLY_STOPPING_PATIENCE": 3,
             "EEGNET_KERN_LENGTH": 64,
@@ -435,7 +424,7 @@ def test_windowed_npy_content():
             "BATCH_SIZE": 8,
             "VALIDATION_SPLIT": 0.2,
         }
-        config_path = os.path.join(tmpdir, "config.json")
+        config_path = Path(tmpdir) / "config.json"
         save_json(config, config_path)
         env = {**os.environ, "CONFIG_PATH": config_path}
         subprocess.run(
@@ -458,14 +447,12 @@ def test_windowed_npy_content():
         assert set(np.unique(y)).issubset({"left", "right"})
 
 
-def test_windowing_with_malformed_csv():
-    """
-    Test that window_eeg_data.py fails gracefully on malformed CSV input.
-    """
+def test_windowing_with_malformed_csv() -> None:
+    """Test that window_eeg_data.py fails gracefully on malformed CSV input."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a malformed CSV (missing columns, bad delimiter)
-        malformed_csv_path = os.path.join(tmpdir, "malformed.csv")
-        with open(malformed_csv_path, "w", encoding="utf-8") as f:
+        malformed_csv_path = Path(tmpdir) / "malformed.csv"
+        with malformed_csv_path.open("w", encoding="utf-8") as f:
             f.write("badly,formatted,data\n1,2\n3,4\n")
         # Minimal config
         config = {
@@ -473,17 +460,17 @@ def test_windowing_with_malformed_csv():
             "WINDOW_SIZE": 10,
             "STEP_SIZE": 5,
             "OUTPUT_CSV": malformed_csv_path,
-            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
-            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "WINDOWED_NPY": Path(tmpdir) / "X.npy",
+            "WINDOWED_LABELS_NPY": Path(tmpdir) / "y.npy",
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
-            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
-            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+            "MODEL_EEGNET": Path(tmpdir) / "model.h5",
+            "LABEL_ENCODER": Path(tmpdir) / "le.pkl",
+            "SCALER_EEGNET": Path(tmpdir) / "scaler.pkl",
+            "LABEL_CLASSES_NPY": Path(tmpdir) / "classes.npy",
         }
-        config_path = os.path.join(tmpdir, "config.json")
+        config_path = Path(tmpdir) / "config.json"
         save_json(config, config_path)
         env = {**os.environ, "CONFIG_PATH": config_path}
         # Run windowing script and expect failure
@@ -503,32 +490,31 @@ def test_windowing_with_malformed_csv():
         )
 
 
-def test_training_with_wrong_shape_npy():
-    """
-    Test that train_eeg_model.py fails gracefully on wrong-shape .npy input.
-    """
+def test_training_with_wrong_shape_npy() -> None:
+    """Test that train_eeg_model.py fails gracefully on wrong-shape .npy input."""
     with tempfile.TemporaryDirectory() as tmpdir:
         # Create a valid config
         config = {
             "N_CHANNELS": 4,
             "WINDOW_SIZE": 10,
             "STEP_SIZE": 5,
-            "OUTPUT_CSV": os.path.join(tmpdir, "dummy.csv"),
-            "WINDOWED_NPY": os.path.join(tmpdir, "X.npy"),
-            "WINDOWED_LABELS_NPY": os.path.join(tmpdir, "y.npy"),
+            "OUTPUT_CSV": Path(tmpdir) / "dummy.csv",
+            "WINDOWED_NPY": Path(tmpdir) / "X.npy",
+            "WINDOWED_LABELS_NPY": Path(tmpdir) / "y.npy",
             "SESSION_TYPES": ["pure"],
             "USE_SESSION_TYPES": ["pure"],
             "LABELS": ["left", "right"],
-            "MODEL_EEGNET": os.path.join(tmpdir, "model.h5"),
-            "LABEL_ENCODER": os.path.join(tmpdir, "le.pkl"),
-            "SCALER_EEGNET": os.path.join(tmpdir, "scaler.pkl"),
-            "LABEL_CLASSES_NPY": os.path.join(tmpdir, "classes.npy"),
+            "MODEL_EEGNET": Path(tmpdir) / "model.h5",
+            "LABEL_ENCODER": Path(tmpdir) / "le.pkl",
+            "SCALER_EEGNET": Path(tmpdir) / "scaler.pkl",
+            "LABEL_CLASSES_NPY": Path(tmpdir) / "classes.npy",
         }
-        config_path = os.path.join(tmpdir, "config.json")
+        config_path = Path(tmpdir) / "config.json"
         save_json(config, config_path)
         # Write wrong-shape .npy files
+        rng = np.random.default_rng()
         np.save(
-            config["WINDOWED_NPY"], np.random.randn(5, 5, 5)
+            config["WINDOWED_NPY"], rng.standard_normal((5, 5, 5)),
         )  # Should be (n_windows, window, channels)
         np.save(
             config["WINDOWED_LABELS_NPY"],
@@ -555,15 +541,28 @@ def test_training_with_wrong_shape_npy():
 # TEST UTILITIES
 
 
-def make_synthetic_eeg_data(n_samples=1000, n_channels=8, labels=None):
+def make_synthetic_eeg_data(
+    n_samples: int = 1000,
+    n_channels: int = 8,
+    labels: list[str] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Define factory for synthetic EEG data and labels.
+
+    Args:
+        n_samples (int, optional): Number of samples to generate. Defaults to 1000.
+        n_channels (int, optional): Number of EEG channels. Defaults to 8.
+        labels (list[str] | None, optional): List of labels to use. Defaults to None.
+
+    Returns:
+        tuple[np.ndarray, np.ndarray]: Tuple containing the synthetic EEG data and labels.
+
     """
-    Factory for synthetic EEG data and labels.
-    """
-    x = np.random.randn(n_samples, n_channels)
+    rng = np.random.default_rng()
+    x = rng.standard_normal((n_samples, n_channels))
     if labels is None:
-        labels = np.random.choice(["left", "right", "neutral"], size=(n_samples, 1))
+        labels = rng.choice(["left", "right", "neutral"], size=(n_samples, 1))
     else:
-        labels = np.random.choice(labels, size=(n_samples, 1))
+        labels = rng.choice(labels, size=(n_samples, 1))
     return x, labels
 
 
