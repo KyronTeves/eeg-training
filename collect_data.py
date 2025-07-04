@@ -271,7 +271,7 @@ def main() -> None:
         logger.error("Invalid session type: %s", session_type)
         return
     logger.info("Available labels: %s", config["LABELS"])
-    with Path.open(config["OUTPUT_CSV"], "w", newline="", encoding="utf-8") as csvfile:
+    with Path(config["OUTPUT_CSV"]).open("w", newline="", encoding="utf-8") as csvfile:
         fieldnames = [
             "timestamp_iso",
             "timestamp",

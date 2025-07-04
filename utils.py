@@ -15,7 +15,7 @@ import json
 import logging
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
@@ -213,7 +213,7 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -
 
     if file_size_mb > max_size_mb:
         # Archive the current log
-        timestamp = datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         archive_name = f"{logfile}.archive_{timestamp}"
 
         Path(logfile).rename(archive_name)
@@ -571,16 +571,23 @@ def handle_errors(main_func: Callable) -> Callable:
     return wrapper
 
 
+def convert_paths(
+        obj: dict | list | Path | str | float | bool | None,  # noqa: FBT001
+) -> dict | list | str | float | bool | None:
+    """Recursively convert Path objects to strings for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: convert_paths(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_paths(i) for i in obj]
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
+
+
 def save_json(data: dict[str, Any], path: str) -> None:
-    """Save a dictionary as a JSON file.
-
-    Args:
-        data (dict[str, Any]): Data to save.
-        path (str): File path.
-
-    """
+    """Save a dictionary as a JSON file, converting Path objects to strings."""
     with Path(path).open("w", encoding="utf-8") as f:
-        json.dump(data, f)
+        json.dump(convert_paths(data), f)
 
 
 def load_json(path: str) -> dict[str, Any]:
