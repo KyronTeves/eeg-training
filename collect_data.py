@@ -12,7 +12,7 @@ Typical usage:
 import csv
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -132,7 +132,7 @@ def write_phase_to_csv(  # noqa: PLR0913
                     phase_timestamps[i] if i < len(phase_timestamps) else time.time()
                 )
                 row = [
-                    datetime.fromtimestamp(timestamp, tz=datetime.timezone.utc).isoformat(),
+                    datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat(),
                     timestamp,
                     session_type,
                     trial_num,
