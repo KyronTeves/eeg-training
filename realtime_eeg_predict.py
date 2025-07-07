@@ -1,15 +1,29 @@
-"""
+"""realtime_eeg_predict.py.
+
 Real-time EEG direction prediction using LSL streaming from OpenBCI GUI.
 
-Loads trained models, buffers EEG data, performs real-time ensemble prediction, and logs results for online BCI control.
+This script provides an interactive menu for selecting prediction mode (EEGNet, ShallowConvNet,
+Random Forest, XGBoost, or Ensemble) and allows switching between models in real time without
+restarting. After each session, you can return to the menu or exit cleanly.
+
+Typical usage:
+    $ python realtime_eeg_predict.py
+
+Features:
+    - Real-time prediction using multiple models or ensemble.
+    - Interactive menu for model selection and session switching.
+    - Supports both weighted soft voting and hard voting for ensemble.
+    - Clean exit and reconnection to LSL stream as needed.
 """
+from __future__ import annotations
 
 import logging
 import os
 import threading
 import time
 import warnings
-from collections import deque
+from collections import Counter, deque
+from typing import TYPE_CHECKING
 
 import joblib
 import numpy as np
@@ -17,13 +31,19 @@ from keras.models import load_model
 
 from lsl_stream_handler import LSLStreamHandler
 from utils import (
-    calibrate_all_models_lsl,  # use the new unified calibration
     CUSTOM_OBJECTS,
+    calibrate_all_models_lsl,  # use the new unified calibration
     extract_features,
+    handle_errors,  # Add error handler
     load_config,
     setup_logging,
-    handle_errors,  # Add error handler
 )
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+setup_logging()
+logger = logging.getLogger(__name__)
 
 # Suppress TensorFlow warnings and info messages
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
@@ -45,35 +65,38 @@ SHORT_LABELS = {
 
 
 def short_label(label: str) -> str:
-    """
-    Return a short display label for a given direction label.
+    """Return a short display label for a given direction label.
 
     Args:
         label (str): The full direction label.
 
     Returns:
         str: The short label (e.g., "FWD" for "forward").
+
     """
     return SHORT_LABELS.get(label.lower(), label[:3].upper())
 
 
 class OptimizedPredictionPipeline:
-    """
-    High-performance real-time EEG prediction pipeline.
+    """High-performance real-time EEG prediction pipeline.
 
-    Input: EEG samples from LSL stream (buffered in real time)
-    Process: Loads and manages all models (EEGNet, ShallowConvNet, RF, XGBoost),
-        preprocesses data, performs ensemble prediction, manages async prediction loop,
-        tracks performance, and handles session calibration.
-    Output: Real-time predictions (label, confidence), performance stats, logs.
+    Args:
+        config_dict (dict): Configuration dictionary.
+
+    Handles model loading, preprocessing, ensemble prediction, async prediction loop,
+    performance tracking, and session calibration.
+
+    Returns:
+        Real-time predictions (label, confidence), performance stats, logs.
+
     """
 
-    def __init__(self, config_dict: dict):
-        """
-        Initialize the prediction pipeline with configuration.
+    def __init__(self, config_dict: dict) -> None:
+        """Initialize the prediction pipeline with configuration.
 
         Args:
             config_dict (dict): Configuration dictionary with model/scaler paths, window size, etc.
+
         """
         self.config = config_dict
         self.window_size = config_dict["WINDOW_SIZE"]
@@ -105,25 +128,16 @@ class OptimizedPredictionPipeline:
         self._shallow_shape_mismatch_logged = False
         self._shallow_error_logged = False
 
-    def load_optimized_models(self):
-        """
-        Load and optimize all models (EEGNet, ShallowConvNet, RF, XGBoost) and scalers for inference.
-
-        Args:
-            None
-        Returns:
-            None
-        """
-        logging.info("Loading and optimizing models for real-time inference...")
+    def load_optimized_models(self) -> None:
+        """Load and optimize all models (EEGNet, ShallowConvNet, RF, XGBoost) and scalers for inference."""
+        logger.info("Loading and optimizing models for real-time inference...")
         try:
             # CNN Models - now trained with correct window size (125)
-            self.models["eegnet"] = {
-                "model": load_model(self.config["MODEL_EEGNET"])
-            }
+            self.models["eegnet"] = {"model": load_model(self.config["MODEL_EEGNET"])}
             self.models["shallow"] = {
                 "model": load_model(
-                    self.config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS
-                )
+                    self.config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS,
+                ),
             }
             # Tree-based models (already fast)
             self.models["rf"] = joblib.load(self.config["MODEL_RF"])
@@ -133,36 +147,29 @@ class OptimizedPredictionPipeline:
             self.scalers["tree"] = joblib.load(self.config["SCALER_TREE"])
             self.label_encoder = joblib.load(self.config["LABEL_ENCODER"])
             self._warmup_models()
-            logging.info("Model optimization complete.")
-        except FileNotFoundError as e:
-            logging.exception("Required model file not found: %s", e)
-            logging.error(
-                "Please run 'python train_eeg_model.py' first to train the models."
-            )
+            logger.info("Model optimization complete.")
+        except FileNotFoundError:
+            logger.exception("Required model file not found.")
+            logger.exception("Please run 'python train_eeg_model.py' first to train the models.")
             raise
-        except Exception as e:
-            logging.exception("Failed to load models: %s", e)
+        except Exception:
+            logger.exception("Failed to load models.")
             raise
 
-    def _warmup_models(self):
-        """
-        Run dummy predictions on all models to reduce first-call latency.
-
-        Input: None (uses dummy data)
-        Process: Runs one prediction on each model
-        Output: None (side effect: models are warmed up)
-        """
-        logging.info("Warming up models...")
+    def _warmup_models(self) -> None:
+        """Run dummy predictions on all models to reduce first-call latency."""
+        logger.info("Warming up models...")
 
         # Create dummy data
-        dummy_window = np.random.randn(1, self.window_size, self.n_channels)
+        rng = np.random.default_rng()
+        dummy_window = rng.standard_normal((1, self.window_size, self.n_channels))
 
         # Create dummy features with correct feature count
         # For tree models: 16 channels * (5 band powers + 3 stats) = 128 features
         expected_features = (
             self.n_channels * 8
         )  # 5 band powers + 3 statistical features per channel
-        dummy_features = np.random.randn(1, expected_features)
+        dummy_features = rng.standard_normal((1, expected_features))
 
         # Warm up EEGNet
         self.predict_eegnet(dummy_window)
@@ -174,56 +181,57 @@ class OptimizedPredictionPipeline:
         self.models["rf"].predict(dummy_features)
         self.models["xgb"].predict(dummy_features)
 
-        logging.info("Model warmup complete.")
+        logger.info("Model warmup complete.")
 
-    def add_sample(self, sample: np.ndarray):
-        """
-        Add a new EEG sample to the rolling buffer.
+    def add_sample(self, sample: np.ndarray) -> None:
+        """Add a new EEG sample to the rolling buffer.
 
         Args:
             sample (np.ndarray): Input EEG sample of shape (n_channels,)
-        Returns:
-            None
+
+        Raises:
+            ValueError: If the input sample has an incorrect shape.
+
         """
         if len(sample) != self.n_channels:
-            raise ValueError(f"Expected {self.n_channels} channels, got {len(sample)}")
+            msg = f"Expected {self.n_channels} channels, got {len(sample)}"
+            raise ValueError(msg)
 
         self.buffer.append(sample)
 
     def is_ready_for_prediction(self) -> bool:
-        """
-        Check if the buffer has enough samples for a prediction window.
+        """Check if the buffer has enough samples for a prediction window.
 
         Returns:
             bool: True if ready, False otherwise
+
         """
         return len(self.buffer) >= self.window_size
 
     def get_current_window(self) -> np.ndarray:
-        """
-        Returns the most recent window of EEG data from the buffer.
+        """Return the most recent window of EEG data from the buffer.
 
         Returns:
             np.ndarray: Array of shape (1, window_size, n_channels)
+
         """
         return np.array(list(self.buffer)[-self.window_size:]).reshape(
-            (1, self.window_size, self.n_channels)
+            (1, self.window_size, self.n_channels),
         )
 
     def _reset_prediction_times(self) -> None:
-        """
-        Clears the prediction times buffer (for performance stats).
-        """
+        """Clear the prediction times buffer (for performance stats)."""
         self.prediction_times.clear()
 
     def predict_eegnet(self, window: np.ndarray) -> tuple[np.ndarray, float]:
-        """
-        Runs EEGNet model prediction on a window of EEG data.
+        """Run EEGNet model prediction on a window of EEG data.
 
         Args:
             window (np.ndarray): Input window of shape (1, window_size, n_channels)
+
         Returns:
             tuple[np.ndarray, float]: (probabilities, confidence)
+
         """
         start_time = time.time()
         try:
@@ -231,7 +239,7 @@ class OptimizedPredictionPipeline:
             expected_shape = model.input_shape
             if expected_shape[2] != self.window_size:
                 if not self._shape_mismatch_logged:
-                    logging.warning(
+                    logger.warning(
                         "EEGNet model shape mismatch: expected %d samples, got %d. "
                         "Model needs retraining with new window size. Using zeros for now.",
                         expected_shape[2],
@@ -250,37 +258,34 @@ class OptimizedPredictionPipeline:
                 interpreter = self.models["eegnet"]["interpreter"]
                 input_details = self.models["eegnet"]["input_details"]
                 output_details = self.models["eegnet"]["output_details"]
-                interpreter.set_tensor(
-                    input_details[0]["index"], window_input.astype(np.float32)
-                )
+                interpreter.set_tensor(input_details[0]["index"], window_input.astype(np.float32))
                 interpreter.invoke()
                 predictions = interpreter.get_tensor(output_details[0]["index"])
             else:
-                predictions = self.models["eegnet"]["model"].predict(
-                    window_input, verbose=0
-                )
+                predictions = self.models["eegnet"]["model"].predict(window_input, verbose=0)
             confidence = np.max(predictions)
             elapsed = time.time() - start_time
             self.prediction_times.append(elapsed)
             return predictions[0], confidence
-        except (ValueError, RuntimeError) as e:
+        except (ValueError, RuntimeError):
             if not self._eegnet_error_logged:
-                logging.error("EEGNet prediction failed: %s", e)
-                logging.error(
+                logger.exception("EEGNet prediction failed.")
+                logger.exception(
                     "EEGNet will be disabled for this session."
-                    "Please retrain models with correct window size."
+                    "Please retrain models with correct window size.",
                 )
                 self._eegnet_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
 
     def predict_shallow(self, window: np.ndarray) -> tuple[np.ndarray, float]:
-        """
-        Runs ShallowConvNet model prediction on a window of EEG data.
+        """Run ShallowConvNet model prediction on a window of EEG data.
 
         Args:
             window (np.ndarray): Input window of shape (1, window_size, n_channels)
+
         Returns:
             tuple[np.ndarray, float]: (probabilities, confidence)
+
         """
         start_time = time.time()
         try:
@@ -288,7 +293,7 @@ class OptimizedPredictionPipeline:
             expected_shape = model.input_shape
             if expected_shape[2] != self.window_size:
                 if not self._shallow_shape_mismatch_logged:
-                    logging.warning(
+                    logger.warning(
                         "ShallowConvNet model shape mismatch: expected %d samples, got %d. "
                         "Model needs retraining with new window size. Using zeros for now.",
                         expected_shape[2],
@@ -297,40 +302,39 @@ class OptimizedPredictionPipeline:
                     self._shallow_shape_mismatch_logged = True
                 return np.zeros(len(self.label_encoder.classes_)), 0.0
             scaler_to_use = self.scalers.get("shallow") or self.scalers["eegnet"]
-            window_scaled = (
-                scaler_to_use
-                .transform(window.reshape(-1, self.n_channels))
-                .reshape(window.shape)
-            )
+            window_scaled = scaler_to_use.transform(
+                window.reshape(-1, self.n_channels),
+            ).reshape(window.shape)
             window_input = np.expand_dims(window_scaled, -1)
             window_input = np.transpose(window_input, (0, 2, 1, 3))
             predictions = self.models["shallow"]["model"].predict(
-                window_input, verbose=0
+                window_input, verbose=0,
             )
             confidence = np.max(predictions)
             elapsed = time.time() - start_time
             self.prediction_times.append(elapsed)
             return predictions[0], confidence
-        except (ValueError, RuntimeError) as e:
+        except (ValueError, RuntimeError):
             if not self._shallow_error_logged:
-                logging.error("ShallowConvNet prediction failed: %s", e)
-                logging.error(
+                logger.exception("ShallowConvNet prediction failed.")
+                logger.exception(
                     "ShallowConvNet will be disabled for this session."
-                    "Please retrain models with correct window size."
+                    "Please retrain models with correct window size.",
                 )
                 self._shallow_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
 
     def predict_tree_models(
-        self, window: np.ndarray
+        self, window: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, float]:
-        """
-        Runs Random Forest and XGBoost predictions on a window of EEG data.
+        """Run Random Forest and XGBoost predictions on a window of EEG data.
 
         Args:
             window (np.ndarray): Input window of shape (1, window_size, n_channels)
+
         Returns:
             tuple[np.ndarray, np.ndarray, float]: (rf_probs, xgb_probs, confidence)
+
         """
         start_time = time.time()
         try:
@@ -343,18 +347,21 @@ class OptimizedPredictionPipeline:
             confidence = np.max(avg_proba)
             elapsed = time.time() - start_time
             self.prediction_times.append(elapsed)
-            return rf_proba, xgb_proba, confidence
-        except (ValueError, RuntimeError) as e:
-            logging.error("Tree model prediction failed: %s", e)
+            return rf_proba, xgb_proba, confidence  # noqa: TRY300
+        except (ValueError, RuntimeError):
+            logger.exception("Tree model prediction failed.")
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    def predict_realtime(self) -> tuple[str, float] | None:
-        """
-        Performs ensemble prediction using all available models on the current buffer.
+    def predict_realtime(self, *, use_hard_voting: bool = False) -> tuple[str, float] | None:  # noqa: PLR0915
+        """Perform ensemble prediction using all available models on the current buffer.
+
+        Args:
+            use_hard_voting (bool): If True, use hard voting (majority rule). If False, use weighted soft voting.
 
         Returns:
             tuple[str, float] | None: (predicted_label, confidence) or None if not enough data
+
         """
         if not self.is_ready_for_prediction():
             return None
@@ -362,6 +369,37 @@ class OptimizedPredictionPipeline:
         eeg_probs, _ = self.predict_eegnet(window)
         shallow_probs, _ = self.predict_shallow(window)
         rf_probs, xgb_probs, _ = self.predict_tree_models(window)
+
+        # Logging for diagnostics
+        logger.debug("EEGNet probs: %s", eeg_probs)
+        logger.debug("ShallowConvNet probs: %s", shallow_probs)
+        logger.debug("RandomForest probs: %s", rf_probs)
+        logger.debug("XGBoost probs: %s", xgb_probs)
+
+        # Get predicted labels for hard voting
+        model_preds = []
+        if not np.all(eeg_probs == 0):
+            eeg_pred = np.argmax(eeg_probs)
+            model_preds.append(eeg_pred)
+        if not np.all(shallow_probs == 0):
+            shallow_pred = np.argmax(shallow_probs)
+            model_preds.append(shallow_pred)
+        model_preds.append(np.argmax(rf_probs))
+        model_preds.append(np.argmax(xgb_probs))
+        if use_hard_voting:
+            # Hard voting (majority rule)
+            if not model_preds:
+                return "neutral", 0.0
+
+            vote_counts = Counter(model_preds)
+            majority_pred = vote_counts.most_common(1)[0][0]
+            confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
+            predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+            self.last_prediction = predicted_label
+            self.prediction_confidence = confidence
+            return predicted_label, confidence
+
+        # Default: weighted soft voting
         available_models = []
         model_weights = []
         model_predictions = []
@@ -391,11 +429,11 @@ class OptimizedPredictionPipeline:
         return predicted_label, confidence
 
     def get_performance_stats(self) -> dict:
-        """
-        Get average latency, FPS, buffer size, and last confidence for real-time predictions.
+        """Get average latency, FPS, buffer size, and last confidence for real-time predictions.
 
         Returns:
             dict: Stats including avg_latency_ms, fps, buffer_size, last_confidence
+
         """
         if not self.prediction_times:
             return {"avg_latency_ms": 0, "fps": 0}
@@ -410,17 +448,17 @@ class OptimizedPredictionPipeline:
             "last_confidence": round(self.prediction_confidence, 3),
         }
 
-    def start_async_prediction(self, callback=None) -> None:
-        """
-        Start asynchronous prediction loop in a background thread.
+    def start_async_prediction(
+        self, callback: Callable[[tuple[str, float]], None] | None = None,
+    ) -> None:
+        """Start asynchronous prediction loop in a background thread.
 
         Args:
-            callback (callable, optional): Callback for prediction results
-        Returns:
-            None
+            callback (Callable[[tuple[str, float]], None] | None): Callback for prediction results. Defaults to None.
+
         """
 
-        def _async_prediction_loop():
+        def _async_prediction_loop() -> None:
             while not self.stop_thread:
                 try:
                     if self.is_ready_for_prediction():
@@ -428,51 +466,62 @@ class OptimizedPredictionPipeline:
                         if result and callback:
                             callback(result)
                         self.prediction_ready.set()
-                except RuntimeError as e:
-                    logging.error(
-                        "Unexpected runtime error in prediction loop: %s",
-                        e,
-                        exc_info=True,
+                except RuntimeError:
+                    logger.exception(
+                        "Unexpected runtime error in prediction loop",
                     )
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
 
         self.prediction_thread = threading.Thread(
-            target=_async_prediction_loop, daemon=True
+            target=_async_prediction_loop, daemon=True,
         )
         self.prediction_thread.start()
-        logging.info("Asynchronous prediction started.")
+        logger.info("Asynchronous prediction started.")
 
     def stop_async_prediction(self) -> None:
-        """
-        Stop the asynchronous prediction thread.
-
-        Returns:
-            None
-        """
+        """Stop the asynchronous prediction thread."""
         self.stop_thread = True
         if self.prediction_thread:
             self.prediction_thread.join(timeout=1.0)
-        logging.info("Asynchronous prediction stopped.")
+        logger.info("Asynchronous prediction stopped.")
 
 
-def process_prediction(pipeline, prediction_count):
-    """
-    Process a single ensemble prediction and log detailed model breakdown.
+def process_prediction(
+    pipeline: OptimizedPredictionPipeline,
+    prediction_count: int,
+    *,
+    use_hard_voting: bool = False,
+) -> int:
+    """Process a single ensemble prediction and log detailed model breakdown.
 
     Args:
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): The current prediction count.
+        use_hard_voting (bool): Whether to use hard voting.
+
     Returns:
         int: Updated prediction count.
+
     """
 
-    def fmt_model(label, conf, disabled):
+    def fmt_model(label: str, conf: float, *, disabled: bool) -> str:
+        """Format the model prediction output for display.
+
+        Args:
+            label (str): The predicted label for the model.
+            conf (float): The confidence score for the prediction.
+            disabled (bool): Whether the model is disabled (e.g., due to errors).
+
+        Returns:
+            str: Formatted string for display.
+
+        """
         if disabled:
             return "---(---)"
         return f"{short_label(label):<3}({conf:.3f})"
 
-    result = pipeline.predict_realtime()
+    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
     if result:
         predicted_label, confidence = result
         prediction_count += 1
@@ -511,21 +560,21 @@ def process_prediction(pipeline, prediction_count):
         xgb_conf = np.max(xgb_probs)
 
         # Neat, aligned output
-        logging.info(
-            "[%-4d] %s %-8s (ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
+        logger.info(
+            "[%-4d] %s %-8s(ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
             prediction_count,
             status,
             predicted_label.upper(),
             confidence,
-            fmt_model(eeg_label, eeg_confidence, eeg_disabled),
-            fmt_model(shallow_label, shallow_confidence, shallow_disabled),
-            fmt_model(rf_label, rf_conf, False),
-            fmt_model(xgb_label, xgb_conf, False),
+            fmt_model(eeg_label, eeg_confidence, disabled=eeg_disabled),
+            fmt_model(shallow_label, shallow_confidence, disabled=shallow_disabled),
+            fmt_model(rf_label, rf_conf, disabled=False),
+            fmt_model(xgb_label, xgb_conf, disabled=False),
         )
 
         if prediction_count % 50 == 0:
             stats = pipeline.get_performance_stats()
-            logging.info(
+            logger.info(
                 "Performance: %.1fms avg, %.1f FPS",
                 stats["avg_latency_ms"],
                 stats["fps"],
@@ -533,13 +582,13 @@ def process_prediction(pipeline, prediction_count):
     return prediction_count
 
 
-def session_calibration(lsl_handler, config):
-    """
-    Handle session calibration logic and update config with session model/scaler paths if calibration is performed.
+def session_calibration(lsl_handler: LSLStreamHandler, config: dict) -> None:
+    """Handle session calibration logic and update config with session model/scaler paths if calibration is performed.
 
-    Input: lsl_handler (LSLStreamHandler), config (dict)
-    Process: Prompts user, runs unified calibration, updates config with session paths
-    Output: None (side effect: config updated)
+    Args:
+        lsl_handler (LSLStreamHandler): LSL handler.
+        config (dict): Configuration dictionary.
+
     """
     session_model_path_eegnet = "models/eeg_direction_model_session.h5"
     session_scaler_path_eegnet = "models/eeg_scaler_session.pkl"
@@ -551,92 +600,132 @@ def session_calibration(lsl_handler, config):
     )
     if user_calib in ("", "y", "yes"):
         try:
-            logging.info("Starting session calibration. Please follow the prompts.")
+            logger.info("Starting session calibration. Please follow the prompts.")
             calibrate_all_models_lsl(
                 lsl_stream_handler=lsl_handler,
                 config_path="config.json",
                 save_dir="models",
                 verbose=True,
             )
-            logging.info(
-                "Session calibration complete. Using session-specific models and scalers."
-            )
+            logger.info("Session calibration complete. Using session-specific models and scalers.")
             # Update config with session-specific paths
             config["MODEL_EEGNET"] = session_model_path_eegnet
             config["SCALER_EEGNET"] = session_scaler_path_eegnet
             config["MODEL_SHALLOW"] = session_model_path_shallow
             config["SCALER_SHALLOW"] = session_scaler_path_shallow
-        except (FileNotFoundError, ValueError, RuntimeError) as e:
-            logging.error(
-                "Session calibration failed: %s. Proceeding with pre-trained models.", e
-            )
+        except (FileNotFoundError, ValueError, RuntimeError):
+            logger.exception("Session calibration failed. Proceeding with pre-trained models.")
     else:
-        logging.info("Skipping session calibration. Using pre-trained models.")
+        logger.info("Skipping session calibration. Using pre-trained models.")
 
 
-def select_prediction_mode():
+def select_prediction_mode() -> str | None:
+    """Prompt user to select prediction display mode (individual model, ensemble, or exit).
+
+    Returns:
+        str | None: Mode string ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble', 'exit')
+
     """
-    Prompt user to select prediction display mode (EEGNet only or ensemble).
+    logger.info("\nChoose prediction display mode:")
+    logger.info("1. EEGNet only")
+    logger.info("2. ShallowConvNet only")
+    logger.info("3. Random Forest only")
+    logger.info("4. XGBoost only")
+    logger.info("5. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
+    logger.info("6. Exit")
+    while True:
+        mode = input("Enter 1, 2, 3, 4, 5, or 6: ").strip()
+        if mode == "1":
+            return "eegnet"
+        if mode == "2":
+            return "shallow"
+        if mode == "3":
+            return "rf"
+        if mode == "4":
+            return "xgb"
+        if mode == "5":
+            return "ensemble"
+        if mode == "6":
+            return "exit"
+        logger.warning("Invalid selection. Please enter a number from 1 to 6.")
 
-    Input: None (user input)
-    Process: Prints options, reads user input
-    Output: True if ensemble mode, False if EEGNet only
-    """
-    print("\nChoose prediction display mode:")
-    print("1. EEGNet only")
-    print("2. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
-    mode = input("Enter 1 or 2: ").strip()
-    return mode == "2"
 
+def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
+    """Initialize the prediction pipeline with the correct models and scalers.
 
-def initialize_pipeline(config_dict):
-    """
-    Initialize the prediction pipeline with the correct models and scalers.
+    Args:
+        config_dict (dict): Configuration dictionary.
 
-    Input: config_dict (dict)
-    Process: Loads session-specific or pre-trained models/scalers as needed
-    Output: Initialized OptimizedPredictionPipeline
+    Returns:
+        OptimizedPredictionPipeline: Initialized pipeline.
+
     """
     pipeline = OptimizedPredictionPipeline(config_dict)
     pipeline.load_optimized_models()
     return pipeline
 
 
-def eegnet_only_prediction(pipeline, prediction_count):
-    """
-    Run EEGNet-only prediction and log the result.
+def model_only_prediction(
+    pipeline: OptimizedPredictionPipeline, prediction_count: int, model_name: str,
+) -> int:
+    """Run prediction for a single model and log the result.
 
-    Input: pipeline (OptimizedPredictionPipeline), prediction_count (int)
-    Process: Runs EEGNet prediction, logs result
-    Output: Updated prediction_count
+    Args:
+        pipeline (OptimizedPredictionPipeline): The prediction pipeline.
+        prediction_count (int): Current prediction count.
+        model_name (str): One of 'eegnet', 'shallow', 'rf', 'xgb'.
+
+    Returns:
+        int: Updated prediction count.
+
     """
     window = pipeline.get_current_window()
-    result = pipeline.predict_eegnet(window)
-    if result:
-        probs, confidence = result
-        pred_idx = np.argmax(probs)
-        pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
-        prediction_count += 1
-        logging.info(
-            "[%4d] %8s (conf: %.3f) [EEGNet only]",
-            prediction_count,
-            pred_label.upper(),
-            confidence,
-        )
+    if model_name == "eegnet":
+        probs, confidence = pipeline.predict_eegnet(window)
+    elif model_name == "shallow":
+        probs, confidence = pipeline.predict_shallow(window)
+    elif model_name == "rf":
+        _, rf_probs, _ = pipeline.predict_tree_models(window)
+        probs = rf_probs
+        confidence = np.max(probs)
+    elif model_name == "xgb":
+        _, xgb_probs, _ = pipeline.predict_tree_models(window)
+        probs = xgb_probs
+        confidence = np.max(probs)
+    else:
+        logger.error("Unknown model: %s", model_name)
+        return prediction_count
+    pred_idx = np.argmax(probs)
+    pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
+    prediction_count += 1
+    logger.info(
+        "[%4d] %8s (conf: %.3f) [%s only]",
+        prediction_count,
+        pred_label.upper(),
+        confidence,
+        model_name.upper(),
+    )
     return prediction_count
 
 
-def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
-    """
-    Main loop for real-time EEG prediction from LSL stream.
+def prediction_loop(
+    lsl_handler: LSLStreamHandler,
+    pipeline: OptimizedPredictionPipeline,
+    mode: str,
+    config_dict: dict,
+    *,
+
+    use_hard_voting: bool = False,
+) -> None:
+    """Run the main loop for real-time EEG prediction from LSL stream.
 
     Args:
         lsl_handler (LSLStreamHandler): LSL handler.
         pipeline (OptimizedPredictionPipeline): Prediction pipeline.
-        show_ensemble (bool): Whether to show ensemble predictions.
+        mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
-    Returns:
-        None
+        use_hard_voting (bool): Use hard voting for ensemble if True. Defaults to False.
+
     """
     prediction_count = 0
     try:
@@ -646,85 +735,106 @@ def prediction_loop(lsl_handler, pipeline, show_ensemble, config_dict):
                 for sample in window:
                     pipeline.add_sample(sample)
                 if pipeline.is_ready_for_prediction():
-                    if show_ensemble:
+                    if mode == "ensemble":
                         prediction_count = process_prediction(
-                            pipeline, prediction_count
+                            pipeline, prediction_count, use_hard_voting=use_hard_voting,
                         )
                     else:
-                        prediction_count = eegnet_only_prediction(
-                            pipeline, prediction_count
+                        prediction_count = model_only_prediction(
+                            pipeline, prediction_count, mode,
                         )
             time.sleep(0.001)
     except KeyboardInterrupt:
-        logging.info("Stopping real-time prediction...")
+        logger.info("Stopping real-time prediction...")
     finally:
         lsl_handler.disconnect()
         pipeline.stop_async_prediction()
         stats = pipeline.get_performance_stats()
-        logging.info("=== FINAL PERFORMANCE REPORT ===")
-        logging.info("Average latency: %.1fms", stats["avg_latency_ms"])
-        logging.info("Average FPS: %.1f", stats["fps"])
-        logging.info("Total predictions: %d", prediction_count)
+        logger.info("=== FINAL PERFORMANCE REPORT ===")
+        logger.info("Average latency: %.1fms", stats["avg_latency_ms"])
+        logger.info("Average FPS: %.1f", stats["fps"])
+        logger.info("Total predictions: %d", prediction_count)
 
 
-@handle_errors
-def main():
-    """
-    Main entry point for real-time EEG prediction using LSL streaming.
-    """
+def main() -> None:
+    """Start real-time EEG prediction using LSL streaming."""
     setup_logging()
     config = load_config()
-    logging.info("Starting LSL-based real-time EEG prediction...")
+    logger.info("Starting LSL-based real-time EEG prediction...")
     lsl_handler = LSLStreamHandler(
-        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"]
+        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"],
     )
     if not lsl_handler.connect():
-        logging.error(
-            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming."
+        logger.error(
+            "Failed to connect to LSL stream. Make sure OpenBCI GUI is running with LSL streaming.",
         )
         return
     session_calibration(lsl_handler, config)
-    show_ensemble = select_prediction_mode()
-    pipeline = initialize_pipeline(
-        config,
-    )
-    logging.info("=== REAL-TIME PREDICTION STARTED ===")
-    logging.info("Think of different directions to control the system.")
-    logging.info("Press Ctrl+C to stop.")
-    prediction_loop(lsl_handler, pipeline, show_ensemble, config)
+    pipeline = initialize_pipeline(config)
+    while True:
+        mode = select_prediction_mode()
+        if mode == "exit":
+            logger.info("Exiting real-time prediction.")
+            break
+        # Reconnect LSL if needed
+        if not lsl_handler.connected and not lsl_handler.connect():
+            logger.error("Failed to reconnect to LSL stream. Exiting.")
+            break
+        use_hard_voting = False
+        if mode == "ensemble":
+            logger.info("\nChoose ensemble method:")
+            logger.info("1. Weighted soft voting (default)")
+            logger.info("2. Hard voting (majority rule, matches offline test)")
+            method = input("Enter 1 or 2: ").strip()
+            if method == "2":
+                use_hard_voting = True
+        logger.info("=== REAL-TIME PREDICTION STARTED ===")
+        logger.info("Think of different directions to control the system.")
+        logger.info("Press Ctrl+C to stop.")
+        try:
+            prediction_loop(
+                lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting,
+            )
+        except KeyboardInterrupt:
+            logger.info("\nPrediction stopped. Returning to menu...")
+            continue
 
 
 @handle_errors
-def test_models_without_lsl():
-    """
-    Test model loading and prediction functionality without requiring an LSL stream.
+def test_models_without_lsl() -> bool | None:
+    """Test model loading and prediction functionality without requiring an LSL stream.
 
     Loads models, performs a fake prediction, and logs the results for verification.
+
+    Returns:
+        bool | None: True if test succeeds, False if it fails, or None if no prediction is made.
+
     """
     setup_logging()
     config = load_config()
-    logging.info("Testing model loading and prediction (no LSL required)...")
+    logger.info("Testing model loading and prediction (no LSL required)...")
     try:
         pipeline = OptimizedPredictionPipeline(config)
         pipeline.load_optimized_models()
-        fake_window = np.random.randn(config["WINDOW_SIZE"], config["N_CHANNELS"]) * 0.1
+        rng = np.random.default_rng()
+        fake_window = rng.standard_normal((config["WINDOW_SIZE"], config["N_CHANNELS"])) * 0.1
         for sample in fake_window:
             pipeline.add_sample(sample)
         if pipeline.is_ready_for_prediction():
             result = pipeline.predict_realtime()
             if result:
                 label, confidence = result
-                logging.info(
-                    "✅ Test prediction: %s (confidence: %.3f)", label, confidence
+                logger.info(
+                    "✓ Test prediction: %s (confidence: %.3f)", label, confidence,
                 )
             else:
-                logging.info("✅ Models loaded successfully but no prediction made")
+                logger.info("Models loaded successfully but no prediction made")
         stats = pipeline.get_performance_stats()
-        logging.info("✅ Performance stats: %s", stats)
-        logging.info("✅ All models loaded and tested successfully!")
-        return True
-    except (FileNotFoundError, ValueError, RuntimeError) as e:
-        logging.error("❌ Model test failed: %s", e)
+        logger.info("✓ Performance stats: %s", stats)
+        logger.info("✓ All models loaded and tested successfully!")
+        return True  # noqa: TRY300
+    except (FileNotFoundError, ValueError, RuntimeError):
+        logger.exception("✗ Model test failed.")
         return False
 
 

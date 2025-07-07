@@ -1,4 +1,3 @@
-# pylint: skip-file
 """
  ARL_EEGModels - A collection of Convolutional Neural Network models for EEG
  Signal Processing and Classification, using Keras and Tensorflow
