@@ -431,7 +431,17 @@ def prepare_cnn_input(x_windows: np.ndarray, scaler: TransformerMixin, n_channel
     return np.transpose(x_windows_cnn, (0, 2, 1, 3))
 
 
-def map_feature_index(idx, n_channels=16):
+def map_feature_index(idx: int, n_channels: int = 16) -> str:
+    """Map a feature index to its corresponding channel and feature type.
+
+    Args:
+        idx (int): Feature index.
+        n_channels (int, optional): Number of EEG channels. Defaults to 16.
+
+    Returns:
+        str: Mapped feature name.
+
+    """
     channels = [f"ch_{i}" for i in range(n_channels)]
     feature_types = ["delta", "theta", "alpha", "beta", "gamma", "mean", "var", "std"]
     ch = idx // 8
@@ -439,12 +449,26 @@ def map_feature_index(idx, n_channels=16):
     return f"{channels[ch]}_{feature_types[ft]}"
 
 
-def print_top_feature_importances(importances, model_name, top_n=10, n_channels=16):
+def print_top_feature_importances(
+    importances: np.ndarray,
+    model_name: str,
+    top_n: int = 10,
+    n_channels: int = 16,
+) -> None:
+    """Print the top feature importances for a given model.
+
+    Args:
+        importances (np.ndarray): Feature importances from the model.
+        model_name (str): Name of the model.
+        top_n (int, optional): Number of top features to display. Defaults to 10.
+        n_channels (int, optional): Number of EEG channels. Defaults to 16.
+
+    """
     indices = np.argsort(importances)[::-1][:top_n]
-    print(f"\nTop {top_n} features for {model_name}:")
+    logger.info("\nTop %d features for %s:", top_n, model_name)
     for rank, idx in enumerate(indices, 1):
         mapped = map_feature_index(idx, n_channels)
-        print(f"{rank:2d}. Feature {idx:3d} ({mapped}): Importance = {importances[idx]:.4f}")
+        logger.info("%2d. Feature %3d (%s): Importance = %.4f", rank, idx, mapped, importances[idx])
 
 
 def main() -> None:  # noqa: PLR0915
@@ -519,7 +543,7 @@ def main() -> None:  # noqa: PLR0915
         plt.tight_layout()
         plt.savefig("plots/rf_feature_importances.png")
         plt.close()
-        logging.info("Saved Random Forest feature importances plot to plots/rf_feature_importances.png")
+        logger.info("Saved Random Forest feature importances plot to plots/rf_feature_importances.png")
         plt.figure(figsize=(10, 5))
         plt.bar(feature_indices, xgb_importances)
         plt.title("XGBoost Feature Importances")
@@ -528,12 +552,12 @@ def main() -> None:  # noqa: PLR0915
         plt.tight_layout()
         plt.savefig("plots/xgb_feature_importances.png")
         plt.close()
-        logging.info("Saved XGBoost feature importances plot to plots/xgb_feature_importances.png")
+        logger.info("Saved XGBoost feature importances plot to plots/xgb_feature_importances.png")
         # Print top features for both models
         print_top_feature_importances(rf_importances, "Random Forest", top_n=10, n_channels=n_channels)
         print_top_feature_importances(xgb_importances, "XGBoost", top_n=10, n_channels=n_channels)
     except (OSError, ValueError) as e:
-        logging.warning("Feature importance plotting failed: %s", e)
+        logger.warning("Feature importance plotting failed: %s", e)
 
     # Visualize feature space separability
     try:

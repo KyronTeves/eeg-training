@@ -171,16 +171,17 @@ def train_eegnet_model(  # noqa: PLR0913
         logger.info("%s saved to %s", model_name, model_path)
 
 
-def upsample_features_and_labels(x, y):
+def upsample_features_and_labels(x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """Upsample all classes to the majority class count."""
     unique, counts = np.unique(y, return_counts=True)
     max_count = np.max(counts)
     indices_per_class = [np.nonzero(y == i)[0] for i in unique]
+    rng = np.random.default_rng()
     upsampled_indices = np.concatenate([
-        np.random.choice(idxs, max_count, replace=True)
+        rng.choice(idxs, max_count, replace=True)
         for idxs in indices_per_class
     ])
-    np.random.shuffle(upsampled_indices)
+    rng.shuffle(upsampled_indices)
     return x[upsampled_indices], y[upsampled_indices]
 
 
@@ -215,14 +216,14 @@ def train_tree_models(
     )
     rf_class_weight_dict = dict(zip(np.unique(y_train_bal), rf_class_weights))
     rf = RandomForestClassifier(
-        n_estimators=100, random_state=42, class_weight=rf_class_weight_dict
+        n_estimators=100, random_state=42, class_weight=rf_class_weight_dict,
     )
     rf.fit(x_train_bal, y_train_bal)
     rf_pred = rf.predict(x_test_scaled_tree)
     # Save Random Forest feature importances
     rf_importance_path = config.get("RF_FEATURE_IMPORTANCES", "models/rf_feature_importances.npy")
     np.save(rf_importance_path, rf.feature_importances_)
-    logging.info("Saved Random Forest feature importances to %s", rf_importance_path)
+    logger.info("Saved Random Forest feature importances to %s", rf_importance_path)
     logger.info("Random Forest Results:")
     logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logger.info(
@@ -243,7 +244,7 @@ def train_tree_models(
     # Save XGBoost feature importances
     xgb_importance_path = config.get("XGB_FEATURE_IMPORTANCES", "models/xgb_feature_importances.npy")
     np.save(xgb_importance_path, xgb.feature_importances_)
-    logging.info("Saved XGBoost feature importances to %s", xgb_importance_path)
+    logger.info("Saved XGBoost feature importances to %s", xgb_importance_path)
     logger.info("XGBoost Results:")
     logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logger.info(
@@ -270,7 +271,7 @@ def main() -> None:
     test_sessions = set(config.get("TEST_SESSION_TYPES", []))
     overlap = train_sessions & test_sessions
     if overlap:
-        logging.warning("TRAIN_SESSION_TYPES and TEST_SESSION_TYPES overlap: %s. This may cause data leakage.", overlap)
+        logger.warning("TRAIN_SESSION_TYPES and TEST_SESSION_TYPES overlap: %s. This may cause data leakage.", overlap)
     # Only use windowed data from training session types
     x_windows, y_windows = load_windowed_data(config)
     check_no_nan(x_windows, name="Windowed EEG data")
