@@ -184,10 +184,11 @@ class OptimizedPredictionPipeline:
         dummy_window = rng.standard_normal((1, self.window_size, self.n_channels))
 
         # Create dummy features with correct feature count
-        # For tree models: 16 channels * (5 band powers + 3 stats) = 128 features
+        # For tree models with enhanced features: n_channels * 16 features per channel
+        # (5 spectral + 3 statistical + 3 Hjorth + 5 additional)
         expected_features = (
-            self.n_channels * 8
-        )  # 5 band powers + 3 statistical features per channel
+            self.n_channels * 16
+        )  # Enhanced feature extraction: 16 features per channel
         dummy_features = rng.standard_normal((1, expected_features))
 
         # Warm up EEGNet
