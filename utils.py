@@ -28,6 +28,7 @@ from keras.models import load_model
 from keras.optimizers import Adam
 from keras.utils import to_categorical
 from scipy.signal import welch
+from scipy.stats import kurtosis, skew
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow import Tensor
@@ -42,14 +43,14 @@ logger = logging.getLogger(__name__)
 
 
 def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
-    """Extract features from a single EEG window for tree-based models.
+    """Extract enhanced features from a single EEG window for tree-based models.
 
     Args:
         window (np.ndarray): EEG window, shape (window_size, n_channels).
         fs (int, optional): Sampling frequency. Defaults to 250.
 
     Returns:
-        np.ndarray: 1D array of features (length: n_channels * 8).
+        np.ndarray: 1D array of features with enhanced feature set.
 
     """
     features = []
@@ -66,30 +67,72 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
 
     for i in range(n_channels):
         channel_data = window[:, i]
-
-        # --- Spectral Features (Band Power) ---
-        # Use nperseg that is appropriate for the window size
-        nperseg = min(256, len(channel_data))
-        freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
-
-        total_power = np.sum(psd)
-        if total_power == 0:
-            # Avoid division by zero if signal is flat
-            band_powers = [0.0] * len(bands)
-        else:
-            band_powers = [
-                np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
-                for fmin, fmax in bands.values()
-            ]
-
-        features.extend(band_powers)
-
-        # --- Statistical Features ---
-        features.append(np.mean(channel_data))
-        features.append(np.var(channel_data))
-        features.append(np.std(channel_data))
+        features.extend(_extract_spectral_features(channel_data, bands, fs))
+        features.extend(_extract_statistical_features(channel_data))
+        features.extend(_extract_hjorth_parameters(channel_data))
+        features.extend(_extract_additional_features(channel_data))
 
     return np.array(features)
+
+
+def _extract_spectral_features(channel_data: np.ndarray, bands: dict, fs: int) -> list:
+    """Extract spectral features from channel data."""
+    # Use nperseg that is appropriate for the window size
+    nperseg = min(256, len(channel_data))
+    freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
+
+    total_power = np.sum(psd)
+    if total_power == 0:
+        return [0.0] * len(bands)
+
+    return [
+        np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
+        for fmin, fmax in bands.values()
+    ]
+
+
+def _extract_statistical_features(channel_data: np.ndarray) -> list:
+    """Extract basic statistical features."""
+    return [
+        np.mean(channel_data),
+        np.var(channel_data),
+        np.std(channel_data),
+    ]
+
+
+def _extract_hjorth_parameters(channel_data: np.ndarray) -> list:
+    """Extract Hjorth parameters for enhanced EEG analysis."""
+    # Activity: variance of the signal
+    activity = np.var(channel_data)
+
+    # Mobility: mean frequency
+    if len(channel_data) > 1:
+        diff1 = np.diff(channel_data)
+        mobility = np.sqrt(np.var(diff1) / np.var(channel_data)) if activity > 0 else 0.0
+    else:
+        mobility = 0.0
+
+    # Complexity: measure of bandwidth
+    min_samples_for_complexity = 2
+    if len(channel_data) > min_samples_for_complexity:
+        diff2 = np.diff(diff1)
+        mobility_diff = np.sqrt(np.var(diff2) / np.var(diff1)) if np.var(diff1) > 0 else 0.0
+        complexity = mobility_diff / mobility if mobility > 0 else 0.0
+    else:
+        complexity = 0.0
+
+    return [activity, mobility, complexity]
+
+
+def _extract_additional_features(channel_data: np.ndarray) -> list:
+    """Extract additional robust features."""
+    return [
+        kurtosis(channel_data),  # Measure of tail heaviness
+        skew(channel_data),      # Measure of asymmetry
+        np.ptp(channel_data),    # Peak-to-peak amplitude
+        np.sqrt(np.mean(channel_data**2)),  # RMS
+        np.sum(np.diff(np.sign(channel_data)) != 0) / len(channel_data),  # Zero crossing rate
+    ]
 
 
 def load_config(path: str | None = None) -> dict[str, Any]:
@@ -499,6 +542,47 @@ def calibrate_all_models_lsl(
     )
 
     logger.info("Session calibration complete. All models saved.")
+
+
+def adapt_model_to_session(
+    model: Any,
+    session_data: np.ndarray,
+    labels: np.ndarray,
+    learning_rate: float = 0.0005,
+    epochs: int = 2,
+) -> Any:
+    """Quick adaptation of model to current session data using transfer learning.
+
+    Args:
+        model: Keras model to adapt
+        session_data: Session-specific EEG data
+        labels: Corresponding labels
+        learning_rate: Learning rate for fine-tuning
+        epochs: Number of epochs for adaptation
+
+    Returns:
+        Adapted model
+
+    """
+    # Freeze early layers to preserve learned features
+    for layer in model.layers[:-4]:
+        layer.trainable = False
+
+    # Recompile with lower learning rate for fine-tuning
+    model.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss="categorical_crossentropy",
+        metrics=["accuracy"],
+    )
+
+    # Brief fine-tuning on session data
+    model.fit(session_data, labels, epochs=epochs, batch_size=8, verbose=0)
+
+    # Unfreeze layers for normal operation
+    for layer in model.layers:
+        layer.trainable = True
+
+    return model
 
 
 def square(x: Tensor) -> Tensor:

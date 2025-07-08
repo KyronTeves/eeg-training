@@ -23,6 +23,8 @@ import threading
 import time
 import warnings
 from collections import Counter, deque
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import joblib
@@ -128,6 +130,23 @@ class OptimizedPredictionPipeline:
         self._shallow_shape_mismatch_logged = False
         self._shallow_error_logged = False
 
+        # Enhanced features for improved performance
+        self.prediction_history = deque(maxlen=5)  # Store last 5 predictions for temporal smoothing
+        self.model_performance_history = [0.4, 0.4, 0.1, 0.1]  # Dynamic weights: [EEGNet, Shallow, RF, XGB]
+        self.class_performance = {}  # Track per-class performance
+
+        # Class-specific confidence thresholds
+        self.class_thresholds = {
+            "forward": 0.65,
+            "backward": 0.75,  # Higher threshold for backward class
+            "left": 0.65,
+            "right": 0.65,
+            "neutral": 0.60,
+        }
+
+        # Signal preprocessing consistency
+        self.training_data_scale = None  # Will be set during model loading
+
     def load_optimized_models(self) -> None:
         """Load and optimize all models (EEGNet, ShallowConvNet, RF, XGBoost) and scalers for inference."""
         logger.info("Loading and optimizing models for real-time inference...")
@@ -183,6 +202,122 @@ class OptimizedPredictionPipeline:
 
         logger.info("Model warmup complete.")
 
+    def add_real_time_preprocessing(self, sample: np.ndarray) -> np.ndarray:
+        """Apply lightweight preprocessing to already filtered OpenBCI data.
+
+        Args:
+            sample (np.ndarray): Input EEG sample of shape (n_channels,)
+
+        Returns:
+            np.ndarray: Preprocessed sample
+
+        """
+        # Skip bandpass filtering since TimeSeriesFilt is already filtered
+
+        # Focus on artifact removal and normalization only
+        artifact_threshold = np.std(sample) * 3  # Adjust multiplier based on your specific EEG characteristics
+        sample_clean = np.clip(sample, -artifact_threshold, artifact_threshold)
+
+        # Optional: Ensure scaling matches training data
+        if hasattr(self, "training_data_scale") and self.training_data_scale is not None:
+            current_scale = np.std(sample_clean)
+            if current_scale > 0:
+                sample_clean = sample_clean * (self.training_data_scale / current_scale)
+
+        return sample_clean
+
+    def apply_temporal_smoothing(self, prediction: str, confidence: float) -> tuple[str, float]:
+        """Apply temporal smoothing to predictions to reduce jitter.
+
+        Args:
+            prediction (str): Current prediction
+            confidence (float): Current confidence
+
+        Returns:
+            tuple[str, float]: Smoothed prediction and confidence
+
+        """
+        self.prediction_history.append((prediction, confidence))
+
+        # Count occurrences of each class in recent history
+        counter = Counter([p[0] for p in self.prediction_history])
+
+        # If one class is dominant and current prediction confidence is low
+        if confidence < 0.6 and len(self.prediction_history) >= 3:
+            most_common = counter.most_common(1)[0]
+            if most_common[1] >= 3:  # At least 3 out of last 5 predictions
+                return most_common[0], confidence
+
+        return prediction, confidence
+
+    def apply_class_thresholds(self, predicted_label: str, confidence: float) -> tuple[str, float]:
+        """Apply class-specific confidence thresholds.
+
+        Args:
+            predicted_label (str): Predicted class label
+            confidence (float): Prediction confidence
+
+        Returns:
+            tuple[str, float]: Adjusted prediction and confidence
+
+        """
+        threshold = self.class_thresholds.get(predicted_label, self.confidence_threshold)
+        if confidence < threshold:
+            return "neutral", confidence
+        return predicted_label, confidence
+
+    def track_performance(self, predicted_label: str, actual_label: str | None = None) -> None:
+        """Track real-time performance and adapt model weights.
+
+        Args:
+            predicted_label (str): Predicted class label
+            actual_label (str, optional): Actual class label if available
+
+        """
+        self._initialize_performance_tracking()
+
+        # If feedback mechanism is available
+        if actual_label is not None and self.class_performance:
+            self._update_performance_stats(predicted_label, actual_label)
+            self._adapt_thresholds_if_needed()
+
+    def _initialize_performance_tracking(self) -> None:
+        """Initialize performance tracking structures."""
+        if (not hasattr(self, "class_performance") or not self.class_performance) and (
+            hasattr(self, "label_encoder") and self.label_encoder is not None
+        ):
+            self.class_performance = {
+                label: {"correct": 0, "total": 0}
+                for label in self.label_encoder.classes_
+            }
+
+    def _update_performance_stats(self, predicted_label: str, actual_label: str) -> None:
+        """Update performance statistics."""
+        self.class_performance[predicted_label]["total"] += 1
+        if predicted_label == actual_label:
+            self.class_performance[predicted_label]["correct"] += 1
+
+    def _adapt_thresholds_if_needed(self) -> None:
+        """Adapt confidence thresholds based on performance."""
+        min_predictions_for_adaptation = 50
+        poor_accuracy_threshold = 0.6
+        threshold_increment = 0.05
+        max_threshold = 0.9
+
+        total_predictions = sum(perf["total"] for perf in self.class_performance.values())
+        if total_predictions > min_predictions_for_adaptation:
+            overall_accuracy = sum(
+                perf["correct"] for perf in self.class_performance.values()
+            ) / total_predictions
+
+            # Increase thresholds if performance is poor
+            if overall_accuracy < poor_accuracy_threshold:
+                for class_name in self.class_thresholds:
+                    self.class_thresholds[class_name] = min(
+                        self.class_thresholds[class_name] + threshold_increment,
+                        max_threshold,
+                    )
+
     def add_sample(self, sample: np.ndarray) -> None:
         """Add a new EEG sample to the rolling buffer.
 
@@ -197,7 +332,9 @@ class OptimizedPredictionPipeline:
             msg = f"Expected {self.n_channels} channels, got {len(sample)}"
             raise ValueError(msg)
 
-        self.buffer.append(sample)
+        # Apply real-time preprocessing
+        sample_processed = self.add_real_time_preprocessing(sample)
+        self.buffer.append(sample_processed)
 
     def is_ready_for_prediction(self) -> bool:
         """Check if the buffer has enough samples for a prediction window.
@@ -395,24 +532,30 @@ class OptimizedPredictionPipeline:
             majority_pred = vote_counts.most_common(1)[0][0]
             confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
             predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+
+            # Apply enhanced processing
+            predicted_label, confidence = self.apply_class_thresholds(predicted_label, confidence)
+            predicted_label, confidence = self.apply_temporal_smoothing(predicted_label, confidence)
+
             self.last_prediction = predicted_label
             self.prediction_confidence = confidence
+            self.track_performance(predicted_label)
             return predicted_label, confidence
 
-        # Default: weighted soft voting
+        # Default: weighted soft voting with dynamic weights
         available_models = []
         model_weights = []
         model_predictions = []
         if not np.all(eeg_probs == 0):
             available_models.append("EEGNet")
-            model_weights.append(0.4)
+            model_weights.append(self.model_performance_history[0])  # Dynamic weight
             model_predictions.append(eeg_probs)
         if not np.all(shallow_probs == 0):
             available_models.append("ShallowConvNet")
-            model_weights.append(0.4)
+            model_weights.append(self.model_performance_history[1])  # Dynamic weight
             model_predictions.append(shallow_probs)
         available_models.extend(["RandomForest", "XGBoost"])
-        model_weights.extend([0.1, 0.1])
+        model_weights.extend([self.model_performance_history[2], self.model_performance_history[3]])
         model_predictions.extend([rf_probs, xgb_probs])
         total_weight = sum(model_weights)
         model_weights = [w / total_weight for w in model_weights]
@@ -420,12 +563,17 @@ class OptimizedPredictionPipeline:
         for probs, weight in zip(model_predictions, model_weights):
             final_probs += probs * weight
         confidence = np.max(final_probs)
-        if confidence < self.confidence_threshold:
-            return "neutral", confidence
+
         predicted_idx = np.argmax(final_probs)
         predicted_label = self.label_encoder.inverse_transform([predicted_idx])[0]
+
+        # Apply enhanced processing
+        predicted_label, confidence = self.apply_class_thresholds(predicted_label, confidence)
+        predicted_label, confidence = self.apply_temporal_smoothing(predicted_label, confidence)
+
         self.last_prediction = predicted_label
         self.prediction_confidence = confidence
+        self.track_performance(predicted_label)
         return predicted_label, confidence
 
     def get_performance_stats(self) -> dict:
@@ -487,99 +635,60 @@ class OptimizedPredictionPipeline:
         logger.info("Asynchronous prediction stopped.")
 
 
-def process_prediction(
-    pipeline: OptimizedPredictionPipeline,
-    prediction_count: int,
-    *,
-    use_hard_voting: bool = False,
-) -> int:
-    """Process a single ensemble prediction and log detailed model breakdown.
+def calibrate_specific_class(
+    lsl_handler: LSLStreamHandler,
+    target_class: str,
+    num_samples: int = 50,
+    save_dir: str = "models",
+) -> None:
+    """Collect additional calibration data for a specific class.
 
     Args:
-        pipeline (OptimizedPredictionPipeline): The prediction pipeline.
-        prediction_count (int): The current prediction count.
-        use_hard_voting (bool): Whether to use hard voting.
-
-    Returns:
-        int: Updated prediction count.
+        lsl_handler (LSLStreamHandler): LSL handler
+        target_class (str): Target class to calibrate (e.g., "backward")
+        num_samples (int): Number of additional samples to collect
+        save_dir (str): Directory to save data
 
     """
+    logger.info("Collecting additional %d samples for '%s' class...", num_samples, target_class)
+    logger.info("Please think of '%s' direction when prompted.", target_class)
 
-    def fmt_model(label: str, conf: float, *, disabled: bool) -> str:
-        """Format the model prediction output for display.
+    additional_samples = []
+    sample_count = 0
 
-        Args:
-            label (str): The predicted label for the model.
-            conf (float): The confidence score for the prediction.
-            disabled (bool): Whether the model is disabled (e.g., due to errors).
+    logger.info("Starting collection in 3 seconds...")
+    time.sleep(3)
+    logger.info("START thinking '%s' NOW!", target_class)
 
-        Returns:
-            str: Formatted string for display.
+    while sample_count < num_samples:
+        sample = lsl_handler.get_sample(timeout=1.0)
+        if sample is not None:
+            additional_samples.append(sample)
+            sample_count += 1
 
-        """
-        if disabled:
-            return "---(---)"
-        return f"{short_label(label):<3}({conf:.3f})"
+            # Progress indicator
+            if sample_count % 10 == 0:
+                logger.info("Collected %d/%d samples...", sample_count, num_samples)
+        else:
+            logger.warning("Failed to get sample, continuing...")
 
-    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
-    if result:
-        predicted_label, confidence = result
-        prediction_count += 1
-        status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
+    logger.info("STOP thinking '%s'. Collection complete!", target_class)
 
-        # Get individual model predictions for detailed output
-        window = pipeline.get_current_window()
+    if additional_samples:
+        # Save additional calibration data
+        additional_data = np.array(additional_samples)
+        timestamp = datetime.now(tz=datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        save_path = Path(save_dir) / f"additional_{target_class}_calib_{timestamp}.npy"
+        np.save(save_path, additional_data)
+        logger.info("Saved %d additional samples to %s", len(additional_samples), save_path)
 
-        # EEGNet
-        eeg_probs, eeg_confidence = pipeline.predict_eegnet(window)
-        eeg_disabled = np.all(eeg_probs == 0)
-        eeg_pred_idx = np.argmax(eeg_probs) if not eeg_disabled else 0
-        eeg_label = (
-            pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0]
-            if not eeg_disabled
-            else "---"
-        )
-
-        # ShallowConvNet
-        shallow_probs, shallow_confidence = pipeline.predict_shallow(window)
-        shallow_disabled = np.all(shallow_probs == 0)
-        shallow_pred_idx = np.argmax(shallow_probs) if not shallow_disabled else 0
-        shallow_label = (
-            pipeline.label_encoder.inverse_transform([shallow_pred_idx])[0]
-            if not shallow_disabled
-            else "---"
-        )
-
-        # Tree models
-        rf_probs, xgb_probs, _ = pipeline.predict_tree_models(window)
-        rf_pred_idx = np.argmax(rf_probs)
-        xgb_pred_idx = np.argmax(xgb_probs)
-        rf_label = pipeline.label_encoder.inverse_transform([rf_pred_idx])[0]
-        xgb_label = pipeline.label_encoder.inverse_transform([xgb_pred_idx])[0]
-        rf_conf = np.max(rf_probs)
-        xgb_conf = np.max(xgb_probs)
-
-        # Neat, aligned output
-        logger.info(
-            "[%-4d] %s %-8s(ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
-            prediction_count,
-            status,
-            predicted_label.upper(),
-            confidence,
-            fmt_model(eeg_label, eeg_confidence, disabled=eeg_disabled),
-            fmt_model(shallow_label, shallow_confidence, disabled=shallow_disabled),
-            fmt_model(rf_label, rf_conf, disabled=False),
-            fmt_model(xgb_label, xgb_conf, disabled=False),
-        )
-
-        if prediction_count % 50 == 0:
-            stats = pipeline.get_performance_stats()
-            logger.info(
-                "Performance: %.1fms avg, %.1f FPS",
-                stats["avg_latency_ms"],
-                stats["fps"],
-            )
-    return prediction_count
+        if additional_samples:
+            # Save additional calibration data
+            additional_data = np.array(additional_samples)
+            timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+            save_path = Path(save_dir) / f"additional_{target_class}_calib_{timestamp}.npy"
+            np.save(save_path, additional_data)
+            logger.info("Saved %d additional samples to %s", len(additional_samples), save_path)
 
 
 def session_calibration(lsl_handler: LSLStreamHandler, config: dict) -> None:
@@ -607,6 +716,20 @@ def session_calibration(lsl_handler: LSLStreamHandler, config: dict) -> None:
                 save_dir="models",
                 verbose=True,
             )
+
+            # Ask for additional backward class calibration
+            backward_calib = (
+                input("Would you like extra calibration for 'backward' direction? (Y/n): ").strip().lower()
+            )
+            if backward_calib in ("", "y", "yes"):
+                logger.info("Adding extra calibration for backward direction...")
+                calibrate_specific_class(
+                    lsl_handler=lsl_handler,
+                    target_class="backward",
+                    num_samples=50,
+                    save_dir="models",
+                )
+
             logger.info("Session calibration complete. Using session-specific models and scalers.")
             # Update config with session-specific paths
             config["MODEL_EEGNET"] = session_model_path_eegnet
@@ -705,6 +828,101 @@ def model_only_prediction(
         confidence,
         model_name.upper(),
     )
+    return prediction_count
+
+
+def process_prediction(
+    pipeline: OptimizedPredictionPipeline,
+    prediction_count: int,
+    *,
+    use_hard_voting: bool = False,
+) -> int:
+    """Process a single ensemble prediction and log detailed model breakdown.
+
+    Args:
+        pipeline (OptimizedPredictionPipeline): The prediction pipeline.
+        prediction_count (int): The current prediction count.
+        use_hard_voting (bool): Whether to use hard voting.
+
+    Returns:
+        int: Updated prediction count.
+
+    """
+
+    def fmt_model(label: str, conf: float, *, disabled: bool) -> str:
+        """Format the model prediction output for display.
+
+        Args:
+            label (str): The predicted label for the model.
+            conf (float): The confidence score for the prediction.
+            disabled (bool): Whether the model is disabled (e.g., due to errors).
+
+        Returns:
+            str: Formatted string for display.
+
+        """
+        if disabled:
+            return "---(---)"
+        return f"{short_label(label):<3}({conf:.3f})"
+
+    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
+    if result:
+        predicted_label, confidence = result
+        prediction_count += 1
+        status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
+
+        # Get individual model predictions for detailed output
+        window = pipeline.get_current_window()
+
+        # EEGNet
+        eeg_probs, eeg_confidence = pipeline.predict_eegnet(window)
+        eeg_disabled = np.all(eeg_probs == 0)
+        eeg_pred_idx = np.argmax(eeg_probs) if not eeg_disabled else 0
+        eeg_label = (
+            pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0]
+            if not eeg_disabled
+            else "---"
+        )
+
+        # ShallowConvNet
+        shallow_probs, shallow_confidence = pipeline.predict_shallow(window)
+        shallow_disabled = np.all(shallow_probs == 0)
+        shallow_pred_idx = np.argmax(shallow_probs) if not shallow_disabled else 0
+        shallow_label = (
+            pipeline.label_encoder.inverse_transform([shallow_pred_idx])[0]
+            if not shallow_disabled
+            else "---"
+        )
+
+        # Tree models
+        rf_probs, xgb_probs, _ = pipeline.predict_tree_models(window)
+        rf_pred_idx = np.argmax(rf_probs)
+        xgb_pred_idx = np.argmax(xgb_probs)
+        rf_label = pipeline.label_encoder.inverse_transform([rf_pred_idx])[0]
+        xgb_label = pipeline.label_encoder.inverse_transform([xgb_pred_idx])[0]
+        rf_conf = np.max(rf_probs)
+        xgb_conf = np.max(xgb_probs)
+
+        # Neat, aligned output
+        logger.info(
+            "[%-4d] %s %-8s(ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
+            prediction_count,
+            status,
+            predicted_label.upper(),
+            confidence,
+            fmt_model(eeg_label, eeg_confidence, disabled=eeg_disabled),
+            fmt_model(shallow_label, shallow_confidence, disabled=shallow_disabled),
+            fmt_model(rf_label, rf_conf, disabled=False),
+            fmt_model(xgb_label, xgb_conf, disabled=False),
+        )
+
+        if prediction_count % 50 == 0:
+            stats = pipeline.get_performance_stats()
+            logger.info(
+                "Performance: %.1fms avg, %.1f FPS",
+                stats["avg_latency_ms"],
+                stats["fps"],
+            )
     return prediction_count
 
 
