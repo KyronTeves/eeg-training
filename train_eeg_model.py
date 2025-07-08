@@ -206,19 +206,17 @@ def train_tree_models(
     scaler_tree = StandardScaler()
     x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
     x_test_scaled_tree = scaler_tree.transform(x_test_tree)
-    # Upsample all classes in training set
-    x_train_bal, y_train_bal = upsample_features_and_labels(x_train_scaled_tree, y_train_tree)
-    # Compute class weights for RandomForest
+    # Compute class weights for RandomForest (no upsampling)
     rf_class_weights = compute_class_weight(
         class_weight="balanced",
-        classes=np.unique(y_train_bal),
-        y=y_train_bal,
+        classes=np.unique(y_train_tree),
+        y=y_train_tree,
     )
-    rf_class_weight_dict = dict(zip(np.unique(y_train_bal), rf_class_weights))
+    rf_class_weight_dict = dict(zip(np.unique(y_train_tree), rf_class_weights))
     rf = RandomForestClassifier(
         n_estimators=100, random_state=42, class_weight=rf_class_weight_dict,
     )
-    rf.fit(x_train_bal, y_train_bal)
+    rf.fit(x_train_scaled_tree, y_train_tree)
     rf_pred = rf.predict(x_test_scaled_tree)
     # Save Random Forest feature importances
     rf_importance_path = config.get("RF_FEATURE_IMPORTANCES", "models/rf_feature_importances.npy")
@@ -233,6 +231,7 @@ def train_tree_models(
         ),
     )
     # XGBoost: fit on upsampled data
+    x_train_bal, y_train_bal = upsample_features_and_labels(x_train_scaled_tree, y_train_tree)
     xgb = XGBClassifier(
         n_estimators=100,
         random_state=42,
