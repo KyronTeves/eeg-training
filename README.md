@@ -16,14 +16,22 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
 
 ## Table of Contents
 
-- [Features](#features)
-- [Project Structure](#project-structure)
-- [Setup & Quickstart](#setup--quickstart)
-- [Development Status](#development-status)
-- [Real-time Output Example](#real-time-output-example)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
-- [References](#references)
+- [EEG Direction Classification \& Real-Time Prediction](#eeg-direction-classification--real-time-prediction)
+  - [Overview](#overview)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Project Structure](#project-structure)
+  - [Setup \& Quickstart](#setup--quickstart)
+    - [Prerequisites](#prerequisites)
+    - [Installation](#installation)
+    - [LSL Streaming Setup](#lsl-streaming-setup)
+    - [Configure System](#configure-system)
+    - [Run Pipeline](#run-pipeline)
+  - [Development Status](#development-status)
+  - [Real-time Output Example](#real-time-output-example)
+  - [Troubleshooting](#troubleshooting)
+  - [License](#license)
+  - [References](#references)
 
 ## Features
 
@@ -50,7 +58,7 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
 ├── EEGModels.py            # Model architectures
 ├── config.json             # Centralized configuration
 ├── requirements.txt        # Python dependencies
-├── test_system.py          # Unit/integration tests
+
 ├── data/                   # Data files
 ├── models/                 # Trained models, encoders, scalers
 └── ...
