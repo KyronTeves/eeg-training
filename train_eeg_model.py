@@ -15,7 +15,10 @@ from typing import Any
 import joblib
 import numpy as np
 from joblib import Parallel, delayed
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.models import Model
+from keras.optimizers import AdamW
+from keras.optimizers.schedules import CosineDecayRestarts
 from keras.utils import to_categorical
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
@@ -24,7 +27,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
-from EEGModels import EEGNet, ShallowConvNet
+from EEGModels import AdvancedConv1DNet, EEGNet, ShallowConvNet
 from utils import (
     augment_eeg_data,
     check_labels_valid,
@@ -206,7 +209,7 @@ def compute_class_weights(y_train_final: np.ndarray) -> dict[int, float]:
 
 
 @handle_errors
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     """Orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
 
     Handle data loading, preprocessing, augmentation, model training, and artifact saving.
@@ -230,10 +233,113 @@ def main() -> None:
     joblib.dump(le, config["LABEL_ENCODER"])
     joblib.dump(scaler, config["SCALER_EEGNET"])
     np.save(config["LABEL_CLASSES_NPY"], le.classes_)
-    logger.info("Extracting features for tree-based models...")
+
+    # --- Classic Feature Extraction for Tree Models ---
+    logger.info("Extracting classic features for tree-based models...")
     x_features = extract_features_parallel(x_windows, config)
-    logger.info("Feature extraction complete. Feature shape: %s", x_features.shape)
+    logger.info("Classic feature extraction complete. Feature shape: %s", x_features.shape)
     train_tree_models(x_features, y_encoded, config, le)
+
+    # --- Advanced Conv1D Model Training ---
+    logger.info("=== Training Advanced Conv1D Model ===")
+    window_size = config["WINDOW_SIZE"]
+    n_channels = config["N_CHANNELS"]
+    nb_classes = y_train_final.shape[1]
+    conv1d_model = AdvancedConv1DNet(nb_classes, window_size, n_channels)
+    lr_schedule = CosineDecayRestarts(
+        initial_learning_rate=0.001,
+        first_decay_steps=1000,
+        t_mul=2.0,
+        m_mul=1.0,
+        alpha=0.1,
+    )
+    optimizer = AdamW(
+        learning_rate=lr_schedule,
+        weight_decay=0.01,
+        beta_1=0.9,
+        beta_2=0.999,
+        epsilon=1e-8,
+    )
+    conv1d_model.compile(optimizer=optimizer, loss="categorical_crossentropy", metrics=["accuracy"])
+    early_stopping = EarlyStopping(
+        monitor="val_accuracy",
+        patience=25,
+        restore_best_weights=True,
+        verbose=1,
+        min_delta=0.0005,
+        mode="max",
+    )
+    model_checkpoint = ModelCheckpoint(
+        "models/best_conv1d_temp.keras",
+        monitor="val_accuracy",
+        save_best_only=True,
+        verbose=1,
+        save_weights_only=False,
+        mode="max",
+    )
+    reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=8, min_lr=1e-6, verbose=1)
+    conv1d_model.fit(
+        x_train_final,
+        y_train_final,
+        epochs=300,
+        batch_size=32,
+        validation_split=0.25,
+        class_weight=class_weight_dict,
+        callbacks=[early_stopping, model_checkpoint, reduce_lr],
+        verbose=1,
+    )
+    # Save the trained model
+    conv1d_model.save("models/eeg_conv1d_model.h5")
+    conv1d_model.save("models/eeg_conv1d_model.keras")
+    # Save feature extractor (up to the last concatenation layer)
+    feature_extractor = Model(inputs=conv1d_model.input, outputs=conv1d_model.get_layer(index=-2).output)
+    feature_extractor.save("models/eeg_conv1d_feature_extractor.h5")
+    feature_extractor.save("models/eeg_conv1d_feature_extractor.keras")
+    logger.info("Advanced Conv1D model and feature extractor saved.")
+
+    # --- Conv1D Feature Extraction for Tree Models ---
+    logger.info("Extracting Conv1D features for tree-based models...")
+    # Use the feature extractor to transform all windows
+    x_conv1d_features = feature_extractor.predict(x_windows, batch_size=64, verbose=1)
+    logger.info("Conv1D feature extraction complete. Feature shape: %s", x_conv1d_features.shape)
+    # Train and save tree models on Conv1D features
+    x_train_tree, x_test_tree, y_train_tree, y_test_tree = train_test_split(
+        x_conv1d_features, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded,
+    )
+    scaler_tree = StandardScaler()
+    x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
+    x_test_scaled_tree = scaler_tree.transform(x_test_tree)
+    rf = RandomForestClassifier(n_estimators=100, random_state=42)
+    rf.fit(x_train_scaled_tree, y_train_tree)
+    rf_pred = rf.predict(x_test_scaled_tree)
+    logger.info("Random Forest (Conv1D features) Results:")
+    logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
+    logger.info(
+        "Classification Report:\n%s",
+        classification_report(
+            y_test_tree, rf_pred, target_names=le.classes_,
+        ),
+    )
+    xgb = XGBClassifier(
+        n_estimators=100,
+        random_state=42,
+        use_label_encoder=False,
+        eval_metric="mlogloss",
+    )
+    xgb.fit(x_train_scaled_tree, y_train_tree)
+    xgb_pred = xgb.predict(x_test_scaled_tree)
+    logger.info("XGBoost (Conv1D features) Results:")
+    logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
+    logger.info(
+        "Classification Report:\n%s",
+        classification_report(
+            y_test_tree, xgb_pred, target_names=le.classes_,
+        ),
+    )
+    joblib.dump(rf, "models/eeg_rf_model_conv1d.pkl")
+    joblib.dump(xgb, "models/eeg_xgb_model_conv1d.pkl")
+    joblib.dump(scaler_tree, "models/eeg_scaler_tree_conv1d.pkl")
+    logger.info("Conv1D-based tree models and scaler saved.")
 
 
 def load_windowed_data(config: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
