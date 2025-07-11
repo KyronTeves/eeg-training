@@ -37,8 +37,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-
-
 def train_eegnet_model(  # noqa: PLR0913
     x_train: np.ndarray,
     y_train: np.ndarray,
