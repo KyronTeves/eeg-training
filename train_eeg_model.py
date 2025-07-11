@@ -9,7 +9,9 @@ Typical usage:
 """
 from __future__ import annotations
 
+import json
 import logging
+from pathlib import Path
 from typing import Any
 
 import joblib
@@ -227,6 +229,7 @@ def train_eegnet_model(  # noqa: PLR0913
     config: dict[str, Any],
     label_encoder: LabelEncoder,
     class_weight_dict: dict | None = None,
+    ensemble_info: list | None = None,
 ) -> None:
     """Train and evaluate EEGNet or ShallowConvNet model.
 
@@ -238,6 +241,7 @@ def train_eegnet_model(  # noqa: PLR0913
         config (dict[str, Any]): Configuration dictionary.
         label_encoder (LabelEncoder): Label encoder.
         class_weight_dict (dict | None): Dictionary mapping class indices to weights for handling class imbalance.
+        ensemble_info (list | None): List to collect ensemble model information (optional).
 
     """
     x_train_eegnet = np.expand_dims(x_train, -1)
@@ -342,6 +346,14 @@ def train_eegnet_model(  # noqa: PLR0913
         )
         model.save(model_path)
         logger.info("%s saved to %s", model_name, model_path)
+        if ensemble_info is not None:
+            ensemble_info.append({
+                "name": model_name,
+                "path": model_path,
+                "type": "keras",
+                "accuracy": float(acc),
+                "weight": 1.0,
+            })
 
 
 def train_and_save_tree_models(  # noqa: PLR0913
@@ -352,6 +364,7 @@ def train_and_save_tree_models(  # noqa: PLR0913
     xgb_path: str,
     scaler_path: str,
     log_prefix: str = "",
+    ensemble_info: list | None = None,
 ) -> None:
     """Train and evaluate Random Forest and XGBoost models, save models and scaler.
 
@@ -363,6 +376,7 @@ def train_and_save_tree_models(  # noqa: PLR0913
         xgb_path (str): Path to save XGBoost model.
         scaler_path (str): Path to save scaler.
         log_prefix (str): Optional prefix for log messages.
+        ensemble_info (list | None): List to collect ensemble model information (optional).
 
     """
     x_train_tree, x_test_tree, y_train_tree, y_test_tree = train_test_split(
@@ -374,6 +388,7 @@ def train_and_save_tree_models(  # noqa: PLR0913
     rf = RandomForestClassifier(n_estimators=100, random_state=42)
     rf.fit(x_train_scaled_tree, y_train_tree)
     rf_pred = rf.predict(x_test_scaled_tree)
+    rf_acc = np.mean(rf_pred == y_test_tree)
     logger.info("%sRandom Forest Results:", log_prefix)
     logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, rf_pred))
     logger.info(
@@ -390,6 +405,7 @@ def train_and_save_tree_models(  # noqa: PLR0913
     )
     xgb.fit(x_train_scaled_tree, y_train_tree)
     xgb_pred = xgb.predict(x_test_scaled_tree)
+    xgb_acc = np.mean(xgb_pred == y_test_tree)
     logger.info("%sXGBoost Results:", log_prefix)
     logger.info("Confusion Matrix:\n%s", confusion_matrix(y_test_tree, xgb_pred))
     logger.info(
@@ -402,6 +418,21 @@ def train_and_save_tree_models(  # noqa: PLR0913
     joblib.dump(xgb, xgb_path)
     joblib.dump(scaler_tree, scaler_path)
     logger.info("%sTree models and scaler saved: %s, %s, %s", log_prefix, rf_path, xgb_path, scaler_path)
+    if ensemble_info is not None:
+        ensemble_info.append({
+            "name": log_prefix.strip() + "RandomForest",
+            "path": rf_path,
+            "type": "sklearn",
+            "accuracy": float(rf_acc),
+            "weight": 1.0,
+        })
+        ensemble_info.append({
+            "name": log_prefix.strip() + "XGBoost",
+            "path": xgb_path,
+            "type": "sklearn",
+            "accuracy": float(xgb_acc),
+            "weight": 1.0,
+        })
 
 
 def train_conv1d_and_tree_models(  # noqa: PLR0913
@@ -412,6 +443,7 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
     class_weight_dict: dict | None,
     config: dict[str, Any],
     le: LabelEncoder,
+    ensemble_info: list | None = None,
 ) -> None:
     """Train Advanced Conv1D model and tree models on Conv1D features.
 
@@ -423,6 +455,7 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
         class_weight_dict (dict | None): Class weights for handling class imbalance.
         config (dict[str, Any]): Configuration dictionary.
         le (LabelEncoder): Label encoder for inverse transforming predictions.
+        ensemble_info (list | None): List to collect ensemble model information (optional).
 
     """
     logger.info("=== Training Advanced Conv1D Model ===")
@@ -463,7 +496,7 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
     )
     # Do NOT use ReduceLROnPlateau when using a LearningRateSchedule (CosineDecayRestarts) with AdamW
     # as it will cause a TypeError. Only use ReduceLROnPlateau if using a float learning rate.
-    conv1d_model.fit(
+    history = conv1d_model.fit(
         x_train_final,
         y_train_final,
         epochs=300,
@@ -481,6 +514,16 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
     feature_extractor.save("models/eeg_conv1d_feature_extractor.h5")
     feature_extractor.save("models/eeg_conv1d_feature_extractor.keras")
     logger.info("Advanced Conv1D model and feature extractor saved.")
+    # Evaluate Conv1D model on training data (since test split is not passed here)
+    val_acc = float(np.max(history.history["val_accuracy"])) if "val_accuracy" in history.history else None
+    if ensemble_info is not None and val_acc is not None:
+        ensemble_info.append({
+            "name": "Conv1D",
+            "path": "models/eeg_conv1d_model.h5",
+            "type": "keras",
+            "accuracy": val_acc,
+            "weight": 1.0,
+        })
 
     # --- Conv1D Feature Extraction for Tree Models ---
     logger.info("Extracting Conv1D features for tree-based models...")
@@ -518,7 +561,12 @@ def main() -> None:
     ) = preprocess_and_augment(x_windows, y_cat, config)
     class_weight_dict = compute_class_weights(y_train_final)
     log_class_distribution(y_train_final)
-    train_eegnet_model(x_train_final, y_train_final, x_test_scaled, y_test, config, le, class_weight_dict)
+    # --- Collect ensemble info ---
+    ensemble_info = []
+
+    train_eegnet_model(
+        x_train_final, y_train_final, x_test_scaled, y_test, config, le, class_weight_dict, ensemble_info,
+    )
     joblib.dump(le, config["LABEL_ENCODER"])
     joblib.dump(scaler, config["SCALER_EEGNET"])
     np.save(config["LABEL_CLASSES_NPY"], le.classes_)
@@ -535,6 +583,7 @@ def main() -> None:
         xgb_path=config["MODEL_XGB"],
         scaler_path=config["SCALER_TREE"],
         log_prefix="(Classic features) ",
+        ensemble_info=ensemble_info,
     )
 
     # --- Advanced Conv1D Model Training and Tree Models ---
@@ -546,7 +595,19 @@ def main() -> None:
         class_weight_dict,
         config,
         le,
+        ensemble_info=ensemble_info,
     )
+
+    # --- Save ensemble info as JSON ---
+    ensemble_metadata = {
+        "models": ensemble_info,
+        "label_encoder": config["LABEL_ENCODER"],
+        "class_list": config["LABEL_CLASSES_NPY"],
+    }
+    with Path("models/ensemble_info.json").open("w", encoding="utf-8") as f:
+        json.dump(ensemble_metadata, f, indent=2)
+    logger.info("Ensemble info saved to models/ensemble_info.json")
+    logger.info("Ensemble info saved to models/ensemble_info.json")
 
 
 if __name__ == "__main__":
