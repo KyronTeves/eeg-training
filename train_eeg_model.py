@@ -7,6 +7,7 @@ Handles data loading, preprocessing, augmentation, model training, and artifact 
 Typical usage:
     $ python train_eeg_model.py
 """
+from __future__ import annotations
 
 import logging
 from typing import Any
@@ -20,6 +21,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.utils.class_weight import compute_class_weight
 from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
@@ -44,6 +46,7 @@ def train_eegnet_model(  # noqa: PLR0913
     y_test: np.ndarray,
     config: dict[str, Any],
     label_encoder: LabelEncoder,
+    class_weight_dict: dict | None = None,
 ) -> None:
     """Train and evaluate EEGNet or ShallowConvNet model.
 
@@ -54,6 +57,7 @@ def train_eegnet_model(  # noqa: PLR0913
         y_test (np.ndarray): Test labels (one-hot or encoded).
         config (dict[str, Any]): Configuration dictionary.
         label_encoder (LabelEncoder): Label encoder.
+        class_weight_dict (dict | None): Dictionary mapping class indices to weights for handling class imbalance.
 
     """
     x_train_eegnet = np.expand_dims(x_train, -1)
@@ -108,7 +112,7 @@ def train_eegnet_model(  # noqa: PLR0913
             epochs=config["EPOCHS"],
             batch_size=config["BATCH_SIZE"],
             validation_split=config["VALIDATION_SPLIT"],
-            class_weight=None,  # Set externally if needed
+            class_weight=class_weight_dict,
             callbacks=[early_stopping],
             verbose=1,
         )
@@ -186,6 +190,21 @@ def train_tree_models(
     joblib.dump(scaler_tree, config["SCALER_TREE"])
 
 
+def compute_class_weights(y_train_final: np.ndarray) -> dict[int, float]:
+    """Compute class weights for handling class imbalance in training data.
+
+    Args:
+        y_train_final (np.ndarray): One-hot encoded or categorical labels for the training set.
+
+    Returns:
+        dict[int, float]: Dictionary mapping class indices to their computed weights.
+
+    """
+    labels_train = np.argmax(y_train_final, axis=1)
+    class_weights = compute_class_weight("balanced", classes=np.unique(labels_train), y=labels_train)
+    return dict(enumerate(class_weights))
+
+
 @handle_errors
 def main() -> None:
     """Orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
@@ -205,8 +224,9 @@ def main() -> None:
         y_test,
         scaler,
     ) = preprocess_and_augment(x_windows, y_cat, config)
+    class_weight_dict = compute_class_weights(y_train_final)
     log_class_distribution(y_train_final)
-    train_eegnet_model(x_train_final, y_train_final, x_test_scaled, y_test, config, le)
+    train_eegnet_model(x_train_final, y_train_final, x_test_scaled, y_test, config, le, class_weight_dict)
     joblib.dump(le, config["LABEL_ENCODER"])
     joblib.dump(scaler, config["SCALER_EEGNET"])
     np.save(config["LABEL_CLASSES_NPY"], le.classes_)
