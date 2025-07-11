@@ -267,6 +267,61 @@ def check_labels_valid(
             raise ValueError(msg)
 
 
+def augment_eeg_data(  # noqa: PLR0913
+    x: np.ndarray,
+    noise_std: float = 0.02,
+    drift_max: float = 0.03,
+    shift_max: int = 10,
+    dropout_prob: float = 0.3,
+    scale_range: tuple = (0.8, 1.2),
+) -> np.ndarray:
+    """Augment EEG data with noise, drift, time shift, channel dropout, and amplitude scaling.
+
+    Args:
+        x (np.ndarray): Input EEG data, shape (n_windows, window_size, n_channels).
+        noise_std (float): Std of Gaussian noise.
+        drift_max (float): Max amplitude of baseline drift.
+        shift_max (int): Max time shift (samples).
+        dropout_prob (float): Probability of channel dropout per window.
+        scale_range (tuple): Min/max amplitude scaling.
+
+    Returns:
+        np.ndarray: Augmented EEG data.
+
+    """
+    rng = np.random.default_rng()
+    n_windows, window_size, n_channels = x.shape
+    augmented = np.empty_like(x)
+    for i in range(n_windows):
+        xi = x[i].copy()
+        strategy = rng.integers(0, 5)
+        if strategy == 0:
+            # Gaussian noise
+            xi += rng.normal(0, noise_std, xi.shape)
+        elif strategy == 1:
+            # Baseline drift
+            freq = rng.uniform(0.1, 2.0) * 2 * np.pi / 250
+            phase = rng.uniform(0, 2 * np.pi)
+            drift = np.sin(np.arange(window_size) * freq + phase) * drift_max
+            xi += drift[:, None]
+        elif strategy == 2:  # noqa: PLR2004
+            # Time shifting
+            shift = rng.integers(-shift_max, shift_max + 1)
+            if shift != 0:
+                xi = np.roll(xi, shift, axis=0)
+        elif strategy == 3:  # noqa: PLR2004
+            # Channel dropout
+            if rng.random() < dropout_prob:
+                ch = rng.integers(0, n_channels)
+                xi[:, ch] = 0
+        elif strategy == 4:  # noqa: PLR2004
+            # Amplitude scaling
+            scale = rng.uniform(*scale_range)
+            xi *= scale
+        augmented[i] = xi
+    return augmented
+
+
 def collect_lsl_calib_data(
     lsl_stream_handler: LSLStreamHandler,
     label_classes: list[str],

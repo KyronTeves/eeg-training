@@ -24,6 +24,7 @@ from xgboost import XGBClassifier
 
 from EEGModels import EEGNet, ShallowConvNet
 from utils import (
+    augment_eeg_data,
     check_labels_valid,
     check_no_nan,
     extract_features,
@@ -36,34 +37,6 @@ setup_logging()
 logger = logging.getLogger(__name__)
 
 
-def augment_eeg_data(
-    x: np.ndarray,
-    noise_std: float = 0.01,
-    drift_max: float = 0.05,
-    artifact_prob: float = 0.05,
-) -> np.ndarray:
-    """Augment EEG data with noise, drift, and simulated artifacts.
-
-    Args:
-        x (np.ndarray): Input EEG data, shape (n_windows, window_size, n_channels).
-        noise_std (float): Standard deviation of Gaussian noise.
-        drift_max (float): Maximum amplitude of baseline drift.
-        artifact_prob (float): Probability of zeroing out a window.
-
-    Returns:
-        np.ndarray: Augmented EEG data.
-
-    """
-    # Add Gaussian noise
-    rng = np.random.default_rng()
-    x_aug = x + rng.standard_normal(x.shape) * noise_std
-    # Add baseline drift (slow sine wave)
-    drift = drift_max * np.sin(np.linspace(0, np.pi, x.shape[1]))
-    x_aug += drift[None, :, None]
-    # Randomly zero out some windows (simulate artifacts)
-    mask = rng.random(x.shape[0]) < artifact_prob
-    x_aug[mask] = 0
-    return x_aug
 
 
 def train_eegnet_model(  # noqa: PLR0913
@@ -173,7 +146,7 @@ def train_tree_models(
     Args:
         x_features (np.ndarray): Feature matrix for tree models.
         y_encoded (np.ndarray): Encoded labels.
-        config (dict[str, Any]): Configuration dictionary.
+        config (dict[str, Any): Configuration dictionary.
         label_encoder (LabelEncoder): Label encoder.
 
     """
