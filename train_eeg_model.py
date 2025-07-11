@@ -303,15 +303,13 @@ def preprocess_and_augment(
         """
         labels = np.argmax(y_train, axis=1)
         unique, counts = np.unique(labels, return_counts=True)
-        min_count = np.min(counts)
+        median_count = int(np.median(counts))
         indices_per_class = [np.nonzero(labels == i)[0] for i in range(len(unique))]
         rng = np.random.default_rng()
-        downsampled_indices = np.concatenate(
-            [
-                rng.choice(idxs, min_count, replace=False)
-                for idxs in indices_per_class
-            ],
-        )
+        downsampled_indices = np.concatenate([
+            rng.choice(idxs, median_count, replace=False) if len(idxs) > median_count else idxs
+            for idxs in indices_per_class
+        ])
         rng.shuffle(downsampled_indices)
         x_train_bal = x_train_scaled[downsampled_indices]
         y_train_bal = y_train[downsampled_indices]
