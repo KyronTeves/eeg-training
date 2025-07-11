@@ -32,3 +32,4 @@ __pycache__/
 plots/*.png
 
 alternative/
+models/ensemble_info.json

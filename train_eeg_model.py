@@ -537,6 +537,7 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
         xgb_path="models/eeg_xgb_model_conv1d.pkl",
         scaler_path="models/eeg_scaler_tree_conv1d.pkl",
         log_prefix="(Conv1D features) ",
+        ensemble_info=ensemble_info,
     )
 
 
