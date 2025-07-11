@@ -15,7 +15,7 @@ from typing import Any
 import joblib
 import numpy as np
 from joblib import Parallel, delayed
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from keras.callbacks import EarlyStopping, ModelCheckpoint
 from keras.models import Model
 from keras.optimizers import AdamW
 from keras.optimizers.schedules import CosineDecayRestarts
@@ -277,7 +277,8 @@ def main() -> None:  # noqa: PLR0915
         save_weights_only=False,
         mode="max",
     )
-    reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=8, min_lr=1e-6, verbose=1)
+    # Do NOT use ReduceLROnPlateau when using a LearningRateSchedule (CosineDecayRestarts) with AdamW
+    # as it will cause a TypeError. Only use ReduceLROnPlateau if using a float learning rate.
     conv1d_model.fit(
         x_train_final,
         y_train_final,
@@ -285,7 +286,7 @@ def main() -> None:  # noqa: PLR0915
         batch_size=32,
         validation_split=0.25,
         class_weight=class_weight_dict,
-        callbacks=[early_stopping, model_checkpoint, reduce_lr],
+        callbacks=[early_stopping, model_checkpoint],
         verbose=1,
     )
     # Save the trained model
