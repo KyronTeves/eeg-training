@@ -26,11 +26,11 @@
   
   "_model_training_config": "--- Model Training Configuration ---",
   "MODELS_TO_TRAIN": ["EEGNet", "ShallowConvNet"],
-  "EPOCHS": 100,
-  "BATCH_SIZE": 64,
+  "EPOCHS": 300,
+  "BATCH_SIZE": 32,
   "VALIDATION_SPLIT": 0.2,
-  "EARLY_STOPPING_PATIENCE": 10,
-  "EARLY_STOPPING_MONITOR": "val_loss",
+  "EARLY_STOPPING_PATIENCE": 25,
+  "EARLY_STOPPING_MONITOR": "val_accuracy",
   "OPTIMIZER": "adam",
   "LOSS_FUNCTION": "categorical_crossentropy",
   

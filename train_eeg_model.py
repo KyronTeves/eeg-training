@@ -15,7 +15,7 @@ from typing import Any
 import joblib
 import numpy as np
 from joblib import Parallel, delayed
-from keras.callbacks import EarlyStopping, ModelCheckpoint
+from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from keras.models import Model
 from keras.optimizers import AdamW
 from keras.optimizers.schedules import CosineDecayRestarts
@@ -71,7 +71,21 @@ def train_eegnet_model(  # noqa: PLR0913
         monitor=config["EARLY_STOPPING_MONITOR"],
         patience=config["EARLY_STOPPING_PATIENCE"],
         restore_best_weights=True,
+        verbose=1,
+        min_delta=0.0005,
+        mode="max",
     )
+
+    reduce_lr = None
+    if config.get("USE_REDUCE_LR", True):
+        reduce_lr = ReduceLROnPlateau(
+            monitor="val_loss",
+            factor=0.5,
+            patience=8,
+            min_lr=1e-6,
+            verbose=1,
+        )
+
     kern_length = config["EEGNET_KERN_LENGTH"]
     f1 = config["EEGNET_F1"]
     d = config["EEGNET_D"]
@@ -109,6 +123,19 @@ def train_eegnet_model(  # noqa: PLR0913
             loss=config["LOSS_FUNCTION"],
             metrics=["accuracy"],
         )
+        # ModelCheckpoint for best weights
+        checkpoint_path = model_path.replace(".h5", "_best.h5").replace(".keras", "_best.keras")
+        model_checkpoint = ModelCheckpoint(
+            checkpoint_path,
+            monitor="val_accuracy",
+            save_best_only=True,
+            verbose=1,
+            save_weights_only=False,
+            mode="max",
+        )
+        callbacks = [early_stopping, model_checkpoint]
+        if reduce_lr is not None:
+            callbacks.append(reduce_lr)
         model.fit(
             x_train_eegnet,
             y_train,
@@ -116,7 +143,7 @@ def train_eegnet_model(  # noqa: PLR0913
             batch_size=config["BATCH_SIZE"],
             validation_split=config["VALIDATION_SPLIT"],
             class_weight=class_weight_dict,
-            callbacks=[early_stopping],
+            callbacks=callbacks,
             verbose=1,
         )
         _, acc = model.evaluate(x_test_eegnet, y_test)
