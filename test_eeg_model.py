@@ -7,6 +7,7 @@ evaluation metrics for all models and ensemble.
 """
 from __future__ import annotations
 
+import json
 import logging
 import random
 from collections import Counter, defaultdict
@@ -41,6 +42,64 @@ if TYPE_CHECKING:
 
 setup_logging()
 logger = logging.getLogger(__name__)
+
+config = load_config()
+ENSEMBLE_INFO_PATH = config["ENSEMBLE_INFO_PATH"]
+
+
+# Load ensemble info, label encoder, and class list
+def load_ensemble_info() -> tuple:
+    """Load ensemble info, label encoder, and class list from the configured path.
+
+    Returns:
+        tuple: (ensemble_info dict, label encoder, class list)
+    """
+    with Path(ENSEMBLE_INFO_PATH).open(encoding="utf-8") as f:
+        ensemble_info = json.load(f)
+    le = joblib.load(ensemble_info["label_encoder"])
+    class_list = np.load(ensemble_info["class_list"], allow_pickle=True)
+    return ensemble_info, le, class_list
+
+
+try:
+    ensemble_info, label_encoder, class_list = load_ensemble_info()
+    logger.info("Loaded ensemble info from %s.", ENSEMBLE_INFO_PATH)
+except Exception as e:
+    logger.exception("Failed to load ensemble info: %s", e)
+    raise
+
+
+# Load all models described in ensemble_info.json
+def load_models_from_ensemble_info(ensemble_info: dict) -> list:
+    """Load all models described in the ensemble info dict.
+
+    Args:
+        ensemble_info (dict): Ensemble info loaded from JSON.
+
+    Returns:
+        list: List of dicts with model metadata and loaded model objects.
+    """
+    models = []
+    for model_entry in ensemble_info["models"]:
+        model_type = model_entry["type"]
+        model_path = model_entry["path"]
+        name = model_entry["name"]
+        try:
+            if model_type == "keras":
+                model = load_model(model_path)
+            elif model_type == "sklearn":
+                model = joblib.load(model_path)
+            else:
+                logger.warning("Unknown model type: %s for %s", model_type, name)
+                continue
+            models.append({"name": name, "type": model_type, "model": model, "path": model_path})
+            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
+        except Exception as e:
+            logger.exception("Failed to load model %s from %s: %s", name, model_path, e)
+    return models
+
+
+models = load_models_from_ensemble_info(ensemble_info)
 
 
 def ensemble_hard_voting(  # noqa: PLR0913

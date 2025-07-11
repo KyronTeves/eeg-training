@@ -81,5 +81,6 @@
   "SCALER_TREE": "models/eeg_scaler_tree.pkl",
   "SCALER_EEGNET_SESSION": "models/eeg_scaler_session.pkl",
   "SCALER_TREE_SESSION": "models/eeg_scaler_tree_session.pkl",
-  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy"
+  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy",
+  "ENSEMBLE_INFO_PATH": "models/ensemble_info.json"
 }
