@@ -45,27 +45,30 @@ logger = logging.getLogger(__name__)
 
 config = load_config()
 ENSEMBLE_INFO_PATH = config["ENSEMBLE_INFO_PATH"]
+LABEL_ENCODER_PATH = config["LABEL_ENCODER"]
+CLASS_LIST_PATH = config["LABEL_CLASSES_NPY"]
 
 
-# Load ensemble info, label encoder, and class list
-def load_ensemble_info() -> tuple:
-    """Load ensemble info, label encoder, and class list from the configured path.
+# Load ensemble info only (no label encoder/class list)
+def load_ensemble_info() -> dict:
+    """Load ensemble info from the configured path.
 
     Returns:
-        tuple: (ensemble_info dict, label encoder, class list)
+        dict: Ensemble info loaded from JSON.
+
     """
     with Path(ENSEMBLE_INFO_PATH).open(encoding="utf-8") as f:
         ensemble_info = json.load(f)
-    le = joblib.load(ensemble_info["label_encoder"])
-    class_list = np.load(ensemble_info["class_list"], allow_pickle=True)
-    return ensemble_info, le, class_list
+    return ensemble_info
 
 
 try:
-    ensemble_info, label_encoder, class_list = load_ensemble_info()
+    ensemble_info = load_ensemble_info()
+    label_encoder = joblib.load(LABEL_ENCODER_PATH)
+    class_list = np.load(CLASS_LIST_PATH, allow_pickle=True)
     logger.info("Loaded ensemble info from %s.", ENSEMBLE_INFO_PATH)
-except Exception as e:
-    logger.exception("Failed to load ensemble info: %s", e)
+except Exception:
+    logger.exception("Failed to load ensemble info or label encoder/class list.")
     raise
 
 
@@ -78,6 +81,7 @@ def load_models_from_ensemble_info(ensemble_info: dict) -> list:
 
     Returns:
         list: List of dicts with model metadata and loaded model objects.
+
     """
     models = []
     for model_entry in ensemble_info["models"]:
@@ -488,6 +492,72 @@ def prepare_cnn_input(x_windows: np.ndarray, scaler: TransformerMixin, n_channel
     x_windows_scaled = scaler.transform(x_windows_flat).reshape(x_windows.shape)
     x_windows_cnn = np.expand_dims(x_windows_scaled, -1)
     return np.transpose(x_windows_cnn, (0, 2, 1, 3))
+
+
+# --- Flexible Feature Extraction and Preprocessing ---
+def prepare_test_data_representations(
+    X_windows: np.ndarray,
+    ensemble_info: dict,
+    label_encoder,
+    config: dict,
+) -> dict:
+    """Prepare all test data representations needed for the loaded models.
+
+    Args:
+        X_windows (np.ndarray): Windowed EEG data (n_samples, window, n_channels).
+        ensemble_info (dict): Ensemble info loaded from JSON.
+        label_encoder: Fitted label encoder.
+        config (dict): Configuration dictionary.
+
+    Returns:
+        dict: Mapping from representation name to data array.
+    """
+    from utils import extract_features
+    import joblib
+    from keras.models import load_model
+    import numpy as np
+
+    n_channels = config["N_CHANNELS"]
+    window_size = config["WINDOW_SIZE"]
+    # Prepare classic features
+    X_classic_features = np.array([
+        extract_features(window, config["SAMPLING_RATE"]) for window in X_windows
+    ])
+    # Prepare scaled windows for CNNs
+    scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
+    X_windows_flat = X_windows.reshape(-1, n_channels)
+    X_windows_scaled = scaler_eegnet.transform(X_windows_flat).reshape(X_windows.shape)
+    # Prepare EEGNet input shape: (batch, channels, window, 1)
+    X_windows_eegnet = np.expand_dims(X_windows_scaled, -1)
+    X_windows_eegnet = np.transpose(X_windows_eegnet, (0, 2, 1, 3))
+    # Prepare Conv1D features if feature extractor exists
+    conv1d_feature_extractor = None
+    conv1d_feature_path = None
+    for entry in ensemble_info["models"]:
+        if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
+            "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
+        ):
+            conv1d_feature_path = entry["path"]
+            break
+    if not conv1d_feature_path:
+        # Try default path
+        conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
+    try:
+        conv1d_feature_extractor = load_model(conv1d_feature_path)
+    except Exception:
+        try:
+            conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
+        except Exception:
+            conv1d_feature_extractor = None
+    X_conv1d_features = None
+    if conv1d_feature_extractor is not None:
+        X_conv1d_features = conv1d_feature_extractor.predict(X_windows_scaled, batch_size=32, verbose=0)
+    return {
+        "classic_features": X_classic_features,
+        "windows_scaled": X_windows_scaled,
+        "windows_eegnet": X_windows_eegnet,
+        "conv1d_features": X_conv1d_features,
+    }
 
 
 def main() -> None:  # noqa: PLR0915

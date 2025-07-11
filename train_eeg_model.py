@@ -600,11 +600,7 @@ def main() -> None:
     )
 
     # --- Save ensemble info as JSON ---
-    ensemble_metadata = {
-        "models": ensemble_info,
-        "label_encoder": config["LABEL_ENCODER"],
-        "class_list": config["LABEL_CLASSES_NPY"],
-    }
+    ensemble_metadata = {"models": ensemble_info}
     with Path("models/ensemble_info.json").open("w", encoding="utf-8") as f:
         json.dump(ensemble_metadata, f, indent=2)
     logger.info("Ensemble info saved to models/ensemble_info.json")
