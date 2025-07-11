@@ -236,7 +236,7 @@ def compute_class_weights(y_train_final: np.ndarray) -> dict[int, float]:
 
 
 @handle_errors
-def main() -> None:  # noqa: PLR0915
+def main() -> None:
     """Orchestrate the training of EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
 
     Handle data loading, preprocessing, augmentation, model training, and artifact saving.
@@ -267,7 +267,39 @@ def main() -> None:  # noqa: PLR0915
     logger.info("Classic feature extraction complete. Feature shape: %s", x_features.shape)
     train_tree_models(x_features, y_encoded, config, le)
 
-    # --- Advanced Conv1D Model Training ---
+
+    # --- Advanced Conv1D Model Training and Tree Models ---
+    train_conv1d_and_tree_models(
+        x_train_final,
+        y_train_final,
+        x_windows,
+        y_encoded,
+        class_weight_dict,
+        config,
+        le,
+    )
+
+def train_conv1d_and_tree_models(  # noqa: PLR0913
+    x_train_final: np.ndarray,
+    y_train_final: np.ndarray,
+    x_windows: np.ndarray,
+    y_encoded: np.ndarray,
+    class_weight_dict: dict | None,
+    config: dict[str, Any],
+    le: LabelEncoder,
+) -> None:
+    """Train Advanced Conv1D model and tree models on Conv1D features.
+
+    Args:
+        x_train_final (np.ndarray): Preprocessed training data.
+        y_train_final (np.ndarray): One-hot encoded labels for the training set.
+        x_windows (np.ndarray): Windowed EEG data.
+        y_encoded (np.ndarray): Encoded labels for the training set.
+        class_weight_dict (dict | None): Class weights for handling class imbalance.
+        config (dict[str, Any]): Configuration dictionary.
+        le (LabelEncoder): Label encoder for inverse transforming predictions.
+
+    """
     logger.info("=== Training Advanced Conv1D Model ===")
     window_size = config["WINDOW_SIZE"]
     n_channels = config["N_CHANNELS"]
