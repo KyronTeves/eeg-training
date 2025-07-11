@@ -29,3 +29,5 @@ __pycache__/
 
 # Ignore all PNG files in the plots directory
 plots/*.png
+
+alternative/
