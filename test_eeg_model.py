@@ -147,8 +147,8 @@ def prepare_test_data_representations(
     n_channels = local_config["N_CHANNELS"]
     # Prepare classic features
     x_classic_features = np.array([extract_features(window, local_config["SAMPLING_RATE"]) for window in x_windows])
-    # Load and apply classic feature scaler
-    scaler_tree_path = local_config.get("SCALER_TREE", "models/eeg_scaler_tree.pkl")
+    # Load and apply classic feature scaler from config
+    scaler_tree_path = local_config["SCALER_TREE"]
     scaler_tree = joblib.load(scaler_tree_path)
     x_classic_features_scaled = scaler_tree.transform(x_classic_features)
 
@@ -161,15 +161,17 @@ def prepare_test_data_representations(
     x_windows_eegnet = np.transpose(x_windows_eegnet, (0, 2, 1, 3))
     # Prepare Conv1D features if feature extractor exists
     conv1d_feature_extractor = None
-    conv1d_feature_path = None
-    for entry in ensemble_info["models"]:
-        if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
-            "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
-        ):
-            conv1d_feature_path = entry["path"]
-            break
+    conv1d_feature_path = local_config.get("CONV1D_FEATURE_EXTRACTOR")
     if not conv1d_feature_path:
-        # Try default path
+        # Try to find in ensemble_info
+        for entry in ensemble_info["models"]:
+            if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
+                "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
+            ):
+                conv1d_feature_path = entry["path"]
+                break
+    if not conv1d_feature_path:
+        # Fallback to default
         conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
     try:
         conv1d_feature_extractor = load_model(conv1d_feature_path)
