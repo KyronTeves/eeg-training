@@ -39,7 +39,7 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
 - **Optimized Pipeline:** Modular, config-driven, supports session calibration
 - **Comprehensive Logging:** Real-time stats and error reporting
 - **Data Augmentation:** Class balancing, noise injection (optional)
-- **Ensemble Methods:** Weighted voting across models; all trained models are tracked in `models/ensemble_info.json`
+- **Ensemble Methods:** Ensemble (hard voting) across models; all trained models are tracked in `models/ensemble_info.json`
 - **Session Calibration:** Optional per-user fine-tuning
 - **Experimental Real-Time Prediction:** Online ensemble prediction (experimental)
 
