@@ -25,6 +25,7 @@ from sklearn.metrics import classification_report, confusion_matrix
 from umap import UMAP
 
 from utils import (
+    CUSTOM_OBJECTS,
     check_labels_valid,
     check_no_nan,
     extract_features,
@@ -75,7 +76,8 @@ def load_models_from_ensemble_info(ensemble_info: dict) -> list:
         name = model_entry["name"]
         try:
             if model_type == "keras":
-                model = load_model(model_path)
+                # Always provide custom_objects for Keras models
+                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
             elif model_type == "sklearn":
                 model = joblib.load(model_path)
             else:
@@ -83,7 +85,7 @@ def load_models_from_ensemble_info(ensemble_info: dict) -> list:
                 continue
             models.append({"name": name, "type": model_type, "model": model, "path": model_path})
             logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
-        except (OSError, ImportError):
+        except (OSError, ImportError, TypeError):
             logger.exception("Failed to load model %s from %s.", name, model_path)
     return models
 
@@ -282,10 +284,14 @@ def log_per_sample_predictions(
     num_samples_to_log = min(100, len(y_true_labels))
     if num_samples_to_log > 0:
         for i in range(num_samples_to_log):
-            logger.info("Sample %d: Actual: %s", i, y_true_str[i])
+            logger.info("-")
+            logger.info("Actual label:   %s", y_true_str[i])
             for name, pred_str in pred_strs.items():
-                logger.info("%s Predicted: %s", name, pred_str[i])
-            logger.info("Ensemble Predicted: %s", pred_ensemble_labels[i])
+                match = pred_str[i] == y_true_str[i]
+                logger.info("%s Predicted label: %s | Match: %s", name, pred_str[i], str(match))
+            # Ensemble
+            ensemble_match = pred_ensemble_labels[i] == y_true_str[i]
+            logger.info("Ensemble (hard voting) label: %s | Match: %s", pred_ensemble_labels[i], str(ensemble_match))
             logger.info("-")
 
 
@@ -304,18 +310,31 @@ def evaluate_all_models_and_ensemble(
         label_encoder (LabelEncoder): Label encoder for inverse transforming labels.
 
     """
+    n_samples = len(y_true_labels)
     for name, pred in predictions.items():
-        logger.info("%s Accuracy: %.3f", name, np.mean(pred == y_true_labels))
+        n_correct = int(np.sum(pred == y_true_labels))
+        acc = n_correct / n_samples if n_samples else 0.0
+        logger.info("%s accuracy on %d test samples: %d/%d (%.2f%%)", name, n_samples, n_correct, n_samples, acc * 100)
+    n_correct_ens = int(np.sum(pred_ensemble_numeric == y_true_labels))
+    acc_ens = n_correct_ens / n_samples if n_samples else 0.0
+    logger.info(
+        "Ensemble accuracy on %d test samples: %d/%d (%.2f%%)",
+        n_samples,
+        n_correct_ens,
+        n_samples,
+        acc_ens * 100,
+    )
+    # Optionally, keep detailed reports below
+    for name, pred in predictions.items():
         logger.info("%s Confusion Matrix:\n%s", name, confusion_matrix(y_true_labels, pred))
         logger.info(
             "%s Classification Report:\n%s",
             name,
             classification_report(y_true_labels, pred, target_names=label_encoder.classes_),
         )
-    logger.info("Ensemble (Hard Voting) Accuracy: %.3f", np.mean(pred_ensemble_numeric == y_true_labels))
-    logger.info("Ensemble Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_ensemble_numeric))
+    logger.info("Ensemble (Hard Voting) Confusion Matrix:\n%s", confusion_matrix(y_true_labels, pred_ensemble_numeric))
     logger.info(
-        "Ensemble Classification Report:\n%s",
+        "Ensemble (Hard Voting) Classification Report:\n%s",
         classification_report(y_true_labels, pred_ensemble_numeric, target_names=label_encoder.classes_),
     )
 
