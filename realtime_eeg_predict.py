@@ -532,6 +532,67 @@ class OptimizedPredictionPipeline:
             self.prediction_thread.join(timeout=1.0)
         logger.info("Asynchronous prediction stopped.")
 
+    def prepare_realtime_features(
+        self,
+        window: np.ndarray,
+        ensemble_info: dict,
+        config: dict,
+    ) -> dict:
+        """Prepare all feature representations for a single real-time EEG window.
+
+        Args:
+            window (np.ndarray): EEG window, shape (1, window_size, n_channels)
+            ensemble_info (dict): Ensemble info loaded from JSON.
+            config (dict): Configuration dictionary.
+
+        Returns:
+            dict: Mapping from representation name to data array (batch size 1).
+
+        """
+        n_channels = config["N_CHANNELS"]
+        # Classic features
+        x_classic_features = np.array([
+            extract_features(window[0], config["SAMPLING_RATE"]),
+        ])  # shape (1, n_features)
+        scaler_tree = joblib.load(config["SCALER_TREE"])
+        x_classic_features_scaled = scaler_tree.transform(x_classic_features)
+
+        # Scaled window for CNNs
+        scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
+        x_window_flat = window.reshape(-1, n_channels)
+        x_window_scaled = scaler_eegnet.transform(x_window_flat).reshape(window.shape)
+        # EEGNet input shape: (batch, channels, window, 1)
+        x_window_eegnet = np.expand_dims(x_window_scaled, -1)
+        x_window_eegnet = np.transpose(x_window_eegnet, (0, 2, 1, 3))
+
+        # Conv1D features (if extractor exists)
+        conv1d_feature_extractor = None
+        conv1d_feature_path = config.get("CONV1D_FEATURE_EXTRACTOR")
+        if not conv1d_feature_path:
+            for entry in ensemble_info["models"]:
+                if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
+                    "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
+                ):
+                    conv1d_feature_path = entry["path"]
+                    break
+        if not conv1d_feature_path:
+            conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
+        try:
+            conv1d_feature_extractor = load_model(conv1d_feature_path)
+        except (OSError, ImportError):
+            try:
+                conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
+            except (OSError, ImportError):
+                conv1d_feature_extractor = None
+        x_conv1d_features = None
+        if conv1d_feature_extractor is not None:
+            x_conv1d_features = conv1d_feature_extractor.predict(x_window_scaled, batch_size=1, verbose=0)
+        return {
+            "classic_features": x_classic_features_scaled,
+            "windows_scaled": x_window_scaled,
+            "windows_eegnet": x_window_eegnet,
+            "conv1d_features": x_conv1d_features,
+        }
 
 def process_prediction(
     pipeline: OptimizedPredictionPipeline,
