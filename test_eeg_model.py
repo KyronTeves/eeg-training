@@ -147,6 +147,11 @@ def prepare_test_data_representations(
     n_channels = local_config["N_CHANNELS"]
     # Prepare classic features
     x_classic_features = np.array([extract_features(window, local_config["SAMPLING_RATE"]) for window in x_windows])
+    # Load and apply classic feature scaler
+    scaler_tree_path = local_config.get("SCALER_TREE", "models/eeg_scaler_tree.pkl")
+    scaler_tree = joblib.load(scaler_tree_path)
+    x_classic_features_scaled = scaler_tree.transform(x_classic_features)
+
     # Prepare scaled windows for CNNs
     scaler_eegnet = joblib.load(local_config["SCALER_EEGNET"])
     x_windows_flat = x_windows.reshape(-1, n_channels)
@@ -177,7 +182,7 @@ def prepare_test_data_representations(
     if conv1d_feature_extractor is not None:
         x_conv1d_features = conv1d_feature_extractor.predict(x_windows_scaled, batch_size=32, verbose=0)
     return {
-        "classic_features": x_classic_features,
+        "classic_features": x_classic_features_scaled,
         "windows_scaled": x_windows_scaled,
         "windows_eegnet": x_windows_eegnet,
         "conv1d_features": x_conv1d_features,
