@@ -594,6 +594,32 @@ class OptimizedPredictionPipeline:
             "conv1d_features": x_conv1d_features,
         }
 
+    def map_model_inputs_realtime(self, models: list, features: dict) -> dict:
+        """Map model names to their required input features for real-time prediction.
+
+        Args:
+            models (list): List of model metadata dictionaries.
+            features (dict): Dictionary of prepared feature arrays.
+
+        Returns:
+            dict: Mapping from model names to their input feature arrays.
+
+        """
+        model_inputs = {}
+        for m in models:
+            name = m["name"]
+            if "conv1d" in name.lower() and m["type"] == "keras":
+                model_inputs[name] = features["windows_scaled"]
+            elif ("shallow" in name.lower() and m["type"] == "keras") or m["type"] == "keras":
+                model_inputs[name] = features["windows_eegnet"]
+            elif "conv1d features" in name.lower() and features["conv1d_features"] is not None:
+                model_inputs[name] = features["conv1d_features"]
+            elif "classic" in name.lower():
+                model_inputs[name] = features["classic_features"]
+            else:
+                model_inputs[name] = features["classic_features"]
+        return model_inputs
+
 def process_prediction(
     pipeline: OptimizedPredictionPipeline,
     prediction_count: int,
