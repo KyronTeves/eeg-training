@@ -474,6 +474,7 @@ class OptimizedPredictionPipeline:
         self.prediction_confidence = confidence
         return predicted_label, confidence
 
+
     def get_performance_stats(self) -> dict:
         """Get average latency, FPS, buffer size, and last confidence for real-time predictions.
 
@@ -620,91 +621,88 @@ class OptimizedPredictionPipeline:
                 model_inputs[name] = features["classic_features"]
         return model_inputs
 
-def process_prediction(
+
+    def predict_realtime_dynamic(
+        self,
+        models: list,
+        ensemble_info: dict,
+        config: dict,
+        *,
+        use_hard_voting: bool = True,
+    ) -> tuple[str, float] | None:
+        """Perform dynamic ensemble prediction using all loaded models and correct features."""
+        if not self.is_ready_for_prediction():
+            return None
+        window = self.get_current_window()
+        # Prepare all features for this window
+        features = self.prepare_realtime_features(window, ensemble_info, config)
+        # Map model names to their required input features
+        model_inputs = self.map_model_inputs_realtime(models, features)
+        # Run predictions for all models
+        predictions = {}
+        for m in models:
+            name = m["name"]
+            model = m["model"]
+            x_input = model_inputs[name]
+            if m["type"] == "keras":
+                y_pred_prob = model.predict(x_input, verbose=0)
+                y_pred = np.argmax(y_pred_prob, axis=1)
+                predictions[name] = y_pred[0]
+            else:
+                y_pred = model.predict(x_input)
+                predictions[name] = y_pred[0]
+        # Hard voting ensemble
+        if use_hard_voting:
+            vote_counts = Counter(predictions.values())
+            majority_pred = vote_counts.most_common(1)[0][0]
+            confidence = vote_counts.most_common(1)[0][1] / len(predictions)
+            predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+            self.last_prediction = predicted_label
+            self.prediction_confidence = confidence
+            return predicted_label, confidence
+        # (Optional: add soft voting here if needed)
+        return None
+
+
+def process_prediction(  # noqa: PLR0913
     pipeline: OptimizedPredictionPipeline,
     prediction_count: int,
+    models: list | None = None,
+    ensemble_info: dict | None = None,
+    config: dict | None = None,
     *,
     use_hard_voting: bool = False,
 ) -> int:
-    """Process a single ensemble prediction and log detailed model breakdown.
+    """Process a single ensemble prediction and log detailed model breakdown (dynamic version).
 
     Args:
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): The current prediction count.
         use_hard_voting (bool): Whether to use hard voting.
+        models (list): List of loaded model dicts.
+        ensemble_info (dict): Ensemble info dict.
+        config (dict): Config dict.
 
     Returns:
         int: Updated prediction count.
 
     """
-
-    def fmt_model(label: str, conf: float, *, disabled: bool) -> str:
-        """Format the model prediction output for display.
-
-        Args:
-            label (str): The predicted label for the model.
-            conf (float): The confidence score for the prediction.
-            disabled (bool): Whether the model is disabled (e.g., due to errors).
-
-        Returns:
-            str: Formatted string for display.
-
-        """
-        if disabled:
-            return "---(---)"
-        return f"{short_label(label):<3}({conf:.3f})"
-
-    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
+    if models is not None and ensemble_info is not None and config is not None:
+        result = pipeline.predict_realtime_dynamic(models, ensemble_info, config, use_hard_voting=use_hard_voting)
+    else:
+        # fallback to legacy method for backward compatibility
+        result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
     if result:
         predicted_label, confidence = result
         prediction_count += 1
         status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
-
-        # Get individual model predictions for detailed output
-        window = pipeline.get_current_window()
-
-        # EEGNet
-        eeg_probs, eeg_confidence = pipeline.predict_eegnet(window)
-        eeg_disabled = np.all(eeg_probs == 0)
-        eeg_pred_idx = np.argmax(eeg_probs) if not eeg_disabled else 0
-        eeg_label = (
-            pipeline.label_encoder.inverse_transform([eeg_pred_idx])[0]
-            if not eeg_disabled
-            else "---"
-        )
-
-        # ShallowConvNet
-        shallow_probs, shallow_confidence = pipeline.predict_shallow(window)
-        shallow_disabled = np.all(shallow_probs == 0)
-        shallow_pred_idx = np.argmax(shallow_probs) if not shallow_disabled else 0
-        shallow_label = (
-            pipeline.label_encoder.inverse_transform([shallow_pred_idx])[0]
-            if not shallow_disabled
-            else "---"
-        )
-
-        # Tree models
-        rf_probs, xgb_probs, _ = pipeline.predict_tree_models(window)
-        rf_pred_idx = np.argmax(rf_probs)
-        xgb_pred_idx = np.argmax(xgb_probs)
-        rf_label = pipeline.label_encoder.inverse_transform([rf_pred_idx])[0]
-        xgb_label = pipeline.label_encoder.inverse_transform([xgb_pred_idx])[0]
-        rf_conf = np.max(rf_probs)
-        xgb_conf = np.max(xgb_probs)
-
-        # Neat, aligned output
         logger.info(
-            "[%-4d] %s %-8s(ens:%.3f) | EEG:%s SH:%s RF:%s XGB:%s",
+            "[%-4d] %s %-8s(ens:%.3f)",
             prediction_count,
             status,
             predicted_label.upper(),
             confidence,
-            fmt_model(eeg_label, eeg_confidence, disabled=eeg_disabled),
-            fmt_model(shallow_label, shallow_confidence, disabled=shallow_disabled),
-            fmt_model(rf_label, rf_conf, disabled=False),
-            fmt_model(xgb_label, xgb_conf, disabled=False),
         )
-
         if prediction_count % 50 == 0:
             stats = pipeline.get_performance_stats()
             logger.info(
