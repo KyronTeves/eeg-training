@@ -17,12 +17,14 @@ Features:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
 import time
 import warnings
 from collections import Counter, deque
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import joblib
@@ -32,9 +34,9 @@ from keras.models import load_model
 from lsl_stream_handler import LSLStreamHandler
 from utils import (
     CUSTOM_OBJECTS,
-    calibrate_all_models_lsl,  # use the new unified calibration
+    calibrate_all_models_lsl,
     extract_features,
-    handle_errors,  # Add error handler
+    handle_errors,
     load_config,
     setup_logging,
 )
@@ -75,6 +77,50 @@ def short_label(label: str) -> str:
 
     """
     return SHORT_LABELS.get(label.lower(), label[:3].upper())
+
+
+# --- Dynamic resource loading (from test_eeg_model.py pattern) ---
+def load_ensemble_info(config: dict) -> dict:
+    """Load ensemble info from the configured path."""
+    with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_models_from_ensemble_info(ensemble_info: dict) -> list:
+    """Load all models described in the ensemble info dict."""
+    models = []
+    for model_entry in ensemble_info["models"]:
+        model_type = model_entry["type"]
+        model_path = model_entry["path"]
+        name = model_entry["name"]
+        try:
+            if model_type == "keras":
+                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
+            elif model_type == "sklearn":
+                model = joblib.load(model_path)
+            else:
+                logger.warning("Unknown model type: %s for %s", model_type, name)
+                continue
+            models.append(
+                {"name": name, "type": model_type, "model": model, "path": model_path},
+            )
+            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
+        except (OSError, ImportError, TypeError):
+            logger.exception("Failed to load model %s from %s.", name, model_path)
+    return models
+
+
+def load_realtime_resources(config: dict) -> tuple[dict, object, list]:
+    """Load ensemble info, label encoder, and models for real-time prediction."""
+    try:
+        ensemble_info = load_ensemble_info(config)
+        label_encoder = joblib.load(config["LABEL_ENCODER"])
+        logger.info("Loaded ensemble info from %s.", config["ENSEMBLE_INFO_PATH"])
+        models = load_models_from_ensemble_info(ensemble_info)
+        return ensemble_info, label_encoder, models  # noqa: TRY300
+    except Exception:
+        logger.exception("Failed to load ensemble info or label encoder/class list.")
+        raise
 
 
 class OptimizedPredictionPipeline:
