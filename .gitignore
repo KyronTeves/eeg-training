@@ -33,3 +33,4 @@ plots/*.png
 
 alternative/
 models/ensemble_info.json
+.github/copilot-instructions.md
