@@ -839,13 +839,14 @@ def model_only_prediction(
     return prediction_count
 
 
-def prediction_loop(
+def prediction_loop(  # noqa: PLR0913
     lsl_handler: LSLStreamHandler,
     pipeline: OptimizedPredictionPipeline,
     mode: str,
     config_dict: dict,
+    models: list | None = None,
+    ensemble_info: dict | None = None,
     *,
-
     use_hard_voting: bool = False,
 ) -> None:
     """Run the main loop for real-time EEG prediction from LSL stream.
@@ -856,6 +857,8 @@ def prediction_loop(
         mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
         use_hard_voting (bool): Use hard voting for ensemble if True. Defaults to False.
+        models (list): List of loaded model dicts (for ensemble mode).
+        ensemble_info (dict): Ensemble info dict (for ensemble mode).
 
     """
     prediction_count = 0
@@ -868,7 +871,12 @@ def prediction_loop(
                 if pipeline.is_ready_for_prediction():
                     if mode == "ensemble":
                         prediction_count = process_prediction(
-                            pipeline, prediction_count, use_hard_voting=use_hard_voting,
+                            pipeline,
+                            prediction_count,
+                            models=models,
+                            ensemble_info=ensemble_info,
+                            config=config_dict,
+                            use_hard_voting=use_hard_voting,
                         )
                     else:
                         prediction_count = model_only_prediction(
@@ -902,6 +910,8 @@ def main() -> None:
         return
     session_calibration(lsl_handler, config)
     pipeline = initialize_pipeline(config)
+    # Load dynamic ensemble resources once for the session
+    ensemble_info, _, models = load_realtime_resources(config)
     while True:
         mode = select_prediction_mode()
         if mode == "exit":
@@ -923,9 +933,20 @@ def main() -> None:
         logger.info("Think of different directions to control the system.")
         logger.info("Press Ctrl+C to stop.")
         try:
-            prediction_loop(
-                lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting,
-            )
+            if mode == "ensemble":
+                prediction_loop(
+                    lsl_handler,
+                    pipeline,
+                    mode,
+                    config,
+                    use_hard_voting=use_hard_voting,
+                    models=models,
+                    ensemble_info=ensemble_info,
+                )
+            else:
+                prediction_loop(
+                    lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting,
+                )
         except KeyboardInterrupt:
             logger.info("\nPrediction stopped. Returning to menu...")
             continue
