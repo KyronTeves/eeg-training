@@ -157,6 +157,7 @@ class OptimizedPredictionPipeline:
         self.models = {}
         self.scalers = {}
         self.label_encoder = None
+        self.conv1d_feature_extractor = None
 
         # Performance tracking
         self.prediction_times = deque(maxlen=100)
@@ -175,7 +176,7 @@ class OptimizedPredictionPipeline:
         self._shallow_error_logged = False
 
     def load_optimized_models(self) -> None:
-        """Load and optimize all models (EEGNet, ShallowConvNet, RF, XGBoost) and scalers for inference."""
+        """Load, optimize models (EEGNet, ShallowConvNet, RF, XGBoost), scalers, feature extractors for inference."""
         logger.info("Loading and optimizing models for real-time inference...")
         try:
             # CNN Models - now trained with correct window size (125)
@@ -191,7 +192,30 @@ class OptimizedPredictionPipeline:
             # Scalers and encoders
             self.scalers["eegnet"] = joblib.load(self.config["SCALER_EEGNET"])
             self.scalers["tree"] = joblib.load(self.config["SCALER_TREE"])
+            # Optionally load shallow scaler if present
+            if "SCALER_SHALLOW" in self.config:
+                try:
+                    self.scalers["shallow"] = joblib.load(self.config["SCALER_SHALLOW"])
+                except (OSError, ImportError, TypeError):
+                    logger.warning("Could not load SCALER_SHALLOW, using SCALER_EEGNET for shallow model.")
             self.label_encoder = joblib.load(self.config["LABEL_ENCODER"])
+
+            # Load Conv1D feature extractor ONCE if present in config or ensemble_info
+            conv1d_feature_path = self.config.get("CONV1D_FEATURE_EXTRACTOR")
+            if not conv1d_feature_path:
+                # Try default path
+                conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
+            try:
+                self.conv1d_feature_extractor = load_model(conv1d_feature_path)
+                logger.info("Loaded Conv1D feature extractor from %s", conv1d_feature_path)
+            except (OSError, ImportError):
+                try:
+                    self.conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
+                    logger.info("Loaded Conv1D feature extractor from fallback .h5")
+                except (OSError, ImportError):
+                    self.conv1d_feature_extractor = None
+                    logger.info("No Conv1D feature extractor found; skipping.")
+
             self._warmup_models()
             logger.info("Model optimization complete.")
         except FileNotFoundError:
@@ -536,14 +560,12 @@ class OptimizedPredictionPipeline:
     def prepare_realtime_features(
         self,
         window: np.ndarray,
-        ensemble_info: dict,
         config: dict,
     ) -> dict:
         """Prepare all feature representations for a single real-time EEG window.
 
         Args:
             window (np.ndarray): EEG window, shape (1, window_size, n_channels)
-            ensemble_info (dict): Ensemble info loaded from JSON.
             config (dict): Configuration dictionary.
 
         Returns:
@@ -555,39 +577,19 @@ class OptimizedPredictionPipeline:
         x_classic_features = np.array([
             extract_features(window[0], config["SAMPLING_RATE"]),
         ])  # shape (1, n_features)
-        scaler_tree = joblib.load(config["SCALER_TREE"])
-        x_classic_features_scaled = scaler_tree.transform(x_classic_features)
+        x_classic_features_scaled = self.scalers["tree"].transform(x_classic_features)
 
         # Scaled window for CNNs
-        scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
         x_window_flat = window.reshape(-1, n_channels)
-        x_window_scaled = scaler_eegnet.transform(x_window_flat).reshape(window.shape)
+        x_window_scaled = self.scalers["eegnet"].transform(x_window_flat).reshape(window.shape)
         # EEGNet input shape: (batch, channels, window, 1)
         x_window_eegnet = np.expand_dims(x_window_scaled, -1)
         x_window_eegnet = np.transpose(x_window_eegnet, (0, 2, 1, 3))
 
         # Conv1D features (if extractor exists)
-        conv1d_feature_extractor = None
-        conv1d_feature_path = config.get("CONV1D_FEATURE_EXTRACTOR")
-        if not conv1d_feature_path:
-            for entry in ensemble_info["models"]:
-                if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
-                    "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
-                ):
-                    conv1d_feature_path = entry["path"]
-                    break
-        if not conv1d_feature_path:
-            conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
-        try:
-            conv1d_feature_extractor = load_model(conv1d_feature_path)
-        except (OSError, ImportError):
-            try:
-                conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
-            except (OSError, ImportError):
-                conv1d_feature_extractor = None
         x_conv1d_features = None
-        if conv1d_feature_extractor is not None:
-            x_conv1d_features = conv1d_feature_extractor.predict(x_window_scaled, batch_size=1, verbose=0)
+        if self.conv1d_feature_extractor is not None:
+            x_conv1d_features = self.conv1d_feature_extractor.predict(x_window_scaled, batch_size=1, verbose=0)
         return {
             "classic_features": x_classic_features_scaled,
             "windows_scaled": x_window_scaled,
@@ -625,7 +627,6 @@ class OptimizedPredictionPipeline:
     def predict_realtime_dynamic(
         self,
         models: list,
-        ensemble_info: dict,
         config: dict,
         *,
         use_hard_voting: bool = True,
@@ -635,7 +636,7 @@ class OptimizedPredictionPipeline:
             return None
         window = self.get_current_window()
         # Prepare all features for this window
-        features = self.prepare_realtime_features(window, ensemble_info, config)
+        features = self.prepare_realtime_features(window, config)
         # Map model names to their required input features
         model_inputs = self.map_model_inputs_realtime(models, features)
         # Run predictions for all models
@@ -697,9 +698,9 @@ def process_prediction(  # noqa: PLR0913
             if not selected_models:
                 logger.error("Model '%s' not found in loaded models.", mode)
                 return prediction_count
-            result = pipeline.predict_realtime_dynamic(selected_models, ensemble_info, config, use_hard_voting=True)
+            result = pipeline.predict_realtime_dynamic(selected_models, config, use_hard_voting=True)
         else:
-            result = pipeline.predict_realtime_dynamic(models, ensemble_info, config, use_hard_voting=use_hard_voting)
+            result = pipeline.predict_realtime_dynamic(models, config, use_hard_voting=use_hard_voting)
     else:
         # fallback to legacy method for backward compatibility
         result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
