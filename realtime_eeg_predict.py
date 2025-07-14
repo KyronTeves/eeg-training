@@ -700,7 +700,63 @@ def process_prediction(  # noqa: PLR0913
                 return prediction_count
             result = pipeline.predict_realtime_dynamic(selected_models, config, use_hard_voting=True)
         else:
-            result = pipeline.predict_realtime_dynamic(models, config, use_hard_voting=use_hard_voting)
+            # --- Detailed per-model output for ensemble ---
+            if not pipeline.is_ready_for_prediction():
+                return prediction_count
+            window = pipeline.get_current_window()
+            features = pipeline.prepare_realtime_features(window, config)
+            model_inputs = pipeline.map_model_inputs_realtime(models, features)
+            model_results = []
+            predictions = {}
+            confidences = {}
+            for m in models:
+                name = m["name"]
+                model = m["model"]
+                x_input = model_inputs[name]
+                if m["type"] == "keras":
+                    y_pred_prob = model.predict(x_input, verbose=0)
+                    y_pred = np.argmax(y_pred_prob, axis=1)
+                    pred_idx = y_pred[0]
+                    conf = float(np.max(y_pred_prob))
+                else:
+                    y_pred_prob = None
+                    y_pred = model.predict(x_input)
+                    pred_idx = y_pred[0]
+                    # For sklearn, try predict_proba if available
+                    if hasattr(model, "predict_proba"):
+                        proba = model.predict_proba(x_input)[0]
+                        conf = float(np.max(proba))
+                    else:
+                        conf = 1.0
+                pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
+                predictions[name] = pred_idx
+                confidences[name] = conf
+                model_results.append(f"{name}:{short_label(pred_label)}({conf:.3f})")
+            # Ensemble voting
+            vote_counts = Counter(predictions.values())
+            majority_pred = vote_counts.most_common(1)[0][0]
+            confidence = vote_counts.most_common(1)[0][1] / len(predictions)
+            predicted_label = pipeline.label_encoder.inverse_transform([majority_pred])[0]
+            pipeline.last_prediction = predicted_label
+            pipeline.prediction_confidence = confidence
+            prediction_count += 1
+            status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
+            logger.info(
+                "[%-4d] %s %-8s(ens:%.3f) | %s",
+                prediction_count,
+                status,
+                predicted_label.upper(),
+                confidence,
+                " ".join(model_results),
+            )
+            if prediction_count % 50 == 0:
+                stats = pipeline.get_performance_stats()
+                logger.info(
+                    "Performance: %.1fms avg, %.1f FPS",
+                    stats["avg_latency_ms"],
+                    stats["fps"],
+                )
+            return prediction_count
     else:
         # fallback to legacy method for backward compatibility
         result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
@@ -783,10 +839,11 @@ def select_prediction_mode() -> str | None:
     logger.info("2. ShallowConvNet only")
     logger.info("3. Random Forest only")
     logger.info("4. XGBoost only")
-    logger.info("5. Ensemble (EEGNet, ShallowConvNet, Random Forest, XGBoost)")
-    logger.info("6. Exit")
+    logger.info("5. Conv1D only")
+    logger.info("6. Ensemble (EEGNet, ShallowConvNet, Conv1D, Random Forest, XGBoost)")
+    logger.info("7. Exit")
     while True:
-        mode = input("Enter 1, 2, 3, 4, 5, or 6: ").strip()
+        mode = input("Enter 1, 2, 3, 4, 5, 6, or 7: ").strip()
         if mode == "1":
             return "eegnet"
         if mode == "2":
@@ -796,10 +853,12 @@ def select_prediction_mode() -> str | None:
         if mode == "4":
             return "xgb"
         if mode == "5":
-            return "ensemble"
+            return "conv1d"
         if mode == "6":
+            return "ensemble"
+        if mode == "7":
             return "exit"
-        logger.warning("Invalid selection. Please enter a number from 1 to 6.")
+        logger.warning("Invalid selection. Please enter a number from 1 to 7.")
 
 
 def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
