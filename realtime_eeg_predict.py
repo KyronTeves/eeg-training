@@ -827,38 +827,41 @@ def session_calibration(lsl_handler: LSLStreamHandler, config: dict) -> None:
         logger.info("Skipping session calibration. Using pre-trained models.")
 
 
-def select_prediction_mode() -> str | None:
-    """Prompt user to select prediction display mode (individual model, ensemble, or exit).
+def select_prediction_mode(ensemble_info: dict | None = None) -> str | None:
+    """Prompt user to select prediction display mode dynamically from ensemble_info.
+
+    Args:
+        ensemble_info (dict, optional): Ensemble info dict. If None, loads from config.
 
     Returns:
-        str | None: Mode string ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble', 'exit')
+        str | None: Mode string (model name, 'ensemble', or 'exit')
 
     """
+    if ensemble_info is None:
+        config = load_config()
+        ensemble_info = load_ensemble_info(config)
+    model_names = [m["name"] for m in ensemble_info["models"]]
     logger.info("\nChoose prediction display mode:")
-    logger.info("1. EEGNet only")
-    logger.info("2. ShallowConvNet only")
-    logger.info("3. Random Forest only")
-    logger.info("4. XGBoost only")
-    logger.info("5. Conv1D only")
-    logger.info("6. Ensemble (EEGNet, ShallowConvNet, Conv1D, Random Forest, XGBoost)")
-    logger.info("7. Exit")
+    for idx, name in enumerate(model_names, 1):
+        logger.info("%d. %s only", idx, name)
+    logger.info("%d. Ensemble (all models)", len(model_names)+1)
+    logger.info("%d. Exit", len(model_names)+2)
     while True:
-        mode = input("Enter 1, 2, 3, 4, 5, 6, or 7: ").strip()
-        if mode == "1":
-            return "eegnet"
-        if mode == "2":
-            return "shallow"
-        if mode == "3":
-            return "rf"
-        if mode == "4":
-            return "xgb"
-        if mode == "5":
-            return "conv1d"
-        if mode == "6":
+        prompt = f"Enter 1-{len(model_names)+2}: "
+        mode = input(prompt).strip()
+        try:
+            mode_idx = int(mode)
+        except ValueError:
+            logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names)+2)
+            continue
+        if 1 <= mode_idx <= len(model_names):
+            # Return a normalized key for single-model mode (lowercase, no spaces, for matching)
+            return model_names[mode_idx-1].lower().replace(" ", "")
+        if mode_idx == len(model_names)+1:
             return "ensemble"
-        if mode == "7":
+        if mode_idx == len(model_names)+2:
             return "exit"
-        logger.warning("Invalid selection. Please enter a number from 1 to 7.")
+        logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names)+2)
 
 
 def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
@@ -874,9 +877,6 @@ def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
     pipeline = OptimizedPredictionPipeline(config_dict)
     pipeline.load_optimized_models()
     return pipeline
-
-
-
 
 
 def prediction_loop(  # noqa: PLR0913
@@ -949,7 +949,7 @@ def main() -> None:
     # Load dynamic ensemble resources once for the session
     ensemble_info, _, models = load_realtime_resources(config)
     while True:
-        mode = select_prediction_mode()
+        mode = select_prediction_mode(ensemble_info)
         if mode == "exit":
             logger.info("Exiting real-time prediction.")
             break
