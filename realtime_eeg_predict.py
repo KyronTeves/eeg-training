@@ -667,17 +667,19 @@ class OptimizedPredictionPipeline:
 def process_prediction(  # noqa: PLR0913
     pipeline: OptimizedPredictionPipeline,
     prediction_count: int,
+    mode: str,
     models: list | None = None,
     ensemble_info: dict | None = None,
     config: dict | None = None,
     *,
     use_hard_voting: bool = False,
 ) -> int:
-    """Process a single ensemble prediction and log detailed model breakdown (dynamic version).
+    """Process a single prediction (single-model or ensemble) and log detailed model breakdown (dynamic version).
 
     Args:
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): The current prediction count.
+        mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         use_hard_voting (bool): Whether to use hard voting.
         models (list): List of loaded model dicts.
         ensemble_info (dict): Ensemble info dict.
@@ -687,22 +689,40 @@ def process_prediction(  # noqa: PLR0913
         int: Updated prediction count.
 
     """
+    # Use dynamic system for all modes
     if models is not None and ensemble_info is not None and config is not None:
-        result = pipeline.predict_realtime_dynamic(models, ensemble_info, config, use_hard_voting=use_hard_voting)
+        # For single-model mode, filter models to just the selected one
+        if mode != "ensemble":
+            selected_models = [m for m in models if mode.lower() in m["name"].lower()]
+            if not selected_models:
+                logger.error("Model '%s' not found in loaded models.", mode)
+                return prediction_count
+            result = pipeline.predict_realtime_dynamic(selected_models, ensemble_info, config, use_hard_voting=True)
+        else:
+            result = pipeline.predict_realtime_dynamic(models, ensemble_info, config, use_hard_voting=use_hard_voting)
     else:
         # fallback to legacy method for backward compatibility
         result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
     if result:
         predicted_label, confidence = result
         prediction_count += 1
-        status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
-        logger.info(
-            "[%-4d] %s %-8s(ens:%.3f)",
-            prediction_count,
-            status,
-            predicted_label.upper(),
-            confidence,
-        )
+        if mode == "ensemble":
+            status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
+            logger.info(
+                "[%-4d] %s %-8s(ens:%.3f)",
+                prediction_count,
+                status,
+                predicted_label.upper(),
+                confidence,
+            )
+        else:
+            logger.info(
+                "[%4d] %8s (conf: %.3f) [%s only]",
+                prediction_count,
+                predicted_label.upper(),
+                confidence,
+                mode.upper(),
+            )
         if prediction_count % 50 == 0:
             stats = pipeline.get_performance_stats()
             logger.info(
@@ -796,47 +816,7 @@ def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
     return pipeline
 
 
-def model_only_prediction(
-    pipeline: OptimizedPredictionPipeline, prediction_count: int, model_name: str,
-) -> int:
-    """Run prediction for a single model and log the result.
 
-    Args:
-        pipeline (OptimizedPredictionPipeline): The prediction pipeline.
-        prediction_count (int): Current prediction count.
-        model_name (str): One of 'eegnet', 'shallow', 'rf', 'xgb'.
-
-    Returns:
-        int: Updated prediction count.
-
-    """
-    window = pipeline.get_current_window()
-    if model_name == "eegnet":
-        probs, confidence = pipeline.predict_eegnet(window)
-    elif model_name == "shallow":
-        probs, confidence = pipeline.predict_shallow(window)
-    elif model_name == "rf":
-        _, rf_probs, _ = pipeline.predict_tree_models(window)
-        probs = rf_probs
-        confidence = np.max(probs)
-    elif model_name == "xgb":
-        _, xgb_probs, _ = pipeline.predict_tree_models(window)
-        probs = xgb_probs
-        confidence = np.max(probs)
-    else:
-        logger.error("Unknown model: %s", model_name)
-        return prediction_count
-    pred_idx = np.argmax(probs)
-    pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
-    prediction_count += 1
-    logger.info(
-        "[%4d] %8s (conf: %.3f) [%s only]",
-        prediction_count,
-        pred_label.upper(),
-        confidence,
-        model_name.upper(),
-    )
-    return prediction_count
 
 
 def prediction_loop(  # noqa: PLR0913
@@ -869,19 +849,15 @@ def prediction_loop(  # noqa: PLR0913
                 for sample in window:
                     pipeline.add_sample(sample)
                 if pipeline.is_ready_for_prediction():
-                    if mode == "ensemble":
-                        prediction_count = process_prediction(
-                            pipeline,
-                            prediction_count,
-                            models=models,
-                            ensemble_info=ensemble_info,
-                            config=config_dict,
-                            use_hard_voting=use_hard_voting,
-                        )
-                    else:
-                        prediction_count = model_only_prediction(
-                            pipeline, prediction_count, mode,
-                        )
+                    prediction_count = process_prediction(
+                        pipeline,
+                        prediction_count,
+                        mode,
+                        models=models,
+                        ensemble_info=ensemble_info,
+                        config=config_dict,
+                        use_hard_voting=use_hard_voting,
+                    )
             time.sleep(0.001)
     except KeyboardInterrupt:
         logger.info("Stopping real-time prediction...")
