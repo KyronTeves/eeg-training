@@ -258,9 +258,6 @@ class OptimizedPredictionPipeline:
             (1, self.window_size, self.n_channels),
         )
 
-    def _reset_prediction_times(self) -> None:
-        """Clear the prediction times buffer (for performance stats)."""
-        self.prediction_times.clear()
 
     def predict_eegnet(self, window: np.ndarray) -> tuple[np.ndarray, float]:
         """Run EEGNet model prediction on a window of EEG data.
