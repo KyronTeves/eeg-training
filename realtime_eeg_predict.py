@@ -656,13 +656,6 @@ class OptimizedPredictionPipeline:
                 confidence,
                 selected_models[0]["name"].upper(),
             )
-            if prediction_count % 50 == 0:
-                stats = self.get_performance_stats()
-                logger.info(
-                    "Performance: %.1fms avg, %.1f FPS",
-                    stats["avg_latency_ms"],
-                    stats["fps"],
-                )
         return prediction_count
 
     def predict_and_log_ensemble(self, models: list, config: dict, prediction_count: int) -> int:
@@ -713,13 +706,6 @@ class OptimizedPredictionPipeline:
             confidence,
             " ".join(model_results),
         )
-        if prediction_count % 50 == 0:
-            stats = self.get_performance_stats()
-            logger.info(
-                "Performance: %.1fms avg, %.1f FPS",
-                stats["avg_latency_ms"],
-                stats["fps"],
-            )
         return prediction_count
 
 
@@ -730,8 +716,6 @@ def process_prediction(  # noqa: PLR0913
     models: list | None = None,
     ensemble_info: dict | None = None,
     config: dict | None = None,
-    *,
-    use_hard_voting: bool = False,
 ) -> int:
     """Process a single prediction (single-model or ensemble) and log detailed model breakdown (dynamic version).
 
@@ -748,7 +732,7 @@ def process_prediction(  # noqa: PLR0913
         int: Updated prediction count.
 
     """
-    # Use dynamic system for all modes
+    # Use dynamic system for all modes (legacy fallback removed)
     if models is not None and ensemble_info is not None and config is not None:
         if mode != "ensemble":
             selected_models = [m for m in models if mode.lower() in m["name"].lower()]
@@ -762,36 +746,6 @@ def process_prediction(  # noqa: PLR0913
                 use_hard_voting=True,
             )
         return pipeline.predict_and_log_ensemble(models, config, prediction_count)
-
-    # fallback to legacy method for backward compatibility
-    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
-    if result:
-        predicted_label, confidence = result
-        prediction_count += 1
-        if mode == "ensemble":
-            status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
-            logger.info(
-                "[%-4d] %s %-8s(ens:%.3f)",
-                prediction_count,
-                status,
-                predicted_label.upper(),
-                confidence,
-            )
-        else:
-            logger.info(
-                "[%4d] %8s (conf: %.3f) [%s only]",
-                prediction_count,
-                predicted_label.upper(),
-                confidence,
-                mode.upper(),
-            )
-        if prediction_count % 50 == 0:
-            stats = pipeline.get_performance_stats()
-            logger.info(
-                "Performance: %.1fms avg, %.1f FPS",
-                stats["avg_latency_ms"],
-                stats["fps"],
-            )
     return prediction_count
 
 
@@ -891,8 +845,6 @@ def prediction_loop(  # noqa: PLR0913
     config_dict: dict,
     models: list | None = None,
     ensemble_info: dict | None = None,
-    *,
-    use_hard_voting: bool = False,
 ) -> None:
     """Run the main loop for real-time EEG prediction from LSL stream.
 
@@ -901,7 +853,6 @@ def prediction_loop(  # noqa: PLR0913
         pipeline (OptimizedPredictionPipeline): Prediction pipeline.
         mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
-        use_hard_voting (bool): Use hard voting for ensemble if True. Defaults to False.
         models (list): List of loaded model dicts (for ensemble mode).
         ensemble_info (dict): Ensemble info dict (for ensemble mode).
 
@@ -921,7 +872,6 @@ def prediction_loop(  # noqa: PLR0913
                         models=models,
                         ensemble_info=ensemble_info,
                         config=config_dict,
-                        use_hard_voting=use_hard_voting,
                     )
             time.sleep(0.001)
     except KeyboardInterrupt:
@@ -1000,14 +950,6 @@ def main() -> None:
         if not lsl_handler.connected and not lsl_handler.connect():
             logger.error("Failed to reconnect to LSL stream. Exiting.")
             break
-        use_hard_voting = False
-        if mode == "ensemble":
-            logger.info("\nChoose ensemble method:")
-            logger.info("1. Weighted soft voting (default)")
-            logger.info("2. Hard voting (majority rule, matches offline test)")
-            method = input("Enter 1 or 2: ").strip()
-            if method == "2":
-                use_hard_voting = True
         logger.info("=== REAL-TIME PREDICTION STARTED ===")
         logger.info("Think of different directions to control the system.")
         logger.info("Press Ctrl+C to stop.")
@@ -1018,13 +960,12 @@ def main() -> None:
                     pipeline,
                     mode,
                     config,
-                    use_hard_voting=use_hard_voting,
                     models=models,
                     ensemble_info=ensemble_info,
                 )
             else:
                 prediction_loop(
-                    lsl_handler, pipeline, mode, config, use_hard_voting=use_hard_voting,
+                    lsl_handler, pipeline, mode, config,
                 )
         except KeyboardInterrupt:
             logger.info("\nPrediction stopped. Returning to menu...")
