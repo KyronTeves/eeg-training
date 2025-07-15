@@ -1,7 +1,6 @@
 # EEG Direction Classification & Real-Time Prediction
 
 [![Python 3.10.11](https://img.shields.io/badge/python-3.10.11-blue.svg)](https://www.python.org/downloads/release/python-31011/)
-[![License: Apache 2.0 / CC0 1.0](https://img.shields.io/badge/license-Apache%202.0%20%2F%20CC0-lightgrey.svg)](./LICENSE.TXT)
 
 > **⚠️ WORK IN PROGRESS:** This system is under active development. Features may be incomplete or unstable. Use for research and development only. Real-time prediction and model integration are experimental.
 
@@ -29,7 +28,6 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
   - [Development Status](#development-status)
   - [Real-time Output Example](#real-time-output-example)
   - [Troubleshooting](#troubleshooting)
-  - [License](#license)
   - [References](#references)
 
 ## Features
@@ -146,10 +144,6 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 - Check that `pylsl` is installed and stream name matches config
 - For model errors, retrain using `train_eeg_model.py` and check data quality
 - For performance issues, adjust window size, batch size, or confidence threshold in config
-
-## License
-
-See `LICENSE.TXT` for details. Portions of this project are released under Creative Commons Zero 1.0 (CC0) and Apache 2.0, as described in `EEGModels.py`.
 
 ## References
 
