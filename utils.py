@@ -657,3 +657,33 @@ def load_json(path: str) -> dict[str, Any]:
     """
     with Path(path).open("r", encoding="utf-8") as f:
         return json.load(f)
+
+
+def load_ensemble_info(config: dict) -> dict:
+    """Load ensemble info from the configured path."""
+    with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_models_from_ensemble_info(ensemble_info: dict) -> list:
+    """Load all models described in the ensemble info dict."""
+    models = []
+    for model_entry in ensemble_info["models"]:
+        model_type = model_entry["type"]
+        model_path = model_entry["path"]
+        name = model_entry["name"]
+        try:
+            if model_type == "keras":
+                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
+            elif model_type == "sklearn":
+                model = joblib.load(model_path)
+            else:
+                logger.warning("Unknown model type: %s for %s", model_type, name)
+                continue
+            models.append(
+                {"name": name, "type": model_type, "model": model, "path": model_path},
+            )
+            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
+        except (OSError, ImportError, TypeError):
+            logger.exception("Failed to load model %s from %s.", name, model_path)
+    return models

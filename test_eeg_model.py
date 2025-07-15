@@ -8,7 +8,6 @@ evaluation metrics for all models and ensemble.
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from pathlib import Path
@@ -25,11 +24,12 @@ from sklearn.metrics import classification_report, confusion_matrix
 from umap import UMAP
 
 from utils import (
-    CUSTOM_OBJECTS,
     check_labels_valid,
     check_no_nan,
     extract_features,
     load_config,
+    load_ensemble_info,
+    load_models_from_ensemble_info,
     setup_logging,
     window_data,
 )
@@ -46,48 +46,6 @@ LABEL_ENCODER_PATH = config["LABEL_ENCODER"]
 CLASS_LIST_PATH = config["LABEL_CLASSES_NPY"]
 
 
-# Load ensemble info only (no label encoder/class list)
-def load_ensemble_info() -> dict:
-    """Load ensemble info from the configured path.
-
-    Returns:
-        dict: Ensemble info loaded from JSON.
-
-    """
-    with Path(ENSEMBLE_INFO_PATH).open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-# Load all models described in ensemble_info.json
-def load_models_from_ensemble_info(ensemble_info: dict) -> list:
-    """Load all models described in the ensemble info dict.
-
-    Args:
-        ensemble_info (dict): Ensemble info loaded from JSON.
-
-    Returns:
-        list: List of dicts with model metadata and loaded model objects.
-
-    """
-    models = []
-    for model_entry in ensemble_info["models"]:
-        model_type = model_entry["type"]
-        model_path = model_entry["path"]
-        name = model_entry["name"]
-        try:
-            if model_type == "keras":
-                # Always provide custom_objects for Keras models
-                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
-            elif model_type == "sklearn":
-                model = joblib.load(model_path)
-            else:
-                logger.warning("Unknown model type: %s for %s", model_type, name)
-                continue
-            models.append({"name": name, "type": model_type, "model": model, "path": model_path})
-            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
-        except (OSError, ImportError, TypeError):
-            logger.exception("Failed to load model %s from %s.", name, model_path)
-    return models
 
 
 def load_resources() -> tuple[dict, object, list]:
@@ -98,7 +56,7 @@ def load_resources() -> tuple[dict, object, list]:
 
     """
     try:
-        ensemble_info = load_ensemble_info()
+        ensemble_info = load_ensemble_info(config)
         label_encoder = joblib.load(LABEL_ENCODER_PATH)
         logger.info("Loaded ensemble info from %s.", ENSEMBLE_INFO_PATH)
         models = load_models_from_ensemble_info(ensemble_info)
