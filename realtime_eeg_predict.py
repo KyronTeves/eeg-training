@@ -79,8 +79,6 @@ def short_label(label: str) -> str:
     return SHORT_LABELS.get(label.lower(), label[:3].upper())
 
 
-
-
 def load_realtime_resources(config: dict) -> tuple[dict, object, list]:
     """Load ensemble info, label encoder, and models for real-time prediction."""
     try:
@@ -470,64 +468,6 @@ class OptimizedPredictionPipeline:
         return predicted_label, confidence
 
 
-    def get_performance_stats(self) -> dict:
-        """Get average latency, FPS, buffer size, and last confidence for real-time predictions.
-
-        Returns:
-            dict: Stats including avg_latency_ms, fps, buffer_size, last_confidence
-
-        """
-        if not self.prediction_times:
-            return {"avg_latency_ms": 0, "fps": 0}
-
-        avg_latency = np.mean(self.prediction_times) * 1000  # Convert to ms
-        fps = 1.0 / np.mean(self.prediction_times) if self.prediction_times else 0
-
-        return {
-            "avg_latency_ms": round(avg_latency, 2),
-            "fps": round(fps, 1),
-            "buffer_size": len(self.buffer),
-            "last_confidence": round(self.prediction_confidence, 3),
-        }
-
-    def start_async_prediction(
-        self, callback: Callable[[tuple[str, float]], None] | None = None,
-    ) -> None:
-        """Start asynchronous prediction loop in a background thread.
-
-        Args:
-            callback (Callable[[tuple[str, float]], None] | None): Callback for prediction results. Defaults to None.
-
-        """
-
-        def _async_prediction_loop() -> None:
-            while not self.stop_thread:
-                try:
-                    if self.is_ready_for_prediction():
-                        result = self.predict_realtime()
-                        if result and callback:
-                            callback(result)
-                        self.prediction_ready.set()
-                except RuntimeError:
-                    logger.exception(
-                        "Unexpected runtime error in prediction loop",
-                    )
-
-                time.sleep(0.001)  # Small delay to prevent busy waiting
-
-        self.prediction_thread = threading.Thread(
-            target=_async_prediction_loop, daemon=True,
-        )
-        self.prediction_thread.start()
-        logger.info("Asynchronous prediction started.")
-
-    def stop_async_prediction(self) -> None:
-        """Stop the asynchronous prediction thread."""
-        self.stop_thread = True
-        if self.prediction_thread:
-            self.prediction_thread.join(timeout=1.0)
-        logger.info("Asynchronous prediction stopped.")
-
     def prepare_realtime_features(
         self,
         window: np.ndarray,
@@ -567,6 +507,7 @@ class OptimizedPredictionPipeline:
             "windows_eegnet": x_window_eegnet,
             "conv1d_features": x_conv1d_features,
         }
+
 
     def map_model_inputs_realtime(self, models: list, features: dict) -> dict:
         """Map model names to their required input features for real-time prediction.
@@ -707,6 +648,66 @@ class OptimizedPredictionPipeline:
             " ".join(model_results),
         )
         return prediction_count
+
+
+    def get_performance_stats(self) -> dict:
+        """Get average latency, FPS, buffer size, and last confidence for real-time predictions.
+
+        Returns:
+            dict: Stats including avg_latency_ms, fps, buffer_size, last_confidence
+
+        """
+        if not self.prediction_times:
+            return {"avg_latency_ms": 0, "fps": 0}
+
+        avg_latency = np.mean(self.prediction_times) * 1000  # Convert to ms
+        fps = 1.0 / np.mean(self.prediction_times) if self.prediction_times else 0
+
+        return {
+            "avg_latency_ms": round(avg_latency, 2),
+            "fps": round(fps, 1),
+            "buffer_size": len(self.buffer),
+            "last_confidence": round(self.prediction_confidence, 3),
+        }
+
+    def start_async_prediction(
+        self, callback: Callable[[tuple[str, float]], None] | None = None,
+    ) -> None:
+        """Start asynchronous prediction loop in a background thread.
+
+        Args:
+            callback (Callable[[tuple[str, float]], None] | None): Callback for prediction results. Defaults to None.
+
+        """
+        def _async_prediction_loop() -> None:
+            while not self.stop_thread:
+                try:
+                    if self.is_ready_for_prediction():
+                        result = self.predict_realtime()
+                        if result and callback:
+                            callback(result)
+                        self.prediction_ready.set()
+                except RuntimeError:
+                    logger.exception(
+                        "Unexpected runtime error in prediction loop",
+                    )
+
+                time.sleep(0.001)  # Small delay to prevent busy waiting
+        self.prediction_thread = threading.Thread(
+            target=_async_prediction_loop, daemon=True,
+        )
+        self.prediction_thread.start()
+        logger.info("Asynchronous prediction started.")
+
+
+    def stop_async_prediction(self) -> None:
+        """Stop the asynchronous prediction thread."""
+        self.stop_thread = True
+        if self.prediction_thread:
+            self.prediction_thread.join(timeout=1.0)
+        logger.info("Asynchronous prediction stopped.")
+
+# End of OptimizedPredictionPipeline class
 
 
 def process_prediction(  # noqa: PLR0913
