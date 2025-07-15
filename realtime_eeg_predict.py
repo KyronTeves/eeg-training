@@ -392,47 +392,7 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    def predict_realtime(self) -> tuple[str, float] | None:
-        """Perform ensemble prediction using all available models on the current buffer (hard voting only).
-
-        Returns:
-            tuple[str, float] | None: (predicted_label, confidence) or None if not enough data
-
-        """
-        if not self.is_ready_for_prediction():
-            return None
-        window = self.get_current_window()
-        eeg_probs, _ = self.predict_eegnet(window)
-        shallow_probs, _ = self.predict_shallow(window)
-        rf_probs, xgb_probs, _ = self.predict_tree_models(window)
-
-        # Logging for diagnostics
-        logger.debug("EEGNet probs: %s", eeg_probs)
-        logger.debug("ShallowConvNet probs: %s", shallow_probs)
-        logger.debug("RandomForest probs: %s", rf_probs)
-        logger.debug("XGBoost probs: %s", xgb_probs)
-
-        # Get predicted labels for hard voting
-        model_preds = []
-        if not np.all(eeg_probs == 0):
-            eeg_pred = np.argmax(eeg_probs)
-            model_preds.append(eeg_pred)
-        if not np.all(shallow_probs == 0):
-            shallow_pred = np.argmax(shallow_probs)
-            model_preds.append(shallow_pred)
-        model_preds.append(np.argmax(rf_probs))
-        model_preds.append(np.argmax(xgb_probs))
-        # Hard voting (majority rule)
-        if not model_preds:
-            return "neutral", 0.0
-
-        vote_counts = Counter(model_preds)
-        majority_pred = vote_counts.most_common(1)[0][0]
-        confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
-        predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
-        self.last_prediction = predicted_label
-        self.prediction_confidence = confidence
-        return predicted_label, confidence
+    # The legacy predict_realtime method has been removed. Use predict_realtime_dynamic for all ensemble predictions.
 
 
     def prepare_realtime_features(
@@ -632,18 +592,25 @@ class OptimizedPredictionPipeline:
 
     def start_async_prediction(
         self, callback: Callable[[tuple[str, float]], None] | None = None,
+        models: list | None = None,
+        config: dict | None = None,
     ) -> None:
-        """Start asynchronous prediction loop in a background thread.
+        """Start asynchronous prediction loop in a background thread using dynamic ensemble prediction.
 
         Args:
             callback (Callable[[tuple[str, float]], None] | None): Callback for prediction results. Defaults to None.
+            models (list): List of loaded model dicts for dynamic prediction.
+            config (dict): Configuration dictionary.
 
         """
+        if models is None or config is None:
+            logger.error("Models and config must be provided for async prediction.")
+            return
         def _async_prediction_loop() -> None:
             while not self.stop_thread:
                 try:
                     if self.is_ready_for_prediction():
-                        result = self.predict_realtime()
+                        result = self.predict_realtime_dynamic(models, config)
                         if result and callback:
                             callback(result)
                         self.prediction_ready.set()
@@ -867,7 +834,11 @@ def test_models_without_lsl() -> bool | None:
         for sample in fake_window:
             pipeline.add_sample(sample)
         if pipeline.is_ready_for_prediction():
-            result = pipeline.predict_realtime()
+            # Use the dynamic system for test prediction
+            # Load ensemble info and models for dynamic prediction
+            ensemble_info = load_ensemble_info(config)
+            models = load_models_from_ensemble_info(ensemble_info)
+            result = pipeline.predict_realtime_dynamic(models, config)
             if result:
                 label, confidence = result
                 logger.info(
