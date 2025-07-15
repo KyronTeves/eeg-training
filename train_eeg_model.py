@@ -420,14 +420,14 @@ def train_and_save_tree_models(  # noqa: PLR0913
     logger.info("%sTree models and scaler saved: %s, %s, %s", log_prefix, rf_path, xgb_path, scaler_path)
     if ensemble_info is not None:
         ensemble_info.append({
-            "name": log_prefix.strip() + "RandomForest",
+            "name": f"{log_prefix.strip()} RandomForest",
             "path": rf_path,
             "type": "sklearn",
             "accuracy": float(rf_acc),
             "weight": 1.0,
         })
         ensemble_info.append({
-            "name": log_prefix.strip() + "XGBoost",
+            "name": f"{log_prefix.strip()} XGBoost",
             "path": xgb_path,
             "type": "sklearn",
             "accuracy": float(xgb_acc),

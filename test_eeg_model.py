@@ -234,8 +234,8 @@ def log_per_sample_predictions(
     """Log per-sample predictions for all models and ensemble.
 
     Args:
-        y_windows (np.ndarray): _description_
-        predictions (dict): _description_
+        y_windows (np.ndarray): Windowed true labels, shape (n_samples, 1) or (n_samples,).
+        predictions (dict): Mapping from model names to their predicted label arrays.
         pred_ensemble_labels (list): Ensemble predicted labels.
         label_encoder (LabelEncoder): Label encoder for inverse transforming labels.
         y_true_labels (np.ndarray): True labels for the samples.
