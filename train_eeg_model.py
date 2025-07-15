@@ -304,8 +304,13 @@ def train_eegnet_model(  # noqa: PLR0913
             loss=config["LOSS_FUNCTION"],
             metrics=["accuracy"],
         )
-        # ModelCheckpoint for best weights
-        checkpoint_path = model_path.replace(".h5", "_best.h5").replace(".keras", "_best.keras")
+        # ModelCheckpoint for best weights (config-driven)
+        if model_name == "EEGNet":
+            checkpoint_path = config.get("MODEL_EEGNET_CHECKPOINT")
+        elif model_name == "ShallowConvNet":
+            checkpoint_path = config.get("MODEL_SHALLOW_CHECKPOINT")
+        else:
+            checkpoint_path = model_path.replace(".h5", "_best.h5").replace(".keras", "_best.keras") # fallback
         model_checkpoint = ModelCheckpoint(
             checkpoint_path,
             monitor="val_accuracy",
@@ -487,7 +492,7 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
         mode="max",
     )
     model_checkpoint = ModelCheckpoint(
-        "models/best_conv1d_temp.keras",
+        config["MODEL_CONV1D_CHECKPOINT"],
         monitor="val_accuracy",
         save_best_only=True,
         verbose=1,

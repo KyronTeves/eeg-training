@@ -40,13 +40,12 @@ if TYPE_CHECKING:
 setup_logging()
 logger = logging.getLogger(__name__)
 
-config = load_config()
-ENSEMBLE_INFO_PATH = config["ENSEMBLE_INFO_PATH"]
-LABEL_ENCODER_PATH = config["LABEL_ENCODER"]
 
-
-def load_resources() -> tuple[dict, object, list]:
+def load_resources(config: dict) -> tuple[dict, object, list]:
     """Load ensemble info, label encoder, and models.
+
+    Args:
+        config (dict): Configuration dictionary containing paths and parameters.
 
     Returns:
         tuple[dict, object, list]: Ensemble info, label encoder, and list of models.
@@ -54,8 +53,8 @@ def load_resources() -> tuple[dict, object, list]:
     """
     try:
         ensemble_info = load_ensemble_info(config)
-        label_encoder = joblib.load(LABEL_ENCODER_PATH)
-        logger.info("Loaded ensemble info from %s.", ENSEMBLE_INFO_PATH)
+        label_encoder = joblib.load(config["LABEL_ENCODER_PATH"])
+        logger.info("Loaded ensemble info from %s.", config["ENSEMBLE_INFO_PATH"])
         models = load_models_from_ensemble_info(ensemble_info)
         return ensemble_info, label_encoder, models  # noqa: TRY300
     except Exception:
@@ -63,8 +62,11 @@ def load_resources() -> tuple[dict, object, list]:
         raise
 
 
-def load_and_window_test_data() -> tuple[np.ndarray, np.ndarray]:
+def load_and_window_test_data(config: dict) -> tuple[np.ndarray, np.ndarray]:
     """Load and window test data.
+
+    Args:
+        config (dict): Configuration dictionary containing paths and parameters.
 
     Returns:
         tuple[np.ndarray, np.ndarray]: Windowed EEG data and corresponding labels.
@@ -86,29 +88,29 @@ def load_and_window_test_data() -> tuple[np.ndarray, np.ndarray]:
 def prepare_test_data_representations(
     x_windows: np.ndarray,
     ensemble_info: dict,
-    local_config: dict,
+    config: dict,
 ) -> dict:
     """Prepare all test data representations needed for the loaded models.
 
     Args:
         x_windows (np.ndarray): Windowed EEG data (n_samples, window, n_channels).
         ensemble_info (dict): Ensemble info loaded from JSON.
-        local_config (dict): Configuration dictionary containing parameters and paths.
+        config (dict): Configuration dictionary containing parameters and paths.
 
     Returns:
         dict: Mapping from representation name to data array.
 
     """
-    n_channels = local_config["N_CHANNELS"]
+    n_channels = config["N_CHANNELS"]
     # Prepare classic features
-    x_classic_features = np.array([extract_features(window, local_config["SAMPLING_RATE"]) for window in x_windows])
+    x_classic_features = np.array([extract_features(window, config["SAMPLING_RATE"]) for window in x_windows])
     # Load and apply classic feature scaler from config
-    scaler_tree_path = local_config["SCALER_TREE"]
+    scaler_tree_path = config["SCALER_TREE"]
     scaler_tree = joblib.load(scaler_tree_path)
     x_classic_features_scaled = scaler_tree.transform(x_classic_features)
 
     # Prepare scaled windows for CNNs
-    scaler_eegnet = joblib.load(local_config["SCALER_EEGNET"])
+    scaler_eegnet = joblib.load(config["SCALER_EEGNET"])
     x_windows_flat = x_windows.reshape(-1, n_channels)
     x_windows_scaled = scaler_eegnet.transform(x_windows_flat).reshape(x_windows.shape)
     # Prepare EEGNet input shape: (batch, channels, window, 1)
@@ -116,7 +118,7 @@ def prepare_test_data_representations(
     x_windows_eegnet = np.transpose(x_windows_eegnet, (0, 2, 1, 3))
     # Prepare Conv1D features if feature extractor exists
     conv1d_feature_extractor = None
-    conv1d_feature_path = local_config.get("CONV1D_FEATURE_EXTRACTOR")
+    conv1d_feature_path = config["CONV1D_FEATURE_EXTRACTOR"]
     if not conv1d_feature_path:
         # Try to find in ensemble_info
         for entry in ensemble_info["models"]:
@@ -495,11 +497,13 @@ def plot_feature_distributions(  # noqa: PLR0913
 
 def main() -> None:
     """Run dynamic EEG model evaluation and ensemble testing."""
+    config = load_config()
+
     # Step 1: Load resources
-    ensemble_info, label_encoder, models = load_resources()
+    ensemble_info, label_encoder, models = load_resources(config)
 
     # Step 2: Load and window test data
-    x_windows, y_windows = load_and_window_test_data()
+    x_windows, y_windows = load_and_window_test_data(config)
 
     # Step 3: Prepare all feature representations
     features = prepare_test_data_representations(x_windows, ensemble_info, config)

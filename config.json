@@ -66,7 +66,10 @@
   
   "_base_model_paths": "--- File Paths: Base Models ---",
   "MODEL_EEGNET": "models/eeg_direction_model.h5",
+  "MODEL_EEGNET_CHECKPOINT": "models/eeg_direction_model_best.h5",
   "MODEL_SHALLOW": "models/eeg_shallow_model.h5",
+  "MODEL_SHALLOW_CHECKPOINT": "models/eeg_shallow_model_best.h5",
+  "MODEL_CONV1D_CHECKPOINT": "models/best_conv1d_temp.keras",
   "MODEL_RF": "models/eeg_rf_model.pkl",
   "MODEL_XGB": "models/eeg_xgb_model.pkl",
   
