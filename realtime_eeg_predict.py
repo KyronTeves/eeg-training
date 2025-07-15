@@ -665,6 +665,93 @@ class OptimizedPredictionPipeline:
         return None
 
 
+    def predict_and_log_single_model(
+        self,
+        selected_models: list,
+        config: dict,
+        prediction_count: int,
+        *,
+        use_hard_voting: bool = True,
+    ) -> int:
+        """Predict and log for a single model (dynamic system)."""
+        result = self.predict_realtime_dynamic(selected_models, config, use_hard_voting=use_hard_voting)
+        if result:
+            predicted_label, confidence = result
+            prediction_count += 1
+            logger.info(
+                "[%4d] %8s (conf: %.3f) [%s only]",
+                prediction_count,
+                predicted_label.upper(),
+                confidence,
+                selected_models[0]["name"].upper(),
+            )
+            if prediction_count % 50 == 0:
+                stats = self.get_performance_stats()
+                logger.info(
+                    "Performance: %.1fms avg, %.1f FPS",
+                    stats["avg_latency_ms"],
+                    stats["fps"],
+                )
+        return prediction_count
+
+    def predict_and_log_ensemble(self, models: list, config: dict, prediction_count: int) -> int:
+        """Predict and log for ensemble mode, with per-model breakdown."""
+        if not self.is_ready_for_prediction():
+            return prediction_count
+        window = self.get_current_window()
+        features = self.prepare_realtime_features(window, config)
+        model_inputs = self.map_model_inputs_realtime(models, features)
+        model_results = []
+        predictions = {}
+        confidences = {}
+        for m in models:
+            name = m["name"]
+            model = m["model"]
+            x_input = model_inputs[name]
+            if m["type"] == "keras":
+                y_pred_prob = model.predict(x_input, verbose=0)
+                y_pred = np.argmax(y_pred_prob, axis=1)
+                pred_idx = y_pred[0]
+                conf = float(np.max(y_pred_prob))
+            else:
+                y_pred_prob = None
+                y_pred = model.predict(x_input)
+                pred_idx = y_pred[0]
+                if hasattr(model, "predict_proba"):
+                    proba = model.predict_proba(x_input)[0]
+                    conf = float(np.max(proba))
+                else:
+                    conf = 1.0
+            pred_label = self.label_encoder.inverse_transform([pred_idx])[0]
+            predictions[name] = pred_idx
+            confidences[name] = conf
+            model_results.append(f"{name}:{short_label(pred_label)}({conf:.3f})")
+        vote_counts = Counter(predictions.values())
+        majority_pred = vote_counts.most_common(1)[0][0]
+        confidence = vote_counts.most_common(1)[0][1] / len(predictions)
+        predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+        self.last_prediction = predicted_label
+        self.prediction_confidence = confidence
+        prediction_count += 1
+        status = "✓" if confidence > self.config["CONFIDENCE_THRESHOLD"] else "?"
+        logger.info(
+            "[%-4d] %s %-8s(ens:%.3f) | %s",
+            prediction_count,
+            status,
+            predicted_label.upper(),
+            confidence,
+            " ".join(model_results),
+        )
+        if prediction_count % 50 == 0:
+            stats = self.get_performance_stats()
+            logger.info(
+                "Performance: %.1fms avg, %.1f FPS",
+                stats["avg_latency_ms"],
+                stats["fps"],
+            )
+        return prediction_count
+
+
 def process_prediction(  # noqa: PLR0913
     pipeline: OptimizedPredictionPipeline,
     prediction_count: int,
@@ -692,74 +779,21 @@ def process_prediction(  # noqa: PLR0913
     """
     # Use dynamic system for all modes
     if models is not None and ensemble_info is not None and config is not None:
-        # For single-model mode, filter models to just the selected one
         if mode != "ensemble":
             selected_models = [m for m in models if mode.lower() in m["name"].lower()]
             if not selected_models:
                 logger.error("Model '%s' not found in loaded models.", mode)
                 return prediction_count
-            result = pipeline.predict_realtime_dynamic(selected_models, config, use_hard_voting=True)
-        else:
-            # --- Detailed per-model output for ensemble ---
-            if not pipeline.is_ready_for_prediction():
-                return prediction_count
-            window = pipeline.get_current_window()
-            features = pipeline.prepare_realtime_features(window, config)
-            model_inputs = pipeline.map_model_inputs_realtime(models, features)
-            model_results = []
-            predictions = {}
-            confidences = {}
-            for m in models:
-                name = m["name"]
-                model = m["model"]
-                x_input = model_inputs[name]
-                if m["type"] == "keras":
-                    y_pred_prob = model.predict(x_input, verbose=0)
-                    y_pred = np.argmax(y_pred_prob, axis=1)
-                    pred_idx = y_pred[0]
-                    conf = float(np.max(y_pred_prob))
-                else:
-                    y_pred_prob = None
-                    y_pred = model.predict(x_input)
-                    pred_idx = y_pred[0]
-                    # For sklearn, try predict_proba if available
-                    if hasattr(model, "predict_proba"):
-                        proba = model.predict_proba(x_input)[0]
-                        conf = float(np.max(proba))
-                    else:
-                        conf = 1.0
-                pred_label = pipeline.label_encoder.inverse_transform([pred_idx])[0]
-                predictions[name] = pred_idx
-                confidences[name] = conf
-                model_results.append(f"{name}:{short_label(pred_label)}({conf:.3f})")
-            # Ensemble voting
-            vote_counts = Counter(predictions.values())
-            majority_pred = vote_counts.most_common(1)[0][0]
-            confidence = vote_counts.most_common(1)[0][1] / len(predictions)
-            predicted_label = pipeline.label_encoder.inverse_transform([majority_pred])[0]
-            pipeline.last_prediction = predicted_label
-            pipeline.prediction_confidence = confidence
-            prediction_count += 1
-            status = "✓" if confidence > pipeline.config["CONFIDENCE_THRESHOLD"] else "?"
-            logger.info(
-                "[%-4d] %s %-8s(ens:%.3f) | %s",
+            return pipeline.predict_and_log_single_model(
+                selected_models,
+                config,
                 prediction_count,
-                status,
-                predicted_label.upper(),
-                confidence,
-                " ".join(model_results),
+                use_hard_voting=True,
             )
-            if prediction_count % 50 == 0:
-                stats = pipeline.get_performance_stats()
-                logger.info(
-                    "Performance: %.1fms avg, %.1f FPS",
-                    stats["avg_latency_ms"],
-                    stats["fps"],
-                )
-            return prediction_count
-    else:
-        # fallback to legacy method for backward compatibility
-        result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
+        return pipeline.predict_and_log_ensemble(models, config, prediction_count)
+
+    # fallback to legacy method for backward compatibility
+    result = pipeline.predict_realtime(use_hard_voting=use_hard_voting)
     if result:
         predicted_label, confidence = result
         prediction_count += 1
@@ -931,6 +965,44 @@ def prediction_loop(  # noqa: PLR0913
         logger.info("Total predictions: %d", prediction_count)
 
 
+@handle_errors
+def test_models_without_lsl() -> bool | None:
+    """Test model loading and prediction functionality without requiring an LSL stream.
+
+    Loads models, performs a fake prediction, and logs the results for verification.
+
+    Returns:
+        bool | None: True if test succeeds, False if it fails, or None if no prediction is made.
+
+    """
+    setup_logging()
+    config = load_config()
+    logger.info("Testing model loading and prediction (no LSL required)...")
+    try:
+        pipeline = OptimizedPredictionPipeline(config)
+        pipeline.load_optimized_models()
+        rng = np.random.default_rng()
+        fake_window = rng.standard_normal((config["WINDOW_SIZE"], config["N_CHANNELS"])) * 0.1
+        for sample in fake_window:
+            pipeline.add_sample(sample)
+        if pipeline.is_ready_for_prediction():
+            result = pipeline.predict_realtime()
+            if result:
+                label, confidence = result
+                logger.info(
+                    "✓ Test prediction: %s (confidence: %.3f)", label, confidence,
+                )
+            else:
+                logger.info("Models loaded successfully but no prediction made")
+        stats = pipeline.get_performance_stats()
+        logger.info("✓ Performance stats: %s", stats)
+        logger.info("✓ All models loaded and tested successfully!")
+        return True  # noqa: TRY300
+    except (FileNotFoundError, ValueError, RuntimeError):
+        logger.exception("✗ Model test failed.")
+        return False
+
+
 def main() -> None:
     """Start real-time EEG prediction using LSL streaming."""
     setup_logging()
@@ -986,44 +1058,6 @@ def main() -> None:
         except KeyboardInterrupt:
             logger.info("\nPrediction stopped. Returning to menu...")
             continue
-
-
-@handle_errors
-def test_models_without_lsl() -> bool | None:
-    """Test model loading and prediction functionality without requiring an LSL stream.
-
-    Loads models, performs a fake prediction, and logs the results for verification.
-
-    Returns:
-        bool | None: True if test succeeds, False if it fails, or None if no prediction is made.
-
-    """
-    setup_logging()
-    config = load_config()
-    logger.info("Testing model loading and prediction (no LSL required)...")
-    try:
-        pipeline = OptimizedPredictionPipeline(config)
-        pipeline.load_optimized_models()
-        rng = np.random.default_rng()
-        fake_window = rng.standard_normal((config["WINDOW_SIZE"], config["N_CHANNELS"])) * 0.1
-        for sample in fake_window:
-            pipeline.add_sample(sample)
-        if pipeline.is_ready_for_prediction():
-            result = pipeline.predict_realtime()
-            if result:
-                label, confidence = result
-                logger.info(
-                    "✓ Test prediction: %s (confidence: %.3f)", label, confidence,
-                )
-            else:
-                logger.info("Models loaded successfully but no prediction made")
-        stats = pipeline.get_performance_stats()
-        logger.info("✓ Performance stats: %s", stats)
-        logger.info("✓ All models loaded and tested successfully!")
-        return True  # noqa: TRY300
-    except (FileNotFoundError, ValueError, RuntimeError):
-        logger.exception("✗ Model test failed.")
-        return False
 
 
 if __name__ == "__main__":
