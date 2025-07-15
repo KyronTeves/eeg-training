@@ -38,124 +38,24 @@ from EEGModels import ShallowConvNet
 if TYPE_CHECKING:
     from lsl_stream_handler import LSLStreamHandler
 
+
 logger = logging.getLogger(__name__)
 
 
-def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
-    """Extract features from a single EEG window for tree-based models.
-
-    Args:
-        window (np.ndarray): EEG window, shape (window_size, n_channels).
-        fs (int, optional): Sampling frequency. Defaults to 250.
-
-    Returns:
-        np.ndarray: 1D array of features (length: n_channels * 8).
-
-    """
-    features = []
-    n_channels = window.shape[1]
-
-    # Define frequency bands
-    bands = {
-        "delta": (1, 4),
-        "theta": (4, 8),
-        "alpha": (8, 13),
-        "beta": (13, 30),
-        "gamma": (30, 100),
-    }
-
-    for i in range(n_channels):
-        channel_data = window[:, i]
-
-        # --- Spectral Features (Band Power) ---
-        # Use nperseg that is appropriate for the window size
-        nperseg = min(256, len(channel_data))
-        freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
-
-        total_power = np.sum(psd)
-        if total_power == 0:
-            # Avoid division by zero if signal is flat
-            band_powers = [0.0] * len(bands)
-        else:
-            band_powers = [
-                np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
-                for fmin, fmax in bands.values()
-            ]
-
-        features.extend(band_powers)
-
-        # --- Statistical Features ---
-        features.append(np.mean(channel_data))
-        features.append(np.var(channel_data))
-        features.append(np.std(channel_data))
-
-    return np.array(features)
+class EEGSystemError(Exception):
+    """Base exception for EEG system errors."""
 
 
-def load_config(path: str | None = None) -> dict[str, Any]:
-    """Load configuration from a JSON file.
-
-    Args:
-        path (str | None, optional): Path to config file. If None(default), uses CONFIG_PATH env var|'config.json'.
-
-    Returns:
-        dict[str, Any]: Configuration dictionary.
-
-    """
-    if path is None:
-        path = os.environ.get("CONFIG_PATH", "config.json")
-    return load_json(path)
+class DataLoadError(EEGSystemError):
+    """Raised when data loading fails."""
 
 
-def window_data(
-    data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int,
-) -> tuple[np.ndarray, np.ndarray]:
-    """Segment data and labels into overlapping windows using stride tricks.
+class ModelLoadError(EEGSystemError):
+    """Raised when model loading fails."""
 
-    Args:
-        data (np.ndarray): EEG data.
-        labels (np.ndarray): Labels.
-        window_size (int): Window size.
-        step_size (int): Step size.
 
-    Returns:
-        tuple: (x_windows, y_windows)
-
-    """
-    n_windows = (len(data) - window_size) // step_size + 1
-    if n_windows <= 0:
-        return np.empty((0, window_size, data.shape[1])), np.empty((0,))
-
-    # Create windows using stride tricks
-    shape = (n_windows, window_size, data.shape[1])
-    strides = (data.strides[0] * step_size, data.strides[0], data.strides[1])
-    x_windows = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
-
-    # For labels, use the majority label in each window
-    label_windows = np.lib.stride_tricks.as_strided(
-        labels,
-        shape=(n_windows, window_size, 1),
-        strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
-    )
-    # Compute majority label using np.unique
-    y_windows = np.array(
-        [
-            np.unique(window, return_counts=True)[0][
-                np.argmax(np.unique(window, return_counts=True)[1])
-            ]
-            for window in label_windows.reshape(n_windows, -1)
-        ],
-    )
-
-    # Data quality assessment
-    logger.info(
-        "Data quality: Range [%.3f, %.3f], Std: %.3f, NaN count: %d",
-        np.min(x_windows),
-        np.max(x_windows),
-        np.std(x_windows),
-        np.isnan(x_windows).sum(),
-    )
-    return x_windows, y_windows
+class ConfigError(EEGSystemError):
+    """Raised when configuration is invalid or missing."""
 
 
 def setup_logging(
@@ -224,6 +124,54 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -
         logger.info("Starting fresh log file with rotation enabled")
 
 
+def convert_paths(
+        obj: dict | list | Path | str | float | bool | None,  # noqa: FBT001
+) -> dict | list | str | float | bool | None:
+    """Recursively convert Path objects to strings for JSON serialization."""
+    if isinstance(obj, dict):
+        return {k: convert_paths(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [convert_paths(i) for i in obj]
+    if isinstance(obj, Path):
+        return str(obj)
+    return obj
+
+
+def save_json(data: dict[str, Any], path: str) -> None:
+    """Save a dictionary as a JSON file, converting Path objects to strings."""
+    with Path(path).open("w", encoding="utf-8") as f:
+        json.dump(convert_paths(data), f)
+
+
+def load_json(path: str) -> dict[str, Any]:
+    """Load a dictionary from a JSON file.
+
+    Args:
+        path (str): File path.
+
+    Returns:
+        dict[str, Any]: Loaded data.
+
+    """
+    with Path(path).open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_config(path: str | None = None) -> dict[str, Any]:
+    """Load configuration from a JSON file.
+
+    Args:
+        path (str | None, optional): Path to config file. If None(default), uses CONFIG_PATH env var|'config.json'.
+
+    Returns:
+        dict[str, Any]: Configuration dictionary.
+
+    """
+    if path is None:
+        path = os.environ.get("CONFIG_PATH", "config.json")
+    return load_json(path)
+
+
 def check_no_nan(x: np.ndarray, name: str = "data") -> None:
     """Check for NaN values in a numpy array and raises error if found.
 
@@ -265,6 +213,108 @@ def check_labels_valid(
             logger.error("%s contain invalid values: %s", name, invalid)
             msg = f"{name} contain invalid values: {invalid}"
             raise ValueError(msg)
+
+
+def window_data(
+    data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Segment data and labels into overlapping windows using stride tricks.
+
+    Args:
+        data (np.ndarray): EEG data.
+        labels (np.ndarray): Labels.
+        window_size (int): Window size.
+        step_size (int): Step size.
+
+    Returns:
+        tuple: (x_windows, y_windows)
+
+    """
+    n_windows = (len(data) - window_size) // step_size + 1
+    if n_windows <= 0:
+        return np.empty((0, window_size, data.shape[1])), np.empty((0,))
+
+    # Create windows using stride tricks
+    shape = (n_windows, window_size, data.shape[1])
+    strides = (data.strides[0] * step_size, data.strides[0], data.strides[1])
+    x_windows = np.lib.stride_tricks.as_strided(data, shape=shape, strides=strides)
+
+    # For labels, use the majority label in each window
+    label_windows = np.lib.stride_tricks.as_strided(
+        labels,
+        shape=(n_windows, window_size, 1),
+        strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
+    )
+    # Compute majority label using np.unique
+    y_windows = np.array(
+        [
+            np.unique(window, return_counts=True)[0][
+                np.argmax(np.unique(window, return_counts=True)[1])
+            ]
+            for window in label_windows.reshape(n_windows, -1)
+        ],
+    )
+
+    # Data quality assessment
+    logger.info(
+        "Data quality: Range [%.3f, %.3f], Std: %.3f, NaN count: %d",
+        np.min(x_windows),
+        np.max(x_windows),
+        np.std(x_windows),
+        np.isnan(x_windows).sum(),
+    )
+    return x_windows, y_windows
+
+
+def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
+    """Extract features from a single EEG window for tree-based models.
+
+    Args:
+        window (np.ndarray): EEG window, shape (window_size, n_channels).
+        fs (int, optional): Sampling frequency. Defaults to 250.
+
+    Returns:
+        np.ndarray: 1D array of features (length: n_channels * 8).
+
+    """
+    features = []
+    n_channels = window.shape[1]
+
+    # Define frequency bands
+    bands = {
+        "delta": (1, 4),
+        "theta": (4, 8),
+        "alpha": (8, 13),
+        "beta": (13, 30),
+        "gamma": (30, 100),
+    }
+
+    for i in range(n_channels):
+        channel_data = window[:, i]
+
+        # --- Spectral Features (Band Power) ---
+        # Use nperseg that is appropriate for the window size
+        nperseg = min(256, len(channel_data))
+        freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
+
+        total_power = np.sum(psd)
+        if total_power == 0:
+            # Avoid division by zero if signal is flat
+            band_powers = [0.0] * len(bands)
+        else:
+            band_powers = [
+                np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
+                for fmin, fmax in bands.values()
+            ]
+
+        features.extend(band_powers)
+
+        # --- Statistical Features ---
+        features.append(np.mean(channel_data))
+        features.append(np.var(channel_data))
+        features.append(np.std(channel_data))
+
+    return np.array(features)
 
 
 def augment_eeg_data(  # noqa: PLR0913
@@ -556,6 +606,36 @@ def calibrate_all_models_lsl(
     logger.info("Session calibration complete. All models saved.")
 
 
+def load_ensemble_info(config: dict) -> dict:
+    """Load ensemble info from the configured path."""
+    with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
+        return json.load(f)
+
+
+def load_models_from_ensemble_info(ensemble_info: dict) -> list:
+    """Load all models described in the ensemble info dict."""
+    models = []
+    for model_entry in ensemble_info["models"]:
+        model_type = model_entry["type"]
+        model_path = model_entry["path"]
+        name = model_entry["name"]
+        try:
+            if model_type == "keras":
+                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
+            elif model_type == "sklearn":
+                model = joblib.load(model_path)
+            else:
+                logger.warning("Unknown model type: %s for %s", model_type, name)
+                continue
+            models.append(
+                {"name": name, "type": model_type, "model": model, "path": model_path},
+            )
+            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
+        except (OSError, ImportError, TypeError):
+            logger.exception("Failed to load model %s from %s.", name, model_path)
+    return models
+
+
 def square(x: Tensor) -> Tensor:
     """Compute the element-wise square of a tensor using TensorFlow.
 
@@ -587,22 +667,6 @@ def log(x: Tensor) -> Tensor:
 CUSTOM_OBJECTS = {"square": square, "log": log}
 
 
-class EEGSystemError(Exception):
-    """Base exception for EEG system errors."""
-
-
-class DataLoadError(EEGSystemError):
-    """Raised when data loading fails."""
-
-
-class ModelLoadError(EEGSystemError):
-    """Raised when model loading fails."""
-
-
-class ConfigError(EEGSystemError):
-    """Raised when configuration is invalid or missing."""
-
-
 def handle_errors(main_func: Callable) -> Callable:
     """Define decorator to catch and log uncaught exceptions in script entry points.
 
@@ -624,66 +688,3 @@ def handle_errors(main_func: Callable) -> Callable:
             logger.exception("Unhandled exception.")
             raise
     return wrapper
-
-
-def convert_paths(
-        obj: dict | list | Path | str | float | bool | None,  # noqa: FBT001
-) -> dict | list | str | float | bool | None:
-    """Recursively convert Path objects to strings for JSON serialization."""
-    if isinstance(obj, dict):
-        return {k: convert_paths(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [convert_paths(i) for i in obj]
-    if isinstance(obj, Path):
-        return str(obj)
-    return obj
-
-
-def save_json(data: dict[str, Any], path: str) -> None:
-    """Save a dictionary as a JSON file, converting Path objects to strings."""
-    with Path(path).open("w", encoding="utf-8") as f:
-        json.dump(convert_paths(data), f)
-
-
-def load_json(path: str) -> dict[str, Any]:
-    """Load a dictionary from a JSON file.
-
-    Args:
-        path (str): File path.
-
-    Returns:
-        dict[str, Any]: Loaded data.
-
-    """
-    with Path(path).open("r", encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_ensemble_info(config: dict) -> dict:
-    """Load ensemble info from the configured path."""
-    with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
-        return json.load(f)
-
-
-def load_models_from_ensemble_info(ensemble_info: dict) -> list:
-    """Load all models described in the ensemble info dict."""
-    models = []
-    for model_entry in ensemble_info["models"]:
-        model_type = model_entry["type"]
-        model_path = model_entry["path"]
-        name = model_entry["name"]
-        try:
-            if model_type == "keras":
-                model = load_model(model_path, custom_objects=CUSTOM_OBJECTS)
-            elif model_type == "sklearn":
-                model = joblib.load(model_path)
-            else:
-                logger.warning("Unknown model type: %s for %s", model_type, name)
-                continue
-            models.append(
-                {"name": name, "type": model_type, "model": model, "path": model_path},
-            )
-            logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
-        except (OSError, ImportError, TypeError):
-            logger.exception("Failed to load model %s from %s.", name, model_path)
-    return models
