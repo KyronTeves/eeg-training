@@ -601,10 +601,9 @@ def main() -> None:
 
     # --- Save ensemble info as JSON ---
     ensemble_metadata = {"models": ensemble_info}
-    with Path("models/ensemble_info.json").open("w", encoding="utf-8") as f:
+    with Path(config["ENSEMBLE_INFO_PATH"]).open("w", encoding="utf-8") as f:
         json.dump(ensemble_metadata, f, indent=2)
-    logger.info("Ensemble info saved to models/ensemble_info.json")
-    logger.info("Ensemble info saved to models/ensemble_info.json")
+    logger.info("Ensemble info saved to %s", config["ENSEMBLE_INFO_PATH"])
 
 
 if __name__ == "__main__":

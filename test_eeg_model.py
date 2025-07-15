@@ -43,9 +43,6 @@ logger = logging.getLogger(__name__)
 config = load_config()
 ENSEMBLE_INFO_PATH = config["ENSEMBLE_INFO_PATH"]
 LABEL_ENCODER_PATH = config["LABEL_ENCODER"]
-CLASS_LIST_PATH = config["LABEL_CLASSES_NPY"]
-
-
 
 
 def load_resources() -> tuple[dict, object, list]:
