@@ -392,11 +392,8 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    def predict_realtime(self, *, use_hard_voting: bool = False) -> tuple[str, float] | None:  # noqa: PLR0915
-        """Perform ensemble prediction using all available models on the current buffer.
-
-        Args:
-            use_hard_voting (bool): If True, use hard voting (majority rule). If False, use weighted soft voting.
+    def predict_realtime(self) -> tuple[str, float] | None:
+        """Perform ensemble prediction using all available models on the current buffer (hard voting only).
 
         Returns:
             tuple[str, float] | None: (predicted_label, confidence) or None if not enough data
@@ -425,44 +422,14 @@ class OptimizedPredictionPipeline:
             model_preds.append(shallow_pred)
         model_preds.append(np.argmax(rf_probs))
         model_preds.append(np.argmax(xgb_probs))
-        if use_hard_voting:
-            # Hard voting (majority rule)
-            if not model_preds:
-                return "neutral", 0.0
+        # Hard voting (majority rule)
+        if not model_preds:
+            return "neutral", 0.0
 
-            vote_counts = Counter(model_preds)
-            majority_pred = vote_counts.most_common(1)[0][0]
-            confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
-            predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
-            self.last_prediction = predicted_label
-            self.prediction_confidence = confidence
-            return predicted_label, confidence
-
-        # Default: weighted soft voting
-        available_models = []
-        model_weights = []
-        model_predictions = []
-        if not np.all(eeg_probs == 0):
-            available_models.append("EEGNet")
-            model_weights.append(0.4)
-            model_predictions.append(eeg_probs)
-        if not np.all(shallow_probs == 0):
-            available_models.append("ShallowConvNet")
-            model_weights.append(0.4)
-            model_predictions.append(shallow_probs)
-        available_models.extend(["RandomForest", "XGBoost"])
-        model_weights.extend([0.1, 0.1])
-        model_predictions.extend([rf_probs, xgb_probs])
-        total_weight = sum(model_weights)
-        model_weights = [w / total_weight for w in model_weights]
-        final_probs = np.zeros_like(rf_probs)
-        for probs, weight in zip(model_predictions, model_weights):
-            final_probs += probs * weight
-        confidence = np.max(final_probs)
-        if confidence < self.confidence_threshold:
-            return "neutral", confidence
-        predicted_idx = np.argmax(final_probs)
-        predicted_label = self.label_encoder.inverse_transform([predicted_idx])[0]
+        vote_counts = Counter(model_preds)
+        majority_pred = vote_counts.most_common(1)[0][0]
+        confidence = vote_counts.most_common(1)[0][1] / len(model_preds)
+        predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
         self.last_prediction = predicted_label
         self.prediction_confidence = confidence
         return predicted_label, confidence
@@ -540,10 +507,8 @@ class OptimizedPredictionPipeline:
         self,
         models: list,
         config: dict,
-        *,
-        use_hard_voting: bool = True,
     ) -> tuple[str, float] | None:
-        """Perform dynamic ensemble prediction using all loaded models and correct features."""
+        """Perform dynamic ensemble prediction using all loaded models and correct features (hard voting only)."""
         if not self.is_ready_for_prediction():
             return None
         window = self.get_current_window()
@@ -565,16 +530,13 @@ class OptimizedPredictionPipeline:
                 y_pred = model.predict(x_input)
                 predictions[name] = y_pred[0]
         # Hard voting ensemble
-        if use_hard_voting:
-            vote_counts = Counter(predictions.values())
-            majority_pred = vote_counts.most_common(1)[0][0]
-            confidence = vote_counts.most_common(1)[0][1] / len(predictions)
-            predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
-            self.last_prediction = predicted_label
-            self.prediction_confidence = confidence
-            return predicted_label, confidence
-        # (Optional: add soft voting here if needed)
-        return None
+        vote_counts = Counter(predictions.values())
+        majority_pred = vote_counts.most_common(1)[0][0]
+        confidence = vote_counts.most_common(1)[0][1] / len(predictions)
+        predicted_label = self.label_encoder.inverse_transform([majority_pred])[0]
+        self.last_prediction = predicted_label
+        self.prediction_confidence = confidence
+        return predicted_label, confidence
 
 
     def predict_and_log_single_model(
@@ -582,11 +544,9 @@ class OptimizedPredictionPipeline:
         selected_models: list,
         config: dict,
         prediction_count: int,
-        *,
-        use_hard_voting: bool = True,
     ) -> int:
         """Predict and log for a single model (dynamic system)."""
-        result = self.predict_realtime_dynamic(selected_models, config, use_hard_voting=use_hard_voting)
+        result = self.predict_realtime_dynamic(selected_models, config)
         if result:
             predicted_label, confidence = result
             prediction_count += 1
@@ -744,7 +704,6 @@ def process_prediction(  # noqa: PLR0913
                 selected_models,
                 config,
                 prediction_count,
-                use_hard_voting=True,
             )
         return pipeline.predict_and_log_ensemble(models, config, prediction_count)
     return prediction_count
