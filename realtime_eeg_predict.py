@@ -9,11 +9,6 @@ restarting. After each session, you can return to the menu or exit cleanly.
 Typical usage:
     $ python realtime_eeg_predict.py
 
-Features:
-    - Real-time prediction using multiple models or ensemble.
-    - Interactive menu for model selection and session switching.
-    - Supports both weighted soft voting and hard voting for ensemble.
-    - Clean exit and reconnection to LSL stream as needed.
 """
 from __future__ import annotations
 
