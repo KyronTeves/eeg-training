@@ -608,8 +608,21 @@ def calibrate_all_models_lsl(
 
 def load_ensemble_info(config: dict) -> dict:
     """Load ensemble info from the configured path."""
-    with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
-        return json.load(f)
+    try:
+        with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError as exc:
+        msg = f"Ensemble info file not found at path: {config['ENSEMBLE_INFO_PATH']}"
+        logger.exception(msg)
+        raise ConfigError(msg) from exc
+    except json.JSONDecodeError as exc:
+        msg = f"Failed to decode JSON from ensemble info file at path: {config['ENSEMBLE_INFO_PATH']}"
+        logger.exception(msg)
+        raise DataLoadError(msg) from exc
+    except OSError as exc:
+        msg = f"Error accessing ensemble info file at path: {config['ENSEMBLE_INFO_PATH']}. Details: {exc!s}"
+        logger.exception(msg)
+        raise ConfigError(msg) from exc
 
 
 def load_models_from_ensemble_info(ensemble_info: dict) -> list:
