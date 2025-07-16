@@ -867,18 +867,13 @@ def main() -> None:
         logger.info("Think of different directions to control the system.")
         logger.info("Press Ctrl+C to stop.")
         try:
-            if mode == "ensemble":
-                prediction_loop(
-                    lsl_handler,
-                    pipeline,
-                    mode,
-                    config,
-                    models=models,
-                )
-            else:
-                prediction_loop(
-                    lsl_handler, pipeline, mode, config,
-                )
+            prediction_loop(
+                lsl_handler,
+                pipeline,
+                mode,
+                config,
+                models=models,
+            )
         except KeyboardInterrupt:
             logger.info("\nPrediction stopped. Returning to menu...")
             continue
