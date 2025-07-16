@@ -33,7 +33,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from tensorflow import Tensor
 from xgboost import XGBClassifier
 
-from EEGModels import ShallowConvNet
+from EEGModels import AdvancedConv1DNet, ShallowConvNet
 
 if TYPE_CHECKING:
     from lsl_stream_handler import LSLStreamHandler
@@ -456,12 +456,12 @@ def calibrate_deep_models(  # noqa: PLR0913
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
-    # Save EEGNet model and scaler to generic session paths (no timestamp)
     eegnet_out = Path(save_dir) / "eeg_direction_model_session.h5"
     scaler_out = Path(save_dir) / "eeg_scaler_session.pkl"
     model.save(eegnet_out)
     joblib.dump(scaler, scaler_out)
     logger.info("EEGNet session model saved to %s", eegnet_out)
+
     # ShallowConvNet
     shallow = ShallowConvNet(
         nb_classes=len(config["LABELS"]),
@@ -485,12 +485,38 @@ def calibrate_deep_models(  # noqa: PLR0913
         batch_size=config.get("CALIB_BATCH_SIZE", 16),
         verbose=verbose,
     )
-    # Save ShallowConvNet model to generic session path (no timestamp)
     shallow_out = Path(save_dir) / "eeg_shallow_model_session.h5"
     scaler_shallow_out = Path(save_dir) / "eeg_scaler_tree_session.pkl"
     shallow.save(shallow_out)
     joblib.dump(scaler, scaler_shallow_out)
     logger.info("ShallowConvNet session model saved to %s", shallow_out)
+
+    # AdvancedConv1D (if available in config)
+    try:
+        if "MODEL_CONV1D" in config:
+            logger.info("Calibrating AdvancedConv1D session model...")
+            n_classes = len(config["LABELS"])
+            n_channels = x_model.shape[2]
+            window_size = x_model.shape[1]
+            conv1d_model = AdvancedConv1DNet(n_classes, window_size, n_channels)
+            conv1d_model.load_weights(config["MODEL_CONV1D"])
+            conv1d_model.compile(
+                optimizer=Adam(learning_rate=0.001),
+                loss="categorical_crossentropy",
+                metrics=["accuracy"],
+            )
+            conv1d_model.fit(
+                x_model,
+                y_cat,
+                epochs=config.get("CALIB_EPOCHS", 3),
+                batch_size=config.get("CALIB_BATCH_SIZE", 16),
+                verbose=verbose,
+            )
+            conv1d_out = Path(save_dir) / "eeg_conv1d_model_session.h5"
+            conv1d_model.save(conv1d_out)
+            logger.info("AdvancedConv1D session model saved to %s", conv1d_out)
+    except ImportError:
+        logger.warning("AdvancedConv1DNet not available for calibration.")
 
 
 def calibrate_tree_models(  # noqa: PLR0913
