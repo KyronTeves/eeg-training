@@ -408,17 +408,46 @@ from tensorflow.keras.regularizers import l2
 from tensorflow.keras.models import Model
 
 def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0.2, 0.3, 0.4), num_heads=(4, 8)):
-    """Advanced Conv1D model with residual and attention blocks for EEG classification.
+    """AdvancedConv1DNet: Deep Conv1D neural network for EEG classification with residual and attention blocks.
+
+    This model is designed for robust EEG time-series classification, combining Conv1D layers, residual connections,
+    multi-head self-attention, and dense feature fusion.
+    It is suitable for multi-class classification tasks on windowed EEG data.
+
+    Architecture Overview:
+        - Input: (window_size, n_channels) — expects windowed EEG data (e.g., (128, 8) for 1s at 128Hz, 8 channels)
+        - Initial Conv1D blocks for local feature extraction
+        - Residual blocks for deeper feature learning and gradient flow
+        - Multi-head self-attention blocks for temporal context modeling
+        - Progressive feature expansion (32 → 64 → 128 → 256 filters)
+        - Global average pooling for temporal aggregation
+        - Dense feature fusion (512 → 256 → 128) with skip connections and concatenation
+        - Output: Dense softmax layer for multi-class prediction
+
+    Input Shape:
+        - X: np.ndarray of shape (batch_size, window_size, n_channels)
+        - y: np.ndarray of shape (batch_size,) or (batch_size, nb_classes) (one-hot)
 
     Args:
         nb_classes (int): Number of output classes.
-        window_size (int): Number of time samples per window.
-        n_channels (int): Number of EEG channels.
-        dropout_rates (tuple): Dropout rates for each block.
-        num_heads (tuple): Number of attention heads for each attention block.
+        window_size (int): Number of time samples per window (e.g., 128 for 1s at 128Hz).
+        n_channels (int): Number of EEG channels (e.g., 8, 16, 32).
+        dropout_rates (tuple[float], optional): Dropout rates for each block. Default: (0.1, 0.2, 0.3, 0.4).
+        num_heads (tuple[int], optional): Number of attention heads for each attention block. Default: (4, 8).
 
     Returns:
-        keras.Model: Keras model.
+        keras.Model: Compiled Keras model ready for training.
+
+    Performance Notes:
+        - Designed for high expressivity and regularization; suitable for moderate-to-large EEG datasets.
+        - Residual and attention blocks improve gradient flow and temporal context modeling.
+        - Dropout and L2 regularization help prevent overfitting.
+        - For small datasets, consider reducing model depth or increasing regularization.
+
+    Example:
+        >>> model = AdvancedConv1DNet(nb_classes=4, window_size=128, n_channels=8)
+        >>> model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        >>> model.fit(X_train, y_train, epochs=50, batch_size=32)
 
     """
     conv_input = Input(shape=(window_size, n_channels))
