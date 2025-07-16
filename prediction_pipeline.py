@@ -66,6 +66,7 @@ class OptimizedPredictionPipeline:
         self._shallow_shape_mismatch_logged = False
         self._shallow_error_logged = False
 
+
     def load_optimized_models(self, models_metadata: list[dict] | None = None) -> None:
         """Load and optimize models for inference.
 
@@ -88,9 +89,7 @@ class OptimizedPredictionPipeline:
             # Scalers and encoders
             self.scalers["eegnet"] = joblib.load(self.config["SCALER_EEGNET"])
             self.scalers["tree"] = joblib.load(self.config["SCALER_TREE"])
-
             self.scalers["shallow"] = joblib.load(self.config["SCALER_SHALLOW"])
-
             self.label_encoder = joblib.load(self.config["LABEL_ENCODER"])
 
             # Conditional Conv1D feature extractor loading
@@ -103,22 +102,7 @@ class OptimizedPredictionPipeline:
                     ):
                         needs_conv1d = True
                         break
-            if needs_conv1d:
-                conv1d_feature_path = self.config.get("CONV1D_FEATURE_EXTRACTOR")
-                if not conv1d_feature_path:
-                    conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
-                try:
-                    self.conv1d_feature_extractor = load_model(conv1d_feature_path)
-                    logger.info("Loaded Conv1D feature extractor from %s", conv1d_feature_path)
-                except (OSError, ImportError):
-                    try:
-                        self.conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
-                        logger.info("Loaded Conv1D feature extractor from fallback .h5")
-                    except (OSError, ImportError):
-                        self.conv1d_feature_extractor = None
-                        logger.info("No Conv1D feature extractor found; skipping.")
-            else:
-                logger.info("No Conv1D models in ensemble; skipping Conv1D feature extractor load.")
+            self._load_conv1d_feature_extractor(needs_conv1d=needs_conv1d)
 
             self._warmup_models()
             logger.info("Model optimization complete.")
@@ -129,6 +113,30 @@ class OptimizedPredictionPipeline:
         except Exception:
             logger.exception("Failed to load models.")
             raise
+
+    def _load_conv1d_feature_extractor(self, *, needs_conv1d: bool) -> None:
+        """Load Conv1D feature extractor if needed.
+
+        Args:
+            needs_conv1d (bool): Whether the Conv1D feature extractor is needed.
+
+        """
+        if needs_conv1d:
+            conv1d_feature_path = self.config.get("CONV1D_FEATURE_EXTRACTOR")
+            if not conv1d_feature_path:
+                conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
+            try:
+                self.conv1d_feature_extractor = load_model(conv1d_feature_path)
+                logger.info("Loaded Conv1D feature extractor from %s", conv1d_feature_path)
+            except (OSError, ImportError):
+                try:
+                    self.conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
+                    logger.info("Loaded Conv1D feature extractor from fallback .h5")
+                except (OSError, ImportError):
+                    self.conv1d_feature_extractor = None
+                    logger.info("No Conv1D feature extractor found; skipping.")
+        else:
+            logger.info("No Conv1D models in ensemble; skipping Conv1D feature extractor load.")
 
     def _warmup_models(self) -> None:
         """Run dummy predictions on all models to reduce first-call latency."""
