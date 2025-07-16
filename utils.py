@@ -95,15 +95,12 @@ def setup_logging(
     logging.basicConfig(level=level, handlers=[console_handler, file_handler])
 
 
-def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -> None:
+def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 10) -> None:
     """Archive and rotate log file if it exceeds max_size_mb.
 
     Args:
         logfile (str): Log file name. Defaults to "eeg_training.log".
-        max_size_mb (int): Max size in MB before rotating. Defaults to 50.
-
-    Returns:
-        None
+        max_size_mb (int): Max size in MB before rotating. Defaults to 10.
 
     """
     if not Path(logfile).exists():
@@ -124,16 +121,15 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -
         logger.info("Starting fresh log file with rotation enabled")
 
 
-
 T = TypeVar("T", dict, list, Path, str, float, bool, None)
 def convert_paths(obj: T) -> T:
     """Recursively convert Path objects to strings for JSON serialization.
 
     Args:
-        obj: A dict, list, Path, str, float, bool, or None.
+        obj (T): Input object (dict, list, Path, str, float, bool, or None).
 
     Returns:
-        The same structure as input, but with all Path objects converted to str.
+        T: The same structure as input, but with all Path objects converted to str.
 
     """
     if isinstance(obj, dict):
@@ -146,7 +142,13 @@ def convert_paths(obj: T) -> T:
 
 
 def save_json(data: dict[str, Any], path: str) -> None:
-    """Save a dictionary as a JSON file, converting Path objects to strings."""
+    """Save a dictionary as a JSON file.
+
+    Args:
+        data (dict[str, Any]): The data to save.
+        path (str): The file path to save the JSON.
+
+    """
     with Path(path).open("w", encoding="utf-8") as f:
         json.dump(convert_paths(data), f)
 
@@ -533,7 +535,7 @@ def calibrate_tree_models(  # noqa: PLR0913
 
 def calibrate_all_models_lsl(
     lsl_stream_handler: LSLStreamHandler,
-    config_path: str = "config.json",
+    config: dict,
     seconds_per_class: int | None = None,
     save_dir: str = "models",
     *,
@@ -545,17 +547,12 @@ def calibrate_all_models_lsl(
 
     Args:
         lsl_stream_handler (Any): LSL handler.
-        config_path (str): Path to config file.
+        config (dict): Configuration dictionary.
         seconds_per_class (int, optional): Seconds per class.
         save_dir (str): Directory to save models.
         verbose (bool): Verbosity flag.
 
-    Returns:
-        None
-
     """
-    # --- Load config ---
-    config = load_config(config_path)
     config = {k.upper(): v for k, v in config.items()}
     if seconds_per_class is None:
         seconds_per_class = config.get("CALIBRATION_SECONDS_PER_CLASS", 10)
@@ -610,12 +607,23 @@ def calibrate_all_models_lsl(
         rf_out,
         xgb_out,
     )
-
     logger.info("Session calibration complete. All models saved.")
 
 
 def load_ensemble_info(config: dict) -> dict:
-    """Load ensemble info from the configured path."""
+    """Load ensemble information from the config.
+
+    Args:
+        config (dict): Configuration dictionary.
+
+    Raises:
+        ConfigError: If the ensemble info file is missing or inaccessible.
+        DataLoadError: If the ensemble info file contains invalid JSON.
+
+    Returns:
+        dict: Ensemble information loaded from the configured path.
+
+    """
     try:
         with Path(config["ENSEMBLE_INFO_PATH"]).open(encoding="utf-8") as f:
             return json.load(f)
@@ -634,7 +642,15 @@ def load_ensemble_info(config: dict) -> dict:
 
 
 def load_models_from_ensemble_info(ensemble_info: dict) -> list:
-    """Load all models described in the ensemble info dict."""
+    """Load all models described in the ensemble info dict.
+
+    Args:
+        ensemble_info (dict): Ensemble information dictionary.
+
+    Returns:
+        list: List of loaded models.
+
+    """
     models = []
     for model_entry in ensemble_info["models"]:
         model_type = model_entry["type"]

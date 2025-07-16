@@ -1,6 +1,6 @@
 """train_eeg_model.py.
 
-Train EEGNet, ShallowConvNet, Random Forest, and XGBoost models on windowed EEG data.
+Train EEGNet, ShallowConvNet, AdvancedConv1D, Random Forest, and XGBoost models on windowed EEG data.
 
 Handles data loading, preprocessing, augmentation, model training, and artifact saving for EEG classification.
 
@@ -53,12 +53,6 @@ def load_windowed_data(config: dict[str, Any]) -> tuple[np.ndarray, np.ndarray]:
     Returns:
         tuple[np.ndarray, np.ndarray]: (x_windows, y_windows) where x_windows is the EEG data and
             y_windows are the labels.
-
-    Raises:
-        FileNotFoundError: If the specified files are not found.
-        OSError: If loading fails for other reasons.
-        ValueError: If loading fails for other reasons.
-        KeyError: If loading fails for other reasons.
 
     """
     try:

@@ -34,10 +34,6 @@ def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
     Args:
         config (dict[str, Any]): Configuration parameters.
 
-    Raises:
-        FileNotFoundError: If the CSV file does not exist.
-        pd.errors.EmptyDataError: If the CSV file is empty or cannot be parsed.
-
     Returns:
         pd.DataFrame: Filtered DataFrame.
 
@@ -114,10 +110,6 @@ def save_windowed_data(
         x_windows (np.ndarray): Windowed EEG data.
         y_windows (np.ndarray): Windowed labels.
         config (dict[str, Any]): Configuration dictionary.
-
-    Raises:
-        OSError: If saving the files fails.
-        ValueError: If the data is not valid.
 
     """
     try:

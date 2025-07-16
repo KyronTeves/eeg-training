@@ -70,7 +70,15 @@ def short_label(label: str) -> str:
 
 
 def load_realtime_resources(config: dict) -> tuple[dict, object, list]:
-    """Load ensemble info, label encoder, and models for real-time prediction."""
+    """Load resources for real-time EEG prediction.
+
+    Args:
+        config (dict): Configuration dictionary containing paths and parameters.
+
+    Returns:
+        tuple[dict, object, list]: Ensemble info, label encoder, and list of models.
+
+    """
     try:
         ensemble_info = load_ensemble_info(config)
         label_encoder = joblib.load(config["LABEL_ENCODER"])
@@ -83,30 +91,19 @@ def load_realtime_resources(config: dict) -> tuple[dict, object, list]:
 
 
 class OptimizedPredictionPipeline:
-    """High-performance real-time EEG prediction pipeline.
+    """Handles real-time EEG prediction using optimized models and dynamic ensemble."""
 
-    Args:
-        config_dict (dict): Configuration dictionary.
-
-    Handles model loading, preprocessing, ensemble prediction, async prediction loop,
-    performance tracking, and session calibration.
-
-    Returns:
-        Real-time predictions (label, confidence), performance stats, logs.
-
-    """
-
-    def __init__(self, config_dict: dict) -> None:
+    def __init__(self, config: dict) -> None:
         """Initialize the prediction pipeline with configuration.
 
         Args:
-            config_dict (dict): Configuration dictionary with model/scaler paths, window size, etc.
+            config (dict): Configuration dictionary with model/scaler paths, window size, etc.
 
         """
-        self.config = config_dict
-        self.window_size = config_dict["WINDOW_SIZE"]
-        self.n_channels = config_dict["N_CHANNELS"]
-        self.confidence_threshold = config_dict.get("CONFIDENCE_THRESHOLD", 0.7)
+        self.config = config
+        self.window_size = config["WINDOW_SIZE"]
+        self.n_channels = config["N_CHANNELS"]
+        self.confidence_threshold = config.get("CONFIDENCE_THRESHOLD", 0.7)
 
         # Use buffer size multiplier from config
         buffer_multiplier = self.config.get("BUFFER_SIZE_MULTIPLIER", 2)
@@ -392,8 +389,6 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-    # The legacy predict_realtime method has been removed. Use predict_realtime_dynamic for all ensemble predictions.
-
 
     def prepare_realtime_features(
         self,
@@ -468,7 +463,16 @@ class OptimizedPredictionPipeline:
         models: list,
         config: dict,
     ) -> tuple[str, float] | None:
-        """Perform dynamic ensemble prediction using all loaded models and correct features (hard voting only)."""
+        """Perform dynamic ensemble prediction using all loaded models and correct features (hard voting only).
+
+        Args:
+            models (list): List of model metadata dictionaries.
+            config (dict): Configuration dictionary.
+
+        Returns:
+            tuple[str, float] | None: Predicted label and confidence, or None if not ready.
+
+        """
         if not self.is_ready_for_prediction():
             return None
         window = self.get_current_window()
@@ -505,7 +509,17 @@ class OptimizedPredictionPipeline:
         config: dict,
         prediction_count: int,
     ) -> int:
-        """Predict and log for a single model (dynamic system)."""
+        """Predict and log for a single model (dynamic system).
+
+        Args:
+            selected_models (list): List of selected model metadata dictionaries.
+            config (dict): Configuration dictionary.
+            prediction_count (int): Current prediction count.
+
+        Returns:
+            int: Updated prediction count.
+
+        """
         result = self.predict_realtime_dynamic(selected_models, config)
         if result:
             predicted_label, confidence = result
@@ -520,7 +534,17 @@ class OptimizedPredictionPipeline:
         return prediction_count
 
     def predict_and_log_ensemble(self, models: list, config: dict, prediction_count: int) -> int:
-        """Predict and log for ensemble mode, with per-model breakdown."""
+        """Predict and log for ensemble mode, with per-model breakdown.
+
+        Args:
+            models (list): List of model metadata dictionaries.
+            config (dict): Configuration dictionary.
+            prediction_count (int): Current prediction count.
+
+        Returns:
+            int: Updated prediction count.
+
+        """
         if not self.is_ready_for_prediction():
             return prediction_count
         window = self.get_current_window()
@@ -778,7 +802,6 @@ def prediction_loop(
         mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
         config_dict (dict): Configuration dictionary.
         models (list): List of loaded model dicts (for ensemble mode).
-        ensemble_info (dict): Ensemble info dict (for ensemble mode).
 
     """
     prediction_count = 0
