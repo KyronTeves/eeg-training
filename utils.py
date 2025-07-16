@@ -559,7 +559,7 @@ def calibrate_tree_models(  # noqa: PLR0913
     logger.info("XGBoost session model saved to %s", xgb_out)
 
 
-def calibrate_all_models_lsl(
+def calibrate_all_models_lsl(  # noqa: PLR0915
     lsl_stream_handler: LSLStreamHandler,
     config: dict,
     seconds_per_class: int | None = None,
@@ -633,6 +633,38 @@ def calibrate_all_models_lsl(
         rf_out,
         xgb_out,
     )
+
+    # --- Calibrate tree models on Conv1D features if AdvancedConv1D session model exists ---
+    try:
+        conv1d_session_path = Path(save_dir) / "eeg_conv1d_model_session.h5"
+        if conv1d_session_path.exists():
+            logger.info("Extracting Conv1D features for session-calibrated tree models...")
+            conv1d_model = load_model(conv1d_session_path)
+            # Prepare Conv1D input: (n_samples, n_channels, window_size, 1) or (n_samples, window_size, n_channels, 1)
+            # Use same shape as x_model
+            conv1d_features = conv1d_model.predict(x_model, batch_size=32, verbose=0)
+            # Flatten features if needed
+            if len(conv1d_features.shape) > 2:  # noqa: PLR2004
+                conv1d_features = conv1d_features.reshape(conv1d_features.shape[0], -1)
+            scaler_conv1d = StandardScaler()
+            conv1d_features_scaled = scaler_conv1d.fit_transform(conv1d_features)
+            # Fit and save RF
+            rf_conv1d = RandomForestClassifier(n_estimators=100, random_state=42)
+            rf_conv1d.fit(conv1d_features_scaled, y_calib_encoded)
+            rf_conv1d_out = Path(save_dir) / "eeg_rf_model_conv1d_session.pkl"
+            joblib.dump(rf_conv1d, rf_conv1d_out)
+            # Fit and save XGB
+            xgb_conv1d = XGBClassifier(n_estimators=100, use_label_encoder=False, eval_metric="mlogloss")
+            xgb_conv1d.fit(conv1d_features_scaled, y_calib_encoded)
+            xgb_conv1d_out = Path(save_dir) / "eeg_xgb_model_conv1d_session.pkl"
+            joblib.dump(xgb_conv1d, xgb_conv1d_out)
+            # Save scaler
+            scaler_conv1d_out = Path(save_dir) / "eeg_scaler_conv1d_session.pkl"
+            joblib.dump(scaler_conv1d, scaler_conv1d_out)
+            logger.info("Session Conv1D feature-based tree models saved: %s, %s", rf_conv1d_out, xgb_conv1d_out)
+    except (OSError, ImportError, ValueError) as e:
+        logger.warning("Conv1D feature-based tree model calibration skipped: %s", e)
+
     logger.info("Session calibration complete. All models saved.")
 
 
