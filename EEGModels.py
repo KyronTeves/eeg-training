@@ -418,7 +418,8 @@ def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0
         num_heads (tuple): Number of attention heads for each attention block.
 
     Returns:
-        keras.Model: Compiled Keras model.
+        keras.Model: Keras model.
+
     """
     conv_input = Input(shape=(window_size, n_channels))
 
