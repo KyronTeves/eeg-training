@@ -309,8 +309,9 @@ def train_eegnet_model(  # noqa: PLR0913
             checkpoint_path = config.get("MODEL_EEGNET_CHECKPOINT")
         elif model_name == "ShallowConvNet":
             checkpoint_path = config.get("MODEL_SHALLOW_CHECKPOINT")
-        else:
-            checkpoint_path = model_path.replace(".h5", "_best.h5").replace(".keras", "_best.keras") # fallback
+        else: # fallback
+            model_path_obj = Path(model_path)
+            checkpoint_path = str(model_path_obj.with_name(model_path_obj.stem + "_best" + model_path_obj.suffix))
         model_checkpoint = ModelCheckpoint(
             checkpoint_path,
             monitor="val_accuracy",
