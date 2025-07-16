@@ -87,14 +87,12 @@ def load_and_window_test_data(config: dict) -> tuple[np.ndarray, np.ndarray]:
 
 def prepare_test_data_representations(
     x_windows: np.ndarray,
-    ensemble_info: dict,
     config: dict,
 ) -> dict:
     """Prepare all test data representations needed for the loaded models.
 
     Args:
         x_windows (np.ndarray): Windowed EEG data (n_samples, window, n_channels).
-        ensemble_info (dict): Ensemble info loaded from JSON.
         config (dict): Configuration dictionary containing parameters and paths.
 
     Returns:
@@ -116,30 +114,16 @@ def prepare_test_data_representations(
     # Prepare EEGNet input shape: (batch, channels, window, 1)
     x_windows_eegnet = np.expand_dims(x_windows_scaled, -1)
     x_windows_eegnet = np.transpose(x_windows_eegnet, (0, 2, 1, 3))
-    # Prepare Conv1D features if feature extractor exists
+    # Prepare Conv1D features if feature extractor exists (simplified: only use config path)
     conv1d_feature_extractor = None
     conv1d_feature_path = config["CONV1D_FEATURE_EXTRACTOR"]
-    if not conv1d_feature_path:
-        # Try to find in ensemble_info
-        for entry in ensemble_info["models"]:
-            if "conv1d_feature_extractor" in entry.get("name", "").lower() or (
-                "conv1d" in entry["name"].lower() and "feature_extractor" in entry["name"].lower()
-            ):
-                conv1d_feature_path = entry["path"]
-                break
-    if not conv1d_feature_path:
-        # Fallback to default
-        conv1d_feature_path = "models/eeg_conv1d_feature_extractor.keras"
+    x_conv1d_features = None
     try:
         conv1d_feature_extractor = load_model(conv1d_feature_path)
-    except (OSError, ImportError):
-        try:
-            conv1d_feature_extractor = load_model("models/eeg_conv1d_feature_extractor.h5")
-        except (OSError, ImportError):
-            conv1d_feature_extractor = None
-    x_conv1d_features = None
-    if conv1d_feature_extractor is not None:
         x_conv1d_features = conv1d_feature_extractor.predict(x_windows_scaled, batch_size=32, verbose=0)
+    except (OSError, ImportError) as e:
+        logger.warning("Could not load Conv1D feature extractor from %s: %s", conv1d_feature_path, e)
+        x_conv1d_features = None
     return {
         "classic_features": x_classic_features_scaled,
         "windows_scaled": x_windows_scaled,
@@ -500,13 +484,13 @@ def main() -> None:
     config = load_config()
 
     # Step 1: Load resources
-    ensemble_info, label_encoder, models = load_resources(config)
+    _, label_encoder, models = load_resources(config)
 
     # Step 2: Load and window test data
     x_windows, y_windows = load_and_window_test_data(config)
 
     # Step 3: Prepare all feature representations
-    features = prepare_test_data_representations(x_windows, ensemble_info, config)
+    features = prepare_test_data_representations(x_windows, config)
 
     # Step 4: Map model names to their required input features
     model_inputs = map_model_inputs(models, features)
