@@ -82,6 +82,9 @@
   "MODEL_EEGNET_SESSION": "models/eeg_direction_model_session.h5",
   "MODEL_RF_SESSION": "models/eeg_rf_model_session.pkl",
   "MODEL_XGB_SESSION": "models/eeg_xgb_model_session.pkl",
+  "MODEL_CONV1D_SESSION": "models/eeg_conv1d_model_session.h5",
+  "MODEL_RF_CONV1D_SESSION": "models/eeg_rf_model_conv1d_session.pkl",
+  "MODEL_XGB_CONV1D_SESSION": "models/eeg_xgb_model_conv1d_session.pkl",
   
   "_scaler_encoder_paths": "--- File Paths: Scalers and Encoders ---",
   "LABEL_ENCODER": "models/eeg_label_encoder.pkl",
@@ -89,6 +92,7 @@
   "SCALER_TREE": "models/eeg_scaler_tree.pkl",
   "SCALER_EEGNET_SESSION": "models/eeg_scaler_session.pkl",
   "SCALER_TREE_SESSION": "models/eeg_scaler_tree_session.pkl",
+  "SCALER_CONV1D_SESSION": "models/eeg_scaler_conv1d_session.pkl",
   "CONV1D_FEATURE_EXTRACTOR": "models/eeg_conv1d_feature_extractor.keras",
   "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy",
   "ENSEMBLE_INFO_PATH": "models/ensemble_info.json"
