@@ -4,6 +4,7 @@
 *.h5
 *.pkl
 *.log
+*.keras
 
 # Ignore specific files
  e.g.,
@@ -31,3 +32,5 @@ __pycache__/
 plots/*.png
 
 alternative/
+models/ensemble_info.json
+.github/copilot-instructions.md
