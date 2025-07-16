@@ -18,7 +18,7 @@ import time
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 import joblib
 import numpy as np
@@ -124,16 +124,24 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 50) -
         logger.info("Starting fresh log file with rotation enabled")
 
 
-def convert_paths(
-        obj: dict | list | Path | str | float | bool | None,  # noqa: FBT001
-) -> dict | list | str | float | bool | None:
-    """Recursively convert Path objects to strings for JSON serialization."""
+
+T = TypeVar("T", dict, list, Path, str, float, bool, None)
+def convert_paths(obj: T) -> T:
+    """Recursively convert Path objects to strings for JSON serialization.
+
+    Args:
+        obj: A dict, list, Path, str, float, bool, or None.
+
+    Returns:
+        The same structure as input, but with all Path objects converted to str.
+
+    """
     if isinstance(obj, dict):
-        return {k: convert_paths(v) for k, v in obj.items()}
+        return {k: convert_paths(v) for k, v in obj.items()}  # type: ignore[return-value]
     if isinstance(obj, list):
-        return [convert_paths(i) for i in obj]
+        return [convert_paths(i) for i in obj]  # type: ignore[return-value]
     if isinstance(obj, Path):
-        return str(obj)
+        return str(obj)  # type: ignore[return-value]
     return obj
 
 
