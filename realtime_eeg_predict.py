@@ -18,10 +18,8 @@ Features:
 from __future__ import annotations
 
 import logging
-import os
 import threading
 import time
-import warnings
 from collections import Counter, deque
 from typing import TYPE_CHECKING
 
@@ -46,14 +44,6 @@ if TYPE_CHECKING:
 
 setup_logging()
 logger = logging.getLogger(__name__)
-
-# Suppress TensorFlow warnings and info messages
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"
-os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
-
-# Suppress other warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="scipy")
-warnings.filterwarnings("ignore", category=UserWarning, module="tensorflow")
 
 
 # Mapping for short label display
@@ -634,12 +624,11 @@ class OptimizedPredictionPipeline:
 # End of OptimizedPredictionPipeline class
 
 
-def process_prediction(  # noqa: PLR0913
+def process_prediction(
     pipeline: OptimizedPredictionPipeline,
     prediction_count: int,
     mode: str,
     models: list | None = None,
-    ensemble_info: dict | None = None,
     config: dict | None = None,
 ) -> int:
     """Process a single prediction (single-model or ensemble) and log detailed model breakdown (dynamic version).
@@ -648,9 +637,7 @@ def process_prediction(  # noqa: PLR0913
         pipeline (OptimizedPredictionPipeline): The prediction pipeline.
         prediction_count (int): The current prediction count.
         mode (str): Prediction mode ('eegnet', 'shallow', 'rf', 'xgb', 'ensemble').
-        use_hard_voting (bool): Whether to use hard voting.
         models (list): List of loaded model dicts.
-        ensemble_info (dict): Ensemble info dict.
         config (dict): Config dict.
 
     Returns:
@@ -658,7 +645,7 @@ def process_prediction(  # noqa: PLR0913
 
     """
     # Use dynamic system for all modes (legacy fallback removed)
-    if models is not None and ensemble_info is not None and config is not None:
+    if models is not None and config is not None:
         if mode != "ensemble":
             selected_models = [m for m in models if mode.lower() in m["name"].lower()]
             if not selected_models:
@@ -762,13 +749,12 @@ def initialize_pipeline(config_dict: dict) -> OptimizedPredictionPipeline:
     return pipeline
 
 
-def prediction_loop(  # noqa: PLR0913
+def prediction_loop(
     lsl_handler: LSLStreamHandler,
     pipeline: OptimizedPredictionPipeline,
     mode: str,
     config_dict: dict,
     models: list | None = None,
-    ensemble_info: dict | None = None,
 ) -> None:
     """Run the main loop for real-time EEG prediction from LSL stream.
 
@@ -794,7 +780,6 @@ def prediction_loop(  # noqa: PLR0913
                         prediction_count,
                         mode,
                         models=models,
-                        ensemble_info=ensemble_info,
                         config=config_dict,
                     )
             time.sleep(0.001)
@@ -889,7 +874,6 @@ def main() -> None:
                     mode,
                     config,
                     models=models,
-                    ensemble_info=ensemble_info,
                 )
             else:
                 prediction_loop(

@@ -53,7 +53,7 @@ def load_resources(config: dict) -> tuple[dict, object, list]:
     """
     try:
         ensemble_info = load_ensemble_info(config)
-        label_encoder = joblib.load(config["LABEL_ENCODER_PATH"])
+        label_encoder = joblib.load(config["LABEL_ENCODER"])
         logger.info("Loaded ensemble info from %s.", config["ENSEMBLE_INFO_PATH"])
         models = load_models_from_ensemble_info(ensemble_info)
         return ensemble_info, label_encoder, models  # noqa: TRY300

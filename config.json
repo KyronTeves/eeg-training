@@ -70,6 +70,10 @@
   "MODEL_SHALLOW": "models/eeg_shallow_model.h5",
   "MODEL_SHALLOW_CHECKPOINT": "models/eeg_shallow_model_best.h5",
   "MODEL_CONV1D_CHECKPOINT": "models/best_conv1d_temp.keras",
+  "MODEL_CONV1D_SAVE_PATH_H5": "models/eeg_conv1d_model.h5",
+  "MODEL_CONV1D_SAVE_PATH_KERAS": "models/eeg_conv1d_model.keras",
+  "FEATURE_EXTRACTOR_SAVE_PATH_H5": "models/eeg_conv1d_feature_extractor.h5",
+  "FEATURE_EXTRACTOR_SAVE_PATH_KERAS": "models/eeg_conv1d_feature_extractor.keras",
   "MODEL_RF": "models/eeg_rf_model.pkl",
   "MODEL_XGB": "models/eeg_xgb_model.pkl",
   

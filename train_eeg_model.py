@@ -512,19 +512,19 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
         verbose=1,
     )
     # Save the trained model
-    conv1d_model.save("models/eeg_conv1d_model.h5")
-    conv1d_model.save("models/eeg_conv1d_model.keras")
+    conv1d_model.save(config["MODEL_CONV1D_SAVE_PATH_H5"])
+    conv1d_model.save(config["MODEL_CONV1D_SAVE_PATH_KERAS"])
     # Save feature extractor (up to the last concatenation layer)
     feature_extractor = Model(inputs=conv1d_model.input, outputs=conv1d_model.get_layer(index=-2).output)
-    feature_extractor.save("models/eeg_conv1d_feature_extractor.h5")
-    feature_extractor.save("models/eeg_conv1d_feature_extractor.keras")
+    feature_extractor.save(config["FEATURE_EXTRACTOR_SAVE_PATH_H5"])
+    feature_extractor.save(config["FEATURE_EXTRACTOR_SAVE_PATH_KERAS"])
     logger.info("Advanced Conv1D model and feature extractor saved.")
     # Evaluate Conv1D model on training data (since test split is not passed here)
     val_acc = float(np.max(history.history["val_accuracy"])) if "val_accuracy" in history.history else None
     if ensemble_info is not None and val_acc is not None:
         ensemble_info.append({
             "name": "Conv1D",
-            "path": "models/eeg_conv1d_model.h5",
+            "path": config["MODEL_CONV1D_SAVE_PATH_H5"],
             "type": "keras",
             "accuracy": val_acc,
             "weight": 1.0,
