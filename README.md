@@ -51,7 +51,8 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
 ├── test_eeg_model.py       # Evaluate trained models and ensembles
 ├── realtime_eeg_predict.py # Real-time prediction (experimental)
 ├── lsl_stream_handler.py   # LSL streaming interface
-├── utils.py                # Config, windowing, logging, validation
+├── utils.py                # Config, windowing, logging, validation, shared label utilities
+├── prediction_pipeline.py  # OptimizedPredictionPipeline class for real-time/ensemble prediction
 ├── EEGModels.py            # Model architectures
 ├── config.json             # Centralized configuration
 ├── requirements.txt        # Python dependencies
