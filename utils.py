@@ -652,8 +652,11 @@ def load_models_from_ensemble_info(ensemble_info: dict) -> list:
                 {"name": name, "type": model_type, "model": model, "path": model_path},
             )
             logger.info("Loaded %s model: %s from %s", model_type, name, model_path)
-        except (OSError, ImportError, TypeError):
+        except (OSError, ImportError):
             logger.exception("Failed to load model %s from %s.", name, model_path)
+        except TypeError:
+            logger.exception("TypeError while loading model %s from %s. May be programming error.", name, model_path)
+            raise
     return models
 
 
