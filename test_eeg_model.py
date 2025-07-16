@@ -18,6 +18,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from joblib import Parallel, delayed
 from keras.models import load_model
 from sklearn.manifold import TSNE
 from sklearn.metrics import classification_report, confusion_matrix
@@ -100,8 +101,13 @@ def prepare_test_data_representations(
 
     """
     n_channels = config["N_CHANNELS"]
-    # Prepare classic features
-    x_classic_features = np.array([extract_features(window, config["SAMPLING_RATE"]) for window in x_windows])
+    # Prepare classic features (parallelized for performance)
+    x_classic_features = np.array(
+        Parallel(n_jobs=-1, prefer="processes")(
+            delayed(extract_features)(window, config["SAMPLING_RATE"])
+            for window in x_windows
+        ),
+    )
     # Load and apply classic feature scaler from config
     scaler_tree_path = config["SCALER_TREE"]
     scaler_tree = joblib.load(scaler_tree_path)
