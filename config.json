@@ -33,6 +33,7 @@
   "EARLY_STOPPING_MONITOR": "val_accuracy",
   "OPTIMIZER": "adam",
   "LOSS_FUNCTION": "categorical_crossentropy",
+  "USE_REDUCE_LR": true,
   
   "_eegnet_hyperparameters": "--- EEGNet Hyperparameters ---",
   "EEGNET_F1": 16,
