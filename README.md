@@ -116,8 +116,8 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 
 ## Development Status
 
-| Component                | Status         | Notes                                |
-|--------------------------|----------------|--------------------------------------|
+| Component                | Status        | Notes                                |
+| ------------------------ | ------------- | ------------------------------------ |
 | Data Collection          | ✅ Working     | LSL streaming integration complete   |
 | Data Processing          | ✅ Working     | Windowing, feature extraction        |
 | Model Training           | ✅ Working     | Multiple models supported            |
