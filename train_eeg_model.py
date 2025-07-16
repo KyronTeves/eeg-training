@@ -136,7 +136,7 @@ def extract_features_parallel(
 
     """
     return np.array(
-        Parallel(n_jobs=-1, prefer="threads")(
+        Parallel(n_jobs=-1, prefer="processes")(
             delayed(extract_features)(window, config["SAMPLING_RATE"])
             for window in x_windows
         ),
