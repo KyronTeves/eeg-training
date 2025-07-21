@@ -7,6 +7,7 @@ Handles data loading, preprocessing, augmentation, model training, and artifact 
 Typical usage:
     $ python train_eeg_model.py
 """
+
 from __future__ import annotations
 
 import json
@@ -117,7 +118,8 @@ def log_class_distribution(y_train_final: np.ndarray) -> None:
 
 
 def extract_features_parallel(
-    x_windows: np.ndarray, config: dict[str, Any],
+    x_windows: np.ndarray,
+    config: dict[str, Any],
 ) -> np.ndarray:
     """Extract features from each EEG window in parallel using joblib.
 
@@ -131,8 +133,7 @@ def extract_features_parallel(
     """
     return np.array(
         Parallel(n_jobs=-1, prefer="processes")(
-            delayed(extract_features)(window, config["SAMPLING_RATE"])
-            for window in x_windows
+            delayed(extract_features)(window, config["SAMPLING_RATE"]) for window in x_windows
         ),
     )
 
@@ -153,7 +154,9 @@ def compute_class_weights(y_train_final: np.ndarray) -> dict[int, float]:
 
 
 def preprocess_and_augment(
-    x_windows: np.ndarray, y_cat: np.ndarray, config: dict[str, Any],
+    x_windows: np.ndarray,
+    y_cat: np.ndarray,
+    config: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, StandardScaler]:
     """Split EEG data into train/test sets, scales, balance classes, augment, and return processed arrays.
 
@@ -169,7 +172,8 @@ def preprocess_and_augment(
     """
 
     def balance_and_augment(
-        x_train_scaled: np.ndarray, y_train: np.ndarray,
+        x_train_scaled: np.ndarray,
+        y_train: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Balance classes by downsampling and augmenting the data.
 
@@ -186,10 +190,12 @@ def preprocess_and_augment(
         median_count = int(np.median(counts))
         indices_per_class = [np.nonzero(labels == i)[0] for i in range(len(unique))]
         rng = np.random.default_rng()
-        downsampled_indices = np.concatenate([
-            rng.choice(idxs, median_count, replace=False) if len(idxs) > median_count else idxs
-            for idxs in indices_per_class
-        ])
+        downsampled_indices = np.concatenate(
+            [
+                rng.choice(idxs, median_count, replace=False) if len(idxs) > median_count else idxs
+                for idxs in indices_per_class
+            ],
+        )
         rng.shuffle(downsampled_indices)
         x_train_bal = x_train_scaled[downsampled_indices]
         y_train_bal = y_train[downsampled_indices]
@@ -200,7 +206,11 @@ def preprocess_and_augment(
         return x_train_final, y_train_final
 
     x_train, x_test, y_train, y_test = train_test_split(
-        x_windows, y_cat, test_size=0.2, random_state=42, stratify=y_cat,
+        x_windows,
+        y_cat,
+        test_size=0.2,
+        random_state=42,
+        stratify=y_cat,
     )
     scaler = StandardScaler()
     x_train_flat = x_train.reshape(-1, config["N_CHANNELS"])
@@ -303,7 +313,7 @@ def train_eegnet_model(  # noqa: PLR0913
             checkpoint_path = config.get("MODEL_EEGNET_CHECKPOINT")
         elif model_name == "ShallowConvNet":
             checkpoint_path = config.get("MODEL_SHALLOW_CHECKPOINT")
-        else: # fallback
+        else:  # fallback
             model_path_obj = Path(model_path)
             checkpoint_path = str(model_path_obj.with_name(model_path_obj.stem + "_best" + model_path_obj.suffix))
         model_checkpoint = ModelCheckpoint(
@@ -341,19 +351,23 @@ def train_eegnet_model(  # noqa: PLR0913
             "%s Classification Report:\n%s",
             model_name,
             classification_report(
-                y_true_labels, y_pred_labels, target_names=label_encoder.classes_,
+                y_true_labels,
+                y_pred_labels,
+                target_names=label_encoder.classes_,
             ),
         )
         model.save(model_path)
         logger.info("%s saved to %s", model_name, model_path)
         if ensemble_info is not None:
-            ensemble_info.append({
-                "name": model_name,
-                "path": model_path,
-                "type": "keras",
-                "accuracy": float(acc),
-                "weight": 1.0,
-            })
+            ensemble_info.append(
+                {
+                    "name": model_name,
+                    "path": model_path,
+                    "type": "keras",
+                    "accuracy": float(acc),
+                    "weight": 1.0,
+                },
+            )
 
 
 def train_and_save_tree_models(  # noqa: PLR0913
@@ -380,7 +394,11 @@ def train_and_save_tree_models(  # noqa: PLR0913
 
     """
     x_train_tree, x_test_tree, y_train_tree, y_test_tree = train_test_split(
-        x_features, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded,
+        x_features,
+        y_encoded,
+        test_size=0.2,
+        random_state=42,
+        stratify=y_encoded,
     )
     scaler_tree = StandardScaler()
     x_train_scaled_tree = scaler_tree.fit_transform(x_train_tree)
@@ -394,7 +412,9 @@ def train_and_save_tree_models(  # noqa: PLR0913
     logger.info(
         "Classification Report:\n%s",
         classification_report(
-            y_test_tree, rf_pred, target_names=label_encoder.classes_,
+            y_test_tree,
+            rf_pred,
+            target_names=label_encoder.classes_,
         ),
     )
     xgb = XGBClassifier(
@@ -411,7 +431,9 @@ def train_and_save_tree_models(  # noqa: PLR0913
     logger.info(
         "Classification Report:\n%s",
         classification_report(
-            y_test_tree, xgb_pred, target_names=label_encoder.classes_,
+            y_test_tree,
+            xgb_pred,
+            target_names=label_encoder.classes_,
         ),
     )
     joblib.dump(rf, rf_path)
@@ -419,20 +441,24 @@ def train_and_save_tree_models(  # noqa: PLR0913
     joblib.dump(scaler_tree, scaler_path)
     logger.info("%sTree models and scaler saved: %s, %s, %s", log_prefix, rf_path, xgb_path, scaler_path)
     if ensemble_info is not None:
-        ensemble_info.append({
-            "name": f"{log_prefix.strip()} RandomForest",
-            "path": rf_path,
-            "type": "sklearn",
-            "accuracy": float(rf_acc),
-            "weight": 1.0,
-        })
-        ensemble_info.append({
-            "name": f"{log_prefix.strip()} XGBoost",
-            "path": xgb_path,
-            "type": "sklearn",
-            "accuracy": float(xgb_acc),
-            "weight": 1.0,
-        })
+        ensemble_info.append(
+            {
+                "name": f"{log_prefix.strip()} RandomForest",
+                "path": rf_path,
+                "type": "sklearn",
+                "accuracy": float(rf_acc),
+                "weight": 1.0,
+            },
+        )
+        ensemble_info.append(
+            {
+                "name": f"{log_prefix.strip()} XGBoost",
+                "path": xgb_path,
+                "type": "sklearn",
+                "accuracy": float(xgb_acc),
+                "weight": 1.0,
+            },
+        )
 
 
 def train_conv1d_and_tree_models(  # noqa: PLR0913
@@ -517,13 +543,15 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
     # Evaluate Conv1D model on training data (since test split is not passed here)
     val_acc = float(np.max(history.history["val_accuracy"])) if "val_accuracy" in history.history else None
     if ensemble_info is not None and val_acc is not None:
-        ensemble_info.append({
-            "name": "Conv1D",
-            "path": config["MODEL_CONV1D_SAVE_PATH_H5"],
-            "type": "keras",
-            "accuracy": val_acc,
-            "weight": 1.0,
-        })
+        ensemble_info.append(
+            {
+                "name": "Conv1D",
+                "path": config["MODEL_CONV1D_SAVE_PATH_H5"],
+                "type": "keras",
+                "accuracy": val_acc,
+                "weight": 1.0,
+            },
+        )
 
     # --- Conv1D Feature Extraction for Tree Models ---
     logger.info("Extracting Conv1D features for tree-based models...")
@@ -566,7 +594,14 @@ def main() -> None:
     ensemble_info = []
 
     train_eegnet_model(
-        x_train_final, y_train_final, x_test_scaled, y_test, config, le, class_weight_dict, ensemble_info,
+        x_train_final,
+        y_train_final,
+        x_test_scaled,
+        y_test,
+        config,
+        le,
+        class_weight_dict,
+        ensemble_info,
     )
     joblib.dump(le, config["LABEL_ENCODER"])
     joblib.dump(scaler, config["SCALER_EEGNET"])

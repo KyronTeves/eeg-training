@@ -68,7 +68,8 @@ def load_and_filter_data(config: dict[str, Any]) -> pd.DataFrame:
 
 
 def process_and_window_data(
-    df: pd.DataFrame, config: dict[str, Any],
+    df: pd.DataFrame,
+    config: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     """Extract EEG and labels from DataFrame, then creates overlapping windows.
 
@@ -102,7 +103,9 @@ def process_and_window_data(
 
 
 def save_windowed_data(
-    x_windows: np.ndarray, y_windows: np.ndarray, config: dict[str, Any],
+    x_windows: np.ndarray,
+    y_windows: np.ndarray,
+    config: dict[str, Any],
 ) -> None:
     """Save windowed EEG data and labels to .npy files.
 

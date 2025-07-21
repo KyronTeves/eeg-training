@@ -10,6 +10,7 @@ Typical usage:
     $ python realtime_eeg_predict.py
 
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,9 +108,7 @@ def session_calibration(lsl_handler: LSLStreamHandler, config: dict) -> None:
     session_model_path_rf_conv1d = "models/eeg_rf_model_conv1d_session.pkl"
     session_model_path_xgb_conv1d = "models/eeg_xgb_model_conv1d_session.pkl"
 
-    user_calib = (
-        input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
-    )
+    user_calib = input("Would you like to calibrate for this session? (Y/n): ").strip().lower()
     if user_calib in ("", "y", "yes"):
         try:
             logger.info("Starting session calibration. Please follow the prompts.")
@@ -155,24 +154,24 @@ def select_prediction_mode(ensemble_info: dict | None = None) -> str | None:
     logger.info("\nChoose prediction display mode:")
     for idx, name in enumerate(model_names, 1):
         logger.info("%d. %s only", idx, name)
-    logger.info("%d. Ensemble (all models)", len(model_names)+1)
-    logger.info("%d. Exit", len(model_names)+2)
+    logger.info("%d. Ensemble (all models)", len(model_names) + 1)
+    logger.info("%d. Exit", len(model_names) + 2)
     while True:
-        prompt = f"Enter 1-{len(model_names)+2}: "
+        prompt = f"Enter 1-{len(model_names) + 2}: "
         mode = input(prompt).strip()
         try:
             mode_idx = int(mode)
         except ValueError:
-            logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names)+2)
+            logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names) + 2)
             continue
         if 1 <= mode_idx <= len(model_names):
             # Return a normalized key for single-model mode (lowercase, no spaces, for matching)
-            return model_names[mode_idx-1].lower().replace(" ", "")
-        if mode_idx == len(model_names)+1:
+            return model_names[mode_idx - 1].lower().replace(" ", "")
+        if mode_idx == len(model_names) + 1:
             return "ensemble"
-        if mode_idx == len(model_names)+2:
+        if mode_idx == len(model_names) + 2:
             return "exit"
-        logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names)+2)
+        logger.warning("Invalid selection. Please enter a number from 1 to %d.", len(model_names) + 2)
 
 
 def initialize_pipeline(config_dict: dict, models_metadata: list | None = None) -> OptimizedPredictionPipeline:
@@ -258,14 +257,18 @@ def test_models_without_lsl() -> bool | None:
             pipeline.add_sample(sample)
         if pipeline.is_ready_for_prediction():
             # Use the dynamic system for test prediction
-            # Load ensemble info and models for dynamic prediction
+            # Use the dynamic ensemble system for test prediction.
+            # The dynamic system allows loading and switching between models in real time,
+            # enabling flexible and adaptive predictions based on the ensemble architecture.
             ensemble_info = load_ensemble_info(config)
             models = load_models_from_ensemble_info(ensemble_info)
             result = pipeline.predict_realtime_dynamic(models, config)
             if result:
                 label, confidence = result
                 logger.info(
-                    "✓ Test prediction: %s (confidence: %.3f)", label, confidence,
+                    "✓ Test prediction: %s (confidence: %.3f)",
+                    label,
+                    confidence,
                 )
             else:
                 logger.info("Models loaded successfully but no prediction made")
@@ -284,7 +287,8 @@ def main() -> None:
     config = load_config()
     logger.info("Starting LSL-based real-time EEG prediction...")
     lsl_handler = LSLStreamHandler(
-        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"],
+        stream_name=config["LSL_STREAM_NAME"],
+        timeout=config["LSL_TIMEOUT"],
     )
     if not lsl_handler.connect():
         logger.error(

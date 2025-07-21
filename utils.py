@@ -8,6 +8,7 @@ validation utilities for EEG data processing and model training.
 Typical usage:
     from utils import load_config, window_data, setup_logging
 """
+
 from __future__ import annotations
 
 import functools
@@ -67,6 +68,7 @@ SHORT_LABELS = {
     "neutral": "NEU",
 }
 
+
 def short_label(label: str) -> str:
     """Return a short display label for a given direction label.
 
@@ -81,7 +83,8 @@ def short_label(label: str) -> str:
 
 
 def setup_logging(
-    logfile: str = "eeg_training.log", default_level: str | None = None,
+    logfile: str = "eeg_training.log",
+    default_level: str | None = None,
 ) -> None:
     """Set up logging to both console and file with rotation.
 
@@ -138,12 +141,16 @@ def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 10) -
         Path(logfile).rename(archive_name)
 
         logger.info(
-            "Large log file archived to %s (%.1fMB)", archive_name, file_size_mb,
+            "Large log file archived to %s (%.1fMB)",
+            archive_name,
+            file_size_mb,
         )
         logger.info("Starting fresh log file with rotation enabled")
 
 
 T = TypeVar("T", dict, list, Path, str, float, bool, None)
+
+
 def convert_paths(obj: T) -> T:
     """Recursively convert Path objects to strings for JSON serialization.
 
@@ -222,7 +229,9 @@ def check_no_nan(x: np.ndarray, name: str = "data") -> None:
 
 
 def check_labels_valid(
-    labels: np.ndarray, valid_labels: list[Any] | None = None, name: str = "labels",
+    labels: np.ndarray,
+    valid_labels: list[Any] | None = None,
+    name: str = "labels",
 ) -> None:
     """Check for NaN and invalid label values in an array.
 
@@ -248,7 +257,10 @@ def check_labels_valid(
 
 
 def window_data(
-    data: np.ndarray, labels: np.ndarray, window_size: int, step_size: int,
+    data: np.ndarray,
+    labels: np.ndarray,
+    window_size: int,
+    step_size: int,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Segment data and labels into overlapping windows using stride tricks.
 
@@ -280,9 +292,7 @@ def window_data(
     # Compute majority label using np.unique
     y_windows = np.array(
         [
-            np.unique(window, return_counts=True)[0][
-                np.argmax(np.unique(window, return_counts=True)[1])
-            ]
+            np.unique(window, return_counts=True)[0][np.argmax(np.unique(window, return_counts=True)[1])]
             for window in label_windows.reshape(n_windows, -1)
         ],
     )
@@ -334,10 +344,7 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
             # Avoid division by zero if signal is flat
             band_powers = [0.0] * len(bands)
         else:
-            band_powers = [
-                np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power
-                for fmin, fmax in bands.values()
-            ]
+            band_powers = [np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power for fmin, fmax in bands.values()]
 
         features.extend(band_powers)
 
@@ -488,9 +495,7 @@ def calibrate_deep_models(  # noqa: PLR0913
     shallow = ShallowConvNet(
         nb_classes=len(config["LABELS"]),
         Chans=len(
-            config.get("EEG_CHANNELS")
-            or config.get("CHANNELS")
-            or list(range(config["N_CHANNELS"])),
+            config.get("EEG_CHANNELS") or config.get("CHANNELS") or list(range(config["N_CHANNELS"])),
         ),
         Samples=config["WINDOW_SIZE"],
     )
@@ -574,7 +579,9 @@ def calibrate_tree_models(  # noqa: PLR0913
     logger.info("Random Forest session model saved to %s", rf_out)
     # XGBoost
     xgb = XGBClassifier(
-        n_estimators=100, use_label_encoder=False, eval_metric="mlogloss",
+        n_estimators=100,
+        use_label_encoder=False,
+        eval_metric="mlogloss",
     )
     xgb.fit(x_feat_scaled, y_calib_encoded)
     joblib.dump(xgb, xgb_out)
@@ -797,6 +804,7 @@ def handle_errors(main_func: Callable) -> Callable:
         Callable: Wrapped function.
 
     """
+
     @functools.wraps(main_func)
     def wrapper(*args, **kwargs) -> Any:  # noqa: ANN002, ANN003, ANN401
         try:
@@ -807,4 +815,5 @@ def handle_errors(main_func: Callable) -> Callable:
         except Exception:
             logger.exception("Unhandled exception.")
             raise
+
     return wrapper

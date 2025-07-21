@@ -25,6 +25,7 @@ from utils import CUSTOM_OBJECTS, extract_features, setup_logging, short_label
 setup_logging()
 logger = logging.getLogger(__name__)
 
+
 class OptimizedPredictionPipeline:
     """Handles real-time EEG prediction using optimized models and dynamic ensemble."""
 
@@ -66,7 +67,6 @@ class OptimizedPredictionPipeline:
         self._shallow_shape_mismatch_logged = False
         self._shallow_error_logged = False
 
-
     def load_optimized_models(self, models_metadata: list[dict] | None = None) -> None:
         """Load and optimize models for inference.
 
@@ -80,7 +80,8 @@ class OptimizedPredictionPipeline:
             self.models["eegnet"] = {"model": load_model(self.config["MODEL_EEGNET"])}
             self.models["shallow"] = {
                 "model": load_model(
-                    self.config["MODEL_SHALLOW"], custom_objects=CUSTOM_OBJECTS,
+                    self.config["MODEL_SHALLOW"],
+                    custom_objects=CUSTOM_OBJECTS,
                 ),
             }
             # Tree-based models (already fast)
@@ -96,9 +97,8 @@ class OptimizedPredictionPipeline:
             needs_conv1d = False
             if models_metadata is not None:
                 for m in models_metadata:
-                    if (
-                        ("conv1d" in m["name"].lower() and m["type"] == "keras")
-                        or ("conv1d features" in m["name"].lower())
+                    if ("conv1d" in m["name"].lower() and m["type"] == "keras") or (
+                        "conv1d features" in m["name"].lower()
                     ):
                         needs_conv1d = True
                         break
@@ -148,9 +148,7 @@ class OptimizedPredictionPipeline:
 
         # Create dummy features with correct feature count
         # For tree models: 16 channels * (5 band powers + 3 stats) = 128 features
-        expected_features = (
-            self.n_channels * 8
-        )  # 5 band powers + 3 statistical features per channel
+        expected_features = self.n_channels * 8  # 5 band powers + 3 statistical features per channel
         dummy_features = rng.standard_normal((1, expected_features))
 
         # Warm up EEGNet
@@ -197,10 +195,9 @@ class OptimizedPredictionPipeline:
             np.ndarray: Array of shape (1, window_size, n_channels)
 
         """
-        return np.array(list(self.buffer)[-self.window_size:]).reshape(
+        return np.array(list(self.buffer)[-self.window_size :]).reshape(
             (1, self.window_size, self.n_channels),
         )
-
 
     def predict_eegnet(self, window: np.ndarray) -> tuple[np.ndarray, float]:
         """Run EEGNet model prediction on a window of EEG data.
@@ -226,11 +223,7 @@ class OptimizedPredictionPipeline:
                     )
                     self._shape_mismatch_logged = True
                 return np.zeros(len(self.label_encoder.classes_)), 0.0
-            window_scaled = (
-                self.scalers["eegnet"]
-                .transform(window.reshape(-1, self.n_channels))
-                .reshape(window.shape)
-            )
+            window_scaled = self.scalers["eegnet"].transform(window.reshape(-1, self.n_channels)).reshape(window.shape)
             window_input = np.expand_dims(window_scaled, -1)
             window_input = np.transpose(window_input, (0, 2, 1, 3))
             if "interpreter" in self.models["eegnet"]:
@@ -250,8 +243,7 @@ class OptimizedPredictionPipeline:
             if not self._eegnet_error_logged:
                 logger.exception("EEGNet prediction failed.")
                 logger.exception(
-                    "EEGNet will be disabled for this session."
-                    "Please retrain models with correct window size.",
+                    "EEGNet will be disabled for this session. Please retrain models with correct window size.",
                 )
                 self._eegnet_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
@@ -287,7 +279,8 @@ class OptimizedPredictionPipeline:
             window_input = np.expand_dims(window_scaled, -1)
             window_input = np.transpose(window_input, (0, 2, 1, 3))
             predictions = self.models["shallow"]["model"].predict(
-                window_input, verbose=0,
+                window_input,
+                verbose=0,
             )
             confidence = np.max(predictions)
             elapsed = time.time() - start_time
@@ -297,14 +290,14 @@ class OptimizedPredictionPipeline:
             if not self._shallow_error_logged:
                 logger.exception("ShallowConvNet prediction failed.")
                 logger.exception(
-                    "ShallowConvNet will be disabled for this session."
-                    "Please retrain models with correct window size.",
+                    "ShallowConvNet will be disabled for this session. Please retrain models with correct window size.",
                 )
                 self._shallow_error_logged = True
             return np.zeros(len(self.label_encoder.classes_)), 0.0
 
     def predict_tree_models(
-        self, window: np.ndarray,
+        self,
+        window: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray, float]:
         """Run Random Forest and XGBoost predictions on a window of EEG data.
 
@@ -332,7 +325,6 @@ class OptimizedPredictionPipeline:
             num_classes = len(self.label_encoder.classes_)
             return np.zeros(num_classes), np.zeros(num_classes), 0.0
 
-
     def prepare_realtime_features(
         self,
         window: np.ndarray,
@@ -350,9 +342,11 @@ class OptimizedPredictionPipeline:
         """
         n_channels = config["N_CHANNELS"]
         # Classic features
-        x_classic_features = np.array([
-            extract_features(window[0], config["SAMPLING_RATE"]),
-        ])  # shape (1, n_features)
+        x_classic_features = np.array(
+            [
+                extract_features(window[0], config["SAMPLING_RATE"]),
+            ],
+        )  # shape (1, n_features)
         x_classic_features_scaled = self.scalers["tree"].transform(x_classic_features)
 
         # Scaled window for CNNs
@@ -372,7 +366,6 @@ class OptimizedPredictionPipeline:
             "windows_eegnet": x_window_eegnet,
             "conv1d_features": x_conv1d_features,
         }
-
 
     def map_model_inputs_realtime(self, models: list, features: dict) -> dict:
         """Map model names to their required input features for real-time prediction.
@@ -399,7 +392,6 @@ class OptimizedPredictionPipeline:
             else:
                 model_inputs[name] = features["classic_features"]
         return model_inputs
-
 
     def predict_realtime_dynamic(
         self,
@@ -444,7 +436,6 @@ class OptimizedPredictionPipeline:
         self.last_prediction = predicted_label
         self.prediction_confidence = confidence
         return predicted_label, confidence
-
 
     def predict_and_log_single_model(
         self,
@@ -536,7 +527,6 @@ class OptimizedPredictionPipeline:
         )
         return prediction_count
 
-
     def get_performance_stats(self) -> dict:
         """Get average latency, FPS, buffer size, and last confidence for real-time predictions.
 
@@ -558,7 +548,8 @@ class OptimizedPredictionPipeline:
         }
 
     def start_async_prediction(
-        self, callback: Callable[[tuple[str, float]], None] | None = None,
+        self,
+        callback: Callable[[tuple[str, float]], None] | None = None,
         models: list | None = None,
         config: dict | None = None,
     ) -> None:
@@ -573,6 +564,7 @@ class OptimizedPredictionPipeline:
         if models is None or config is None:
             logger.error("Models and config must be provided for async prediction.")
             return
+
         def _async_prediction_loop() -> None:
             while not self.stop_thread:
                 try:
@@ -587,12 +579,13 @@ class OptimizedPredictionPipeline:
                     )
 
                 time.sleep(0.001)  # Small delay to prevent busy waiting
+
         self.prediction_thread = threading.Thread(
-            target=_async_prediction_loop, daemon=True,
+            target=_async_prediction_loop,
+            daemon=True,
         )
         self.prediction_thread.start()
         logger.info("Asynchronous prediction started.")
-
 
     def stop_async_prediction(self) -> None:
         """Stop the asynchronous prediction thread."""

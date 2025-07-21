@@ -104,8 +104,7 @@ def prepare_test_data_representations(
     # Prepare classic features (parallelized for performance)
     x_classic_features = np.array(
         Parallel(n_jobs=-1, prefer="processes")(
-            delayed(extract_features)(window, config["SAMPLING_RATE"])
-            for window in x_windows
+            delayed(extract_features)(window, config["SAMPLING_RATE"]) for window in x_windows
         ),
     )
     # Load and apply classic feature scaler from config
