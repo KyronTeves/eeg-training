@@ -34,6 +34,7 @@
   "OPTIMIZER": "adam",
   "LOSS_FUNCTION": "categorical_crossentropy",
   "USE_REDUCE_LR": true,
+  "CLASS_BALANCE_STRATEGY": "median",
   
   "_eegnet_hyperparameters": "--- EEGNet Hyperparameters ---",
   "EEGNET_F1": 16,

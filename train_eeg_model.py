@@ -177,6 +177,10 @@ def preprocess_and_augment(
     ) -> tuple[np.ndarray, np.ndarray]:
         """Balance classes by downsampling and augmenting the data.
 
+        Uses the strategy specified in config['CLASS_BALANCE_STRATEGY']:
+            - 'median': Downsample each class to the median class count (default, less aggressive).
+            - 'min': Downsample each class to the minimum class count (more aggressive, less data loss for minority).
+
         Args:
             x_train_scaled (np.ndarray): Scaled training data.
             y_train (np.ndarray): One-hot encoded training labels.
@@ -187,12 +191,13 @@ def preprocess_and_augment(
         """
         labels = np.argmax(y_train, axis=1)
         unique, counts = np.unique(labels, return_counts=True)
-        median_count = int(np.median(counts))
+        strategy = config.get("CLASS_BALANCE_STRATEGY", "median")
+        target_count = int(np.min(counts)) if strategy == "min" else int(np.median(counts))
         indices_per_class = [np.nonzero(labels == i)[0] for i in range(len(unique))]
         rng = np.random.default_rng()
         downsampled_indices = np.concatenate(
             [
-                rng.choice(idxs, median_count, replace=False) if len(idxs) > median_count else idxs
+                rng.choice(idxs, target_count, replace=False) if len(idxs) > target_count else idxs
                 for idxs in indices_per_class
             ],
         )
