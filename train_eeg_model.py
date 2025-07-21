@@ -277,10 +277,6 @@ def train_eegnet_model(  # noqa: PLR0913
             verbose=1,
         )
 
-    kern_length = config["EEGNET_KERN_LENGTH"]
-    f1 = config["EEGNET_F1"]
-    d = config["EEGNET_D"]
-    f2 = config["EEGNET_F2"]
     models_to_train = config.get("MODELS_TO_TRAIN", ["EEGNet", "ShallowConvNet"])
     for model_name in models_to_train:
         logger.info("=== Training %s ===", model_name)
@@ -289,10 +285,10 @@ def train_eegnet_model(  # noqa: PLR0913
                 nb_classes=y_train.shape[1],
                 Chans=config["N_CHANNELS"],
                 Samples=config["WINDOW_SIZE"],
-                kernLength=kern_length,
-                F1=f1,
-                D=d,
-                F2=f2,
+                kernLength=config["EEGNET_KERN_LENGTH"],
+                F1=config["EEGNET_F1"],
+                D=config["EEGNET_D"],
+                F2=config["EEGNET_F2"],
                 dropoutRate=config["EEGNET_DROPOUT_RATE"],
                 dropoutType=config["EEGNET_DROPOUT_TYPE"],
                 norm_rate=config["EEGNET_NORM_RATE"],
@@ -320,8 +316,7 @@ def train_eegnet_model(  # noqa: PLR0913
         elif model_name == "ShallowConvNet":
             checkpoint_path = config.get("MODEL_SHALLOW_CHECKPOINT")
         else:  # fallback
-            model_path_obj = Path(model_path)
-            checkpoint_path = str(model_path_obj.with_name(model_path_obj.stem + "_best" + model_path_obj.suffix))
+            checkpoint_path = "models/model_best_checkpoint.keras"
         model_checkpoint = ModelCheckpoint(
             checkpoint_path,
             monitor="val_accuracy",
