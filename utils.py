@@ -260,13 +260,12 @@ def window_data(
         shape=(n_windows, window_size, 1),
         strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
     )
-    # Compute majority label using np.unique
-    y_windows = np.array(
-        [
-            np.unique(window, return_counts=True)[0][np.argmax(np.unique(window, return_counts=True)[1])]
-            for window in label_windows.reshape(n_windows, -1)
-        ],
-    )
+    # Compute majority label using np.unique (efficient: store result)
+    y_windows = np.empty(n_windows, dtype=labels.dtype)
+    for idx, window in enumerate(label_windows.reshape(n_windows, -1)):
+        unique_labels, counts = np.unique(window, return_counts=True)
+        majority_label = unique_labels[np.argmax(counts)]
+        y_windows[idx] = majority_label
 
     # Data quality assessment
     logger.info(
