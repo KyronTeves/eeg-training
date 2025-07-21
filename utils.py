@@ -16,7 +16,6 @@ import json
 import logging
 import os
 import time
-from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
@@ -118,34 +117,6 @@ def setup_logging(
 
     # Configure root logger
     logging.basicConfig(level=level, handlers=[console_handler, file_handler])
-
-
-def cleanup_old_logs(logfile: str = "eeg_training.log", max_size_mb: int = 10) -> None:
-    """Archive and rotate log file if it exceeds max_size_mb.
-
-    Args:
-        logfile (str): Log file name. Defaults to "eeg_training.log".
-        max_size_mb (int): Max size in MB before rotating. Defaults to 10.
-
-    """
-    if not Path(logfile).exists():
-        return
-
-    file_size_mb = Path(logfile).stat().st_size / (1024 * 1024)
-
-    if file_size_mb > max_size_mb:
-        # Archive the current log
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        archive_name = f"{logfile}.archive_{timestamp}"
-
-        Path(logfile).rename(archive_name)
-
-        logger.info(
-            "Large log file archived to %s (%.1fMB)",
-            archive_name,
-            file_size_mb,
-        )
-        logger.info("Starting fresh log file with rotation enabled")
 
 
 T = TypeVar("T", dict, list, Path, str, float, bool, None)
