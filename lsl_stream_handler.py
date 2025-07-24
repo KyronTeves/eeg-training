@@ -4,6 +4,7 @@ LSL Stream Handler for receiving pre-filtered EEG data from OpenBCI GUI.
 
 Connects to LSL, receives and buffers EEG data, and provides windowed access for downstream processing.
 """
+
 from __future__ import annotations
 
 import logging
@@ -105,7 +106,9 @@ class LSLStreamHandler:
             return np.empty((0, self.n_channels or 0)), np.empty((0,))
 
     def get_window(
-        self, window_size: int, timeout: float = 2.0,
+        self,
+        window_size: int,
+        timeout: float = 2.0,
     ) -> np.ndarray | None:
         """Collect exactly window_size samples from the stream.
 

@@ -90,8 +90,8 @@ def EEGNet(nb_classes, Chans = 64, Samples = 128,
     
     The model with default parameters gives the EEGNet-8,2 model as discussed
     in the paper. This model should do pretty well in general, although it is
-	advised to do some model searching to get optimal performance on your
-	particular dataset.
+    advised to do some model searching to get optimal performance on your
+    particular dataset.
 
     We set F2 = F1 * D (number of input filters = number of output filters) for
     the SeparableConv2D layer. We haven't extensively tested other values of this
@@ -400,3 +400,132 @@ def ShallowConvNet(nb_classes, Chans = 64, Samples = 128, dropoutRate = 0.5):
     return Model(inputs=input_main, outputs=softmax)
 
 
+# === Custom Models Added by Kyron, July 2025 ===
+# The following model is not part of the original ARL EEGModels distribution.
+# License: See file header (Apache 2.0/CC0 applies to this addition as well).
+from tensorflow.keras.layers import Conv1D, BatchNormalization, Activation, Dropout, MaxPooling1D, Add, GlobalAveragePooling1D, Dense, LayerNormalization, MultiHeadAttention, Concatenate, Input
+from tensorflow.keras.regularizers import l2
+from tensorflow.keras.models import Model
+
+def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0.2, 0.3, 0.4), num_heads=(4, 8)):
+    """AdvancedConv1DNet: Deep Conv1D neural network for EEG classification with residual and attention blocks.
+
+    This model is designed for robust EEG time-series classification, combining Conv1D layers, residual connections,
+    multi-head self-attention, and dense feature fusion.
+    It is suitable for multi-class classification tasks on windowed EEG data.
+
+    Architecture Overview:
+        - Input: (window_size, n_channels) — expects windowed EEG data (e.g., (128, 8) for 1s at 128Hz, 8 channels)
+        - Initial Conv1D blocks for local feature extraction
+        - Residual blocks for deeper feature learning and gradient flow
+        - Multi-head self-attention blocks for temporal context modeling
+        - Progressive feature expansion (32 → 64 → 128 → 256 filters)
+        - Global average pooling for temporal aggregation
+        - Dense feature fusion (512 → 256 → 128) with skip connections and concatenation
+        - Output: Dense softmax layer for multi-class prediction
+
+    Input Shape:
+        - X: np.ndarray of shape (batch_size, window_size, n_channels)
+        - y: np.ndarray of shape (batch_size,) or (batch_size, nb_classes) (one-hot)
+
+    Args:
+        nb_classes (int): Number of output classes.
+        window_size (int): Number of time samples per window (e.g., 128 for 1s at 128Hz).
+        n_channels (int): Number of EEG channels (e.g., 8, 16, 32).
+        dropout_rates (tuple[float], optional): Dropout rates for each block. Default: (0.1, 0.2, 0.3, 0.4).
+        num_heads (tuple[int], optional): Number of attention heads for each attention block. Default: (4, 8).
+
+    Returns:
+        keras.Model: Keras model ready for training.
+
+    Performance Notes:
+        - Designed for high expressivity and regularization; suitable for moderate-to-large EEG datasets.
+        - Residual and attention blocks improve gradient flow and temporal context modeling.
+        - Dropout and L2 regularization help prevent overfitting.
+        - For small datasets, consider reducing model depth or increasing regularization.
+
+    Example:
+        >>> model = AdvancedConv1DNet(nb_classes=4, window_size=128, n_channels=8)
+        >>> model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+        >>> model.fit(X_train, y_train, epochs=50, batch_size=32)
+
+    """
+    conv_input = Input(shape=(window_size, n_channels))
+
+    def create_conv1d_block(x, filters, kernel_size, pool_size=None, dropout_rate=0.2):
+        x = Conv1D(filters, kernel_size=kernel_size, padding='same', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x)
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        if dropout_rate > 0:
+            x = Dropout(dropout_rate)(x)
+        if pool_size:
+            x = MaxPooling1D(pool_size=pool_size)(x)
+        return x
+
+    def create_residual_block(x, filters, kernel_size, dropout_rate=0.2):
+        shortcut = x
+        x = Conv1D(filters, kernel_size=kernel_size, padding='same', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x)
+        x = BatchNormalization()(x)
+        x = Activation('relu')(x)
+        x = Dropout(dropout_rate)(x)
+        x = Conv1D(filters, kernel_size=kernel_size, padding='same', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x)
+        x = BatchNormalization()(x)
+        if shortcut.shape[-1] != filters:
+            shortcut = Conv1D(filters, kernel_size=1, padding='same', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(shortcut)
+            shortcut = BatchNormalization()(shortcut)
+        x = Add()([x, shortcut])
+        x = Activation('relu')(x)
+        x = Dropout(dropout_rate * 0.5)(x)
+        return x
+
+    def create_attention_block(x, num_heads=4, dropout_rate=0.1):
+        # Always use Python int for key_dim to avoid type inconsistencies
+        feature_dim = x.shape[-1]
+        if feature_dim is None:
+            msg = "Feature dimension must be known at model build time for MultiHeadAttention."
+            raise ValueError(msg)
+        key_dim = feature_dim // num_heads
+        x_norm = LayerNormalization()(x)
+        attention_output = MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=key_dim,
+            dropout=dropout_rate,
+        )(x_norm, x_norm)
+        x = Add()([x, attention_output])
+        x = LayerNormalization()(x)
+        # Ensure ff_dim is an integer for Dense layer initialization
+        ff_dim = feature_dim * 2
+        ff = Dense(ff_dim, activation='relu', kernel_regularizer=l2(0.005))(x)
+        ff = Dropout(dropout_rate)(ff)
+        ff = Dense(feature_dim, kernel_regularizer=l2(0.005))(ff)
+        x = Add()([x, ff])
+        return LayerNormalization()(x)
+    x = create_conv1d_block(conv_input, 32, kernel_size=7, dropout_rate=dropout_rates[0])
+    x = create_conv1d_block(x, 64, kernel_size=5, pool_size=2, dropout_rate=dropout_rates[1])
+    x = create_residual_block(x, 64, kernel_size=3, dropout_rate=dropout_rates[1])
+    x = create_conv1d_block(x, 128, kernel_size=3, pool_size=2, dropout_rate=dropout_rates[2])
+    x = create_attention_block(x, num_heads=num_heads[0], dropout_rate=0.1)
+    x = create_residual_block(x, 128, kernel_size=3, dropout_rate=dropout_rates[2])
+    x = create_conv1d_block(x, 256, kernel_size=3, pool_size=2, dropout_rate=dropout_rates[3])
+    x = create_attention_block(x, num_heads=num_heads[1], dropout_rate=0.1)
+    x = GlobalAveragePooling1D()(x)
+    x1 = Dense(512, activation='relu', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x)
+    x1 = BatchNormalization()(x1)
+    x1 = Dropout(0.5)(x1)
+    x2 = Dense(256, activation='relu', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x1)
+    x2 = BatchNormalization()(x2)
+    x2 = Dropout(0.4)(x2)
+    x3 = Dense(128, activation='relu', kernel_regularizer=l2(0.005), kernel_initializer='he_normal')(x2)
+    x3 = BatchNormalization()(x3)
+    x3 = Dropout(0.3)(x3)
+    x1_reduced = Dense(64, activation='relu', kernel_regularizer=l2(0.005))(x1)
+    x2_reduced = Dense(32, activation='relu', kernel_regularizer=l2(0.005))(x2)
+    combined_features = Concatenate()([x3, x2_reduced, x1_reduced])
+    conv_features = combined_features
+    conv_output = Dense(
+        nb_classes,
+        activation='softmax',
+        name='classification',
+        kernel_initializer='glorot_uniform'
+    )(conv_features)
+    return Model(inputs=conv_input, outputs=conv_output)
