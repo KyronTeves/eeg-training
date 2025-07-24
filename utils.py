@@ -309,12 +309,15 @@ def extract_features(window: np.ndarray, fs: int = 250) -> np.ndarray:
         nperseg = min(256, len(channel_data))
         freqs, psd = welch(channel_data, fs=fs, nperseg=nperseg)
 
+        # Precompute boolean masks for each frequency band
+        band_masks = {band: (freqs >= fmin) & (freqs < fmax) for band, (fmin, fmax) in bands.items()}
+
         total_power = np.sum(psd)
         if total_power == 0:
             # Avoid division by zero if signal is flat
             band_powers = [0.0] * len(bands)
         else:
-            band_powers = [np.sum(psd[(freqs >= fmin) & (freqs < fmax)]) / total_power for fmin, fmax in bands.values()]
+            band_powers = [np.sum(psd[band_masks[band]]) / total_power for band in bands]
 
         features.extend(band_powers)
 
