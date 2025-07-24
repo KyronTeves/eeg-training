@@ -436,7 +436,7 @@ def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0
         num_heads (tuple[int], optional): Number of attention heads for each attention block. Default: (4, 8).
 
     Returns:
-        keras.Model: Compiled Keras model ready for training.
+        keras.Model: Keras model ready for training.
 
     Performance Notes:
         - Designed for high expressivity and regularization; suitable for moderate-to-large EEG datasets.
@@ -479,18 +479,27 @@ def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0
         return x
 
     def create_attention_block(x, num_heads=4, dropout_rate=0.1):
+        # Always use Python int for key_dim to avoid type inconsistencies
+        feature_dim = x.shape[-1]
+        if feature_dim is None:
+            msg = "Feature dimension must be known at model build time for MultiHeadAttention."
+            raise ValueError(msg)
+        key_dim = feature_dim // num_heads
         x_norm = LayerNormalization()(x)
-        attention_output = MultiHeadAttention(num_heads=num_heads, key_dim=x.shape[-1] // num_heads, dropout=dropout_rate)(x_norm, x_norm)
+        attention_output = MultiHeadAttention(
+            num_heads=num_heads,
+            key_dim=key_dim,
+            dropout=dropout_rate,
+        )(x_norm, x_norm)
         x = Add()([x, attention_output])
         x = LayerNormalization()(x)
-        ff_dim = x.shape[-1] * 2
+        # Ensure ff_dim is an integer for Dense layer initialization
+        ff_dim = feature_dim * 2
         ff = Dense(ff_dim, activation='relu', kernel_regularizer=l2(0.005))(x)
         ff = Dropout(dropout_rate)(ff)
-        ff = Dense(x.shape[-1], kernel_regularizer=l2(0.005))(ff)
+        ff = Dense(feature_dim, kernel_regularizer=l2(0.005))(ff)
         x = Add()([x, ff])
-        x = LayerNormalization()(x)
-        return x
-
+        return LayerNormalization()(x)
     x = create_conv1d_block(conv_input, 32, kernel_size=7, dropout_rate=dropout_rates[0])
     x = create_conv1d_block(x, 64, kernel_size=5, pool_size=2, dropout_rate=dropout_rates[1])
     x = create_residual_block(x, 64, kernel_size=3, dropout_rate=dropout_rates[1])
@@ -513,5 +522,10 @@ def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0
     x2_reduced = Dense(32, activation='relu', kernel_regularizer=l2(0.005))(x2)
     combined_features = Concatenate()([x3, x2_reduced, x1_reduced])
     conv_features = combined_features
-    conv_output = Dense(nb_classes, activation='softmax', name='classification', kernel_initializer='glorot_uniform')(conv_features)
+    conv_output = Dense(
+        nb_classes,
+        activation='softmax',
+        name='classification',
+        kernel_initializer='glorot_uniform'
+    )(conv_features)
     return Model(inputs=conv_input, outputs=conv_output)

@@ -223,7 +223,14 @@ class OptimizedPredictionPipeline:
                     )
                     self._shape_mismatch_logged = True
                 return np.zeros(len(self.label_encoder.classes_)), 0.0
-            window_scaled = self.scalers["eegnet"].transform(window.reshape(-1, self.n_channels)).reshape(window.shape)
+            # Reshape window from (1, window_size, n_channels) to (window_size, n_channels) for scaler compatibility
+            window_reshaped = window.reshape(-1, self.n_channels)
+
+            # Apply the scaler transformation
+            window_transformed = self.scalers["eegnet"].transform(window_reshaped)
+
+            # Reshape scaled data back to (1, window_size, n_channels) for model input
+            window_scaled = window_transformed.reshape(window.shape)
             window_input = np.expand_dims(window_scaled, -1)
             window_input = np.transpose(window_input, (0, 2, 1, 3))
             if "interpreter" in self.models["eegnet"]:
