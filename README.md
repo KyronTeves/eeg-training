@@ -1,8 +1,6 @@
-
 # EEG Direction Classification & Real-Time Prediction
 
 [![Python 3.10.11](https://img.shields.io/badge/python-3.10.11-blue.svg)](https://www.python.org/downloads/release/python-31011/)
-[![License: Apache 2.0 / CC0 1.0](https://img.shields.io/badge/license-Apache%202.0%20%2F%20CC0-lightgrey.svg)](./LICENSE.TXT)
 
 > **⚠️ WORK IN PROGRESS:** This system is under active development. Features may be incomplete or unstable. Use for research and development only. Real-time prediction and model integration are experimental.
 
@@ -30,17 +28,16 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
   - [Development Status](#development-status)
   - [Real-time Output Example](#real-time-output-example)
   - [Troubleshooting](#troubleshooting)
-  - [License](#license)
   - [References](#references)
 
 ## Features
 
 - **LSL Streaming:** Collect EEG data from OpenBCI GUI (pre-filtered)
-- **Multiple Models:** EEGNet, ShallowConvNet, Random Forest, XGBoost
+- **Multiple Models:** EEGNet, ShallowConvNet, Random Forest, XGBoost, and advanced Conv1D neural network
 - **Optimized Pipeline:** Modular, config-driven, supports session calibration
 - **Comprehensive Logging:** Real-time stats and error reporting
 - **Data Augmentation:** Class balancing, noise injection (optional)
-- **Ensemble Methods:** Weighted voting across models
+- **Ensemble Methods:** Ensemble (hard voting) across models; all trained models are tracked in `models/ensemble_info.json`
 - **Session Calibration:** Optional per-user fine-tuning
 - **Experimental Real-Time Prediction:** Online ensemble prediction (experimental)
 
@@ -50,17 +47,18 @@ Modular pipeline for collecting, processing, training, evaluating, and performin
 .
 ├── collect_data.py         # Collect EEG data via LSL streaming
 ├── window_eeg_data.py      # Segment raw EEG into overlapping windows
-├── train_eeg_model.py      # Train EEGNet, ShallowConvNet, RF, XGBoost
+├── train_eeg_model.py      # Train EEGNet, ShallowConvNet, RF, XGBoost, Conv1D
 ├── test_eeg_model.py       # Evaluate trained models and ensembles
 ├── realtime_eeg_predict.py # Real-time prediction (experimental)
 ├── lsl_stream_handler.py   # LSL streaming interface
-├── utils.py                # Config, windowing, logging, validation
+├── utils.py                # Config, windowing, logging, validation, shared label utilities
+├── prediction_pipeline.py  # OptimizedPredictionPipeline class for real-time/ensemble prediction
 ├── EEGModels.py            # Model architectures
 ├── config.json             # Centralized configuration
 ├── requirements.txt        # Python dependencies
 
 ├── data/                   # Data files
-├── models/                 # Trained models, encoders, scalers
+├── models/                 # Trained models, encoders, scalers, ensemble_info.json
 └── ...
 ```
 
@@ -118,8 +116,8 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 
 ## Development Status
 
-| Component                | Status         | Notes                                |
-|--------------------------|----------------|--------------------------------------|
+| Component                | Status        | Notes                                |
+| ------------------------ | ------------- | ------------------------------------ |
 | Data Collection          | ✅ Working     | LSL streaming integration complete   |
 | Data Processing          | ✅ Working     | Windowing, feature extraction        |
 | Model Training           | ✅ Working     | Multiple models supported            |
@@ -147,10 +145,6 @@ python realtime_eeg_predict.py  # Real-time prediction (experimental)
 - Check that `pylsl` is installed and stream name matches config
 - For model errors, retrain using `train_eeg_model.py` and check data quality
 - For performance issues, adjust window size, batch size, or confidence threshold in config
-
-## License
-
-See `LICENSE.TXT` for details. Portions of this project are released under Creative Commons Zero 1.0 (CC0) and Apache 2.0, as described in `EEGModels.py`.
 
 ## References
 

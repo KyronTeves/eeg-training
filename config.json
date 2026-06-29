@@ -26,13 +26,15 @@
   
   "_model_training_config": "--- Model Training Configuration ---",
   "MODELS_TO_TRAIN": ["EEGNet", "ShallowConvNet"],
-  "EPOCHS": 100,
-  "BATCH_SIZE": 64,
+  "EPOCHS": 300,
+  "BATCH_SIZE": 32,
   "VALIDATION_SPLIT": 0.2,
-  "EARLY_STOPPING_PATIENCE": 10,
-  "EARLY_STOPPING_MONITOR": "val_loss",
+  "EARLY_STOPPING_PATIENCE": 25,
+  "EARLY_STOPPING_MONITOR": "val_accuracy",
   "OPTIMIZER": "adam",
   "LOSS_FUNCTION": "categorical_crossentropy",
+  "USE_REDUCE_LR": true,
+  "CLASS_BALANCE_STRATEGY": "median",
   
   "_eegnet_hyperparameters": "--- EEGNet Hyperparameters ---",
   "EEGNET_F1": 16,
@@ -66,7 +68,14 @@
   
   "_base_model_paths": "--- File Paths: Base Models ---",
   "MODEL_EEGNET": "models/eeg_direction_model.h5",
+  "MODEL_EEGNET_CHECKPOINT": "models/eeg_direction_model_best.h5",
   "MODEL_SHALLOW": "models/eeg_shallow_model.h5",
+  "MODEL_SHALLOW_CHECKPOINT": "models/eeg_shallow_model_best.h5",
+  "MODEL_CONV1D_CHECKPOINT": "models/best_conv1d_temp.keras",
+  "MODEL_CONV1D_SAVE_PATH_H5": "models/eeg_conv1d_model.h5",
+  "MODEL_CONV1D_SAVE_PATH_KERAS": "models/eeg_conv1d_model.keras",
+  "FEATURE_EXTRACTOR_SAVE_PATH_H5": "models/eeg_conv1d_feature_extractor.h5",
+  "FEATURE_EXTRACTOR_SAVE_PATH_KERAS": "models/eeg_conv1d_feature_extractor.keras",
   "MODEL_RF": "models/eeg_rf_model.pkl",
   "MODEL_XGB": "models/eeg_xgb_model.pkl",
   
@@ -74,6 +83,9 @@
   "MODEL_EEGNET_SESSION": "models/eeg_direction_model_session.h5",
   "MODEL_RF_SESSION": "models/eeg_rf_model_session.pkl",
   "MODEL_XGB_SESSION": "models/eeg_xgb_model_session.pkl",
+  "MODEL_CONV1D_SESSION": "models/eeg_conv1d_model_session.h5",
+  "MODEL_RF_CONV1D_SESSION": "models/eeg_rf_model_conv1d_session.pkl",
+  "MODEL_XGB_CONV1D_SESSION": "models/eeg_xgb_model_conv1d_session.pkl",
   
   "_scaler_encoder_paths": "--- File Paths: Scalers and Encoders ---",
   "LABEL_ENCODER": "models/eeg_label_encoder.pkl",
@@ -81,5 +93,8 @@
   "SCALER_TREE": "models/eeg_scaler_tree.pkl",
   "SCALER_EEGNET_SESSION": "models/eeg_scaler_session.pkl",
   "SCALER_TREE_SESSION": "models/eeg_scaler_tree_session.pkl",
-  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy"
+  "SCALER_CONV1D_SESSION": "models/eeg_scaler_conv1d_session.pkl",
+  "CONV1D_FEATURE_EXTRACTOR": "models/eeg_conv1d_feature_extractor.keras",
+  "LABEL_CLASSES_NPY": "models/eeg_label_classes.npy",
+  "ENSEMBLE_INFO_PATH": "models/ensemble_info.json"
 }

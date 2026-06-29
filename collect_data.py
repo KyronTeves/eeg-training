@@ -32,7 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 def get_session_phases(
-    session_type: str, label: str, config: dict,
+    session_type: str,
+    label: str,
+    config: dict,
 ) -> list[tuple[int, str]]:
     """Get the list of (duration, label) phases for a given session type.
 
@@ -89,7 +91,9 @@ def collect_phase_data(
         try:
             check_no_nan(phase_data_np, name="Phase EEG data")
             check_labels_valid(
-                [label], valid_labels=config["LABELS"], name="Phase label",
+                [label],
+                valid_labels=config["LABELS"],
+                name="Phase label",
             )
         except ValueError:
             logger.exception("Data validation failed for phase '%s'.", phase_label)
@@ -128,9 +132,7 @@ def write_phase_to_csv(  # noqa: PLR0913
     if phase_data:
         for i, sample in enumerate(phase_data):
             if len(sample) == config["N_CHANNELS"]:
-                timestamp = (
-                    phase_timestamps[i] if i < len(phase_timestamps) else time.time()
-                )
+                timestamp = phase_timestamps[i] if i < len(phase_timestamps) else time.time()
                 row = [
                     datetime.fromtimestamp(timestamp, tz=timezone.utc).isoformat(),
                     timestamp,
@@ -174,7 +176,11 @@ def collect_trial_eeg_lsl(  # noqa: PLR0913
     session_phases = get_session_phases(session_type, label, config)
     for phase_duration, phase_label in session_phases:
         phase_data, phase_timestamps = collect_phase_data(
-            lsl_handler, phase_duration, phase_label, label, config,
+            lsl_handler,
+            phase_duration,
+            phase_label,
+            label,
+            config,
         )
         rows, timestamps = write_phase_to_csv(
             phase_data,
@@ -215,7 +221,10 @@ def run_trials_for_label(  # noqa: PLR0913
     """
     for trial in range(config["TRIALS_PER_LABEL"]):
         logger.info(
-            "\nTrial %d/%d for '%s'", trial + 1, config["TRIALS_PER_LABEL"], label,
+            "\nTrial %d/%d for '%s'",
+            trial + 1,
+            config["TRIALS_PER_LABEL"],
+            label,
         )
         if trial > 0:
             logger.info("30-second break between trials...")
@@ -223,7 +232,12 @@ def run_trials_for_label(  # noqa: PLR0913
         input(f"Press Enter when ready to start trial {trial + 1} for '{label}'...")
         try:
             rows_written, _ = collect_trial_eeg_lsl(
-                lsl_handler, session_type, label, trial + 1, writer, config,
+                lsl_handler,
+                session_type,
+                label,
+                trial + 1,
+                writer,
+                config,
             )
             total_rows += rows_written
             logger.info("Trial %d complete. Rows written: %d", trial + 1, rows_written)
@@ -245,7 +259,8 @@ def main() -> None:
     setup_logging()
     config = load_config()
     lsl_handler = LSLStreamHandler(
-        stream_name=config["LSL_STREAM_NAME"], timeout=config["LSL_TIMEOUT"],
+        stream_name=config["LSL_STREAM_NAME"],
+        timeout=config["LSL_TIMEOUT"],
     )
     if not lsl_handler.connect():
         logger.error("Failed to connect to LSL stream.")
@@ -289,7 +304,12 @@ def main() -> None:
         for label in config["LABELS"]:
             logger.info("\n=== Collecting data for label: %s ===", label)
             total_rows = run_trials_for_label(
-                lsl_handler, session_type, label, writer, total_rows, config,
+                lsl_handler,
+                session_type,
+                label,
+                writer,
+                total_rows,
+                config,
             )
         logger.info("\n=== Data Collection Complete ===")
         logger.info("Total rows written: %d", total_rows)
