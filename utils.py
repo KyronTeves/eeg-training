@@ -261,11 +261,14 @@ def window_data(
         strides=(labels.strides[0] * step_size, labels.strides[0], labels.strides[1]),
     )
     # Compute majority label using np.unique (efficient: store result)
-    y_windows = np.empty(n_windows, dtype=labels.dtype)
-    for idx, window in enumerate(label_windows.reshape(n_windows, -1)):
-        unique_labels, counts = np.unique(window, return_counts=True)
-        majority_label = unique_labels[np.argmax(counts)]
-        y_windows[idx] = majority_label
+    # Compute majority label for each window in a vectorized manner
+    reshaped_labels = label_windows.reshape(n_windows, -1)
+    unique_labels, inverse_indices = np.unique(reshaped_labels, return_inverse=True)
+    counts = np.apply_along_axis(
+        lambda x: np.bincount(x, minlength=len(unique_labels)), axis=1, arr=inverse_indices.reshape(n_windows, -1)
+    )
+    majority_indices = np.argmax(counts, axis=1)
+    y_windows = unique_labels[majority_indices]
 
     # Data quality assessment
     logger.info(
