@@ -195,7 +195,7 @@ class OptimizedPredictionPipeline:
             np.ndarray: Array of shape (1, window_size, n_channels)
 
         """
-        return np.array(list(self.buffer)[-self.window_size :]).reshape(
+        return np.array(self.buffer)[-self.window_size :].reshape(
             (1, self.window_size, self.n_channels),
         )
 
