@@ -482,7 +482,9 @@ def AdvancedConv1DNet(nb_classes, window_size, n_channels, dropout_rates=(0.1, 0
         # Always use Python int for key_dim to avoid type inconsistencies
         feature_dim = x.shape[-1]
         if feature_dim is None:
-            msg = "Feature dimension must be known at model build time for MultiHeadAttention."
+            msg = ("Feature dimension must be known at model build time for MultiHeadAttention. "
+                   "Ensure the model input shape is fully specified when defining the Input layer. "
+                   "For example, use Input(shape=(window_size, n_channels)) with concrete values.")
             raise ValueError(msg)
         key_dim = feature_dim // num_heads
         x_norm = LayerNormalization()(x)
