@@ -521,8 +521,10 @@ def train_conv1d_and_tree_models(  # noqa: PLR0913
         save_weights_only=False,
         mode="max",
     )
-    # Do NOT use ReduceLROnPlateau when using a LearningRateSchedule (CosineDecayRestarts) with AdamW
-    # as it will cause a TypeError. Only use ReduceLROnPlateau if using a float learning rate.
+    """
+    Note: Do NOT use ReduceLROnPlateau when using a LearningRateSchedule (e.g., CosineDecayRestarts) with AdamW
+    as it will cause a TypeError. Only use ReduceLROnPlateau if using a float learning rate.
+    """
     history = conv1d_model.fit(
         x_train_final,
         y_train_final,
